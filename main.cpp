@@ -11,9 +11,8 @@ struct arguments{
 
     std::string tmp_dir;
     size_t n_threads{};
-    float hbuff_frac=0.5;
+    size_t n_tries=1;
     bool ver=false;
-    bool rev_comp=false;
     uint8_t alph_bytes=1;
     std::string version= "v1.0.1 alpha";
 };
@@ -51,11 +50,12 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.add_option("-o,--output-file",
                       args.output_file,
                       "Output file")->type_name("");
-    app.add_option("-a,--alphabet", args.alph_bytes, "Number of bytes for the alphabet (def. 1)")->
+    app.add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->
             check(CLI::Range(1, 8))->default_val(1)->check(ValidCellWidth);
-    app.add_option("-t,--threads",
-                      args.n_threads,
-                      "Maximum number of working threads")->default_val(1);
+    app.add_option("-n,--random-tries", args.n_tries, "Number of random tries to find a suitable parsing (def. 1)");
+    //app.add_option("-t,--threads",
+    //                  args.n_threads,
+    //                  "Maximum number of working threads")->default_val(1);
     app.add_option("-T,--tmp",
                       args.tmp_dir,
                       "Temporary folder (def. /tmp/lcg.xxxx)")->
@@ -72,17 +72,18 @@ void run_int(std::string input_collection, arguments& args){
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
 
     std::cout<<"Creating the grammar"<<std::endl;
-    gram_algo<sym_type>(input_collection, args.output_file, tmp_ws, args.n_threads);
+    gram_algo<sym_type>(input_collection, args.output_file, tmp_ws, args.n_tries, args.n_threads);
 }
 
 int main(int argc, char** argv) {
 
     arguments args;
 
-    CLI::App app("Locally consistent grammar");
+    CLI::App app("Locally-consistent grammar compression");
     parse_app(app, args);
 
     CLI11_PARSE(app, argc, argv);
+
     if(args.ver){
         std::cout<<args.version<<std::endl;
         exit(0);

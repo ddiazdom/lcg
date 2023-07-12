@@ -8,7 +8,6 @@
 #include "grammar.h"
 
 void create_lc_rules(lc_gram_buffer_t& gram, phrase_map_t& map){
-
     key_wrapper key_w{sym_width(gram.r), map.description_bits(), map.get_data()};
     size_t sym, tot_syms=0;
     bool first;
@@ -29,32 +28,12 @@ void create_lc_rules(lc_gram_buffer_t& gram, phrase_map_t& map){
     gram.lvl_size.push_back(tot_syms);
 }
 
-void update_str_positions(parsing_info& p_info, size_t psize){
-    //update string pointers
-    long acc=0, prev, str_len=0;
-    prev = p_info.str_ptrs[0];
-    for(size_t j=0; j<p_info.str_ptrs.size()-1;j++){
-            acc += (prev-p_info.str_ptrs[j]);
-            prev = p_info.str_ptrs[j];
-
-            p_info.str_ptrs[j] = acc;
-            if(j>0 && (p_info.str_ptrs[j]-p_info.str_ptrs[j-1])>str_len){
-                str_len = p_info.str_ptrs[j]-p_info.str_ptrs[j-1];
-            }
-    }
-
-    p_info.str_ptrs.back() = (long)psize;
-    if((p_info.str_ptrs.back() - p_info.str_ptrs[p_info.str_ptrs.size()-2])>str_len){
-        str_len = (p_info.str_ptrs.back() - p_info.str_ptrs[p_info.str_ptrs.size()-2]);
-    }
-    p_info.longest_str = str_len;
-}
 
 template<class sym_type, bool f_round>
-size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_info, lc_gram_buffer_t& gram_buff, tmp_workspace& ws){
+size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_info, lc_gram_buffer_t& gram_buff, size_t n_tries, size_t n_threads,  tmp_workspace& ws){
 
     lc_parser_t<sym_type, f_round> lcp(i_file, p_info.str_ptrs, p_info.min_symbol, p_info.max_symbol, ws);
-    std::pair<size_t, size_t> res= lcp.partition_text(25);
+    std::pair<size_t, size_t> res= lcp.partition_text(n_tries);
 
     phrase_map_t &map = lcp.get_map();
     size_t j = gram_buff.r;
@@ -68,7 +47,6 @@ size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_inf
 
     create_lc_rules(gram_buff, map);
     size_t p_size = lcp.produce_next_string(o_file);
-    update_str_positions(p_info, p_size);
 
     std::cout << "    Stats:" << std::endl;
     std::cout << "      Parsing phrases:                  " << res.second << std::endl;
@@ -78,11 +56,12 @@ size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_inf
 }
 
 template<class sym_type>
-size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_threads, tmp_workspace &ws) {
+size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws) {
 
     std::cout<<"Reading the file"<<std::endl;
     str_collection str_coll = collection_stats<sym_type>(i_file);
     std::cout<<"Stats: "<<std::endl;
+    std::cout<<"  Effective alphabet            : "<<str_coll.alphabet.size()<<std::endl;
     std::cout<<"  Smallest symbol               : "<<str_coll.min_sym<<std::endl;
     std::cout<<"  Greatest symbol               : "<<str_coll.max_sym<<std::endl;
     std::cout<<"  Number of symbols in the file : "<<str_coll.n_syms<<std::endl;
@@ -108,20 +87,19 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
     size_t iter = 1;
 
     std::cout << "  Parsing round " << iter++ << std::endl;
-    size_t n_syms = p_round_int<sym_type, true>(i_file, tmp_i_file, p_info, gram_buff, ws);
+    size_t n_syms = p_round_int<sym_type, true>(i_file, tmp_i_file, p_info, gram_buff, n_tries, n_threads, ws);
 
     while(n_syms!=p_info.str_ptrs.size()-1){
-
         std::cout << "  Parsing round " << iter++ << std::endl;
         size_t bps = sym_width(p_info.max_symbol);
         if(bps<=8){
-            n_syms = p_round_int<uint8_t, false>(tmp_i_file, output_file, p_info, gram_buff, ws);
+            n_syms = p_round_int<uint8_t, false>(tmp_i_file, output_file, p_info, gram_buff, n_tries, n_threads, ws);
         }else if(bps<=16){
-            n_syms = p_round_int<uint16_t, false>(tmp_i_file, output_file, p_info, gram_buff, ws);
+            n_syms = p_round_int<uint16_t, false>(tmp_i_file, output_file, p_info, gram_buff, n_tries, n_threads, ws);
         } else if(bps<=32){
-            n_syms = p_round_int<uint32_t, false>(tmp_i_file, output_file, p_info, gram_buff, ws);
+            n_syms = p_round_int<uint32_t, false>(tmp_i_file, output_file, p_info, gram_buff, n_tries, n_threads, ws);
         } else{
-            n_syms = p_round_int<uint64_t, false>(tmp_i_file, output_file, p_info, gram_buff, ws);
+            n_syms = p_round_int<uint64_t, false>(tmp_i_file, output_file, p_info, gram_buff, n_tries, n_threads, ws);
         }
         remove(tmp_i_file.c_str());
         rename(output_file.c_str(), tmp_i_file.c_str());
@@ -183,7 +161,6 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
 
     size_t written_bytes = store_to_file(gram_o_file, gram);
     std::cout<<"Grammar encoding "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
-
     return iter - 2;
 }
 
@@ -262,7 +239,7 @@ size_t par_round(parse_strategy_t &p_strategy, parsing_info &p_info, lc_gram_buf
     return (p_info.str_ptrs.size()-1) == psize ? 0 : p_info.lms_phrases;
 }
 */
-template unsigned long build_lc_grammar<uint8_t>(std::string &i_file, std::string& gram_o_file, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint16_t>(std::string &i_file, std::string& gram_o_file, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint32_t>(std::string &i_file, std::string& gram_o_file, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint64_t>(std::string &i_file, std::string& gram_o_file, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint8_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint16_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint32_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint64_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);

@@ -19,7 +19,7 @@ add_library(lcg
 target_compile_options(lcg
         PRIVATE
         -Wall -Wextra -Wno-ignored-qualifiers -pedantic
-        #-O3 -funroll-loops -fomit-frame-pointer -ffast-math
+        -O3 -funroll-loops -fomit-frame-pointer -ffast-math
         INTERFACE
         -Wshadow)
 

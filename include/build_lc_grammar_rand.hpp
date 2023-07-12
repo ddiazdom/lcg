@@ -66,7 +66,7 @@ template<class sym_type,
 struct lc_parser_t{
 
     typedef i_file_stream<sym_type>             stream_t;
-    typedef perm_type<true>                     perm_t;
+    typedef perm_type<false>                    perm_t;
 
     size_t min_sym;
     size_t max_sym;
@@ -84,6 +84,11 @@ struct lc_parser_t{
                                       ifs(i_file, BUFFER_SIZE),
                                       str_boundaries(str_boundaries_),
                                       ws(ws_) {
+        //    for(size_t i=str_boundaries[177];i<str_boundaries[178];i++){
+        //        std::cout<<ifs.read(i)<<" ";
+        //    }
+        //    std::cout<<" range: "<<min_sym<<" "<<max_sym<<std::endl;
+        //
     }
 
     lc_parser_t(std::string& i_file, std::vector<long>& str_boundaries_,
@@ -140,11 +145,6 @@ struct lc_parser_t{
             }
             return {tot_syms, in_map.size()};
         }
-
-        void store_to_file(std::string& map_file){
-            std::ofstream ofs(map_file, std::ios::binary);
-            in_map.serialize(ofs);
-        }
     };
 
     template<class o_sym_type>
@@ -173,7 +173,7 @@ struct lc_parser_t{
             /*for(size_t i=0;i<phrase.size();i++){
                 std::cout<<phrase[i]<<" ";
             }
-            std::cout<<""<<std::endl;*/
+            std::cout<<" -> "<<sym<<std::endl;*/
             //
 
             assert(res);
@@ -187,7 +187,7 @@ struct lc_parser_t{
             }else{
                 range = {str_boundaries[str], str_boundaries[str+1]-1};
             }
-
+            //std::cout<<str<<" "<<last_str<<" "<<std::endl;
             if((str+1)<=last_str){
                 str_boundaries[str+1] = ofs.size()-1;
             }
@@ -210,6 +210,10 @@ struct lc_parser_t{
         void forward_comp_str(size_t& sym) {
             ofs.push_back(sym);
         };
+
+        void close(){
+            ofs.close();
+        }
 
         [[nodiscard]] inline size_t parse_size() const {
             return ofs.size();
@@ -237,6 +241,11 @@ struct lc_parser_t{
             assert(range.first<=range.second);
 
             if(range.first<range.second) { //if this is not true, it means the string was fully compressed
+
+                //TODO testing
+                //size_t n_phrases=0;
+                //
+
                 start_ps = range.first;
                 end_ps = range.second;
 
@@ -255,6 +264,15 @@ struct lc_parser_t{
                             assert(!phrase.empty());
                             func.process_phrase(phrase);
 
+                            /*if(str==177){
+                                for(size_t k=phrase.size();k-->0;){
+                                    std::cout<<phrase[k]<<" ";
+                                }
+                                std::cout<<" esta es la frase"<<std::endl;
+                            }
+                            n_phrases++;*/
+                            //
+
                             //create the new phrase
                             phrase.clear();
                         }
@@ -265,6 +283,20 @@ struct lc_parser_t{
                     phrase.push_back(curr_sym);
                     prev_sym = curr_sym;
                 }
+
+                /*n_phrases++;
+                //TODO testing
+                if(str==177){
+                    for(size_t k=phrase.size();k-->0;){
+                        std::cout<<phrase[k]<<" ";
+                    }
+                    std::cout<<" esta es la phrase"<<std::endl;
+                    std::cout<<"string: "<<str<<" number of phrases:"<<n_phrases<<std::endl;
+                    if(phrase.size()==12){
+                        std::cout<<""<<std::endl;
+                    }
+                }*/
+                //
 
                 assert(!phrase.empty());
                 func.process_phrase(phrase);
@@ -285,7 +317,7 @@ struct lc_parser_t{
             hash_functor hf(str_boundaries);
             lc_scan(hf, max_sym);
             auto res = hf.get_stats(max_sym);
-            //std::cout<<"it "<<(i+1)<<" : "<<res.first<<" "<<res.second<<std::endl;
+            std::cout<<"it "<<(i+1)<<" : "<<res.first<<" "<<res.second<<std::endl;
             parse_size.push_back(res);
             std::string map_file = ws.get_file("map_"+std::to_string(i));
             store_to_file(map_file, hf.in_map);
@@ -298,8 +330,8 @@ struct lc_parser_t{
         size_t arg_min=0;
         size_t min=std::numeric_limits<size_t>::max();
         for(size_t i=0;i<n_it;i++){
-            if(parse_size[i].second<min){
-                min = parse_size[i].second;
+            if(parse_size[i].first<min){
+                min = parse_size[i].first;
                 arg_min = i;
             }
         }
@@ -307,7 +339,7 @@ struct lc_parser_t{
 
         std::string best_par_set = ws.get_file("map_"+std::to_string(arg_min));
         load_from_file(best_par_set, map);
-        //std::cout<<arg_min<<" "<<map.size()<<" "<<std::endl;
+        std::cout<<arg_min<<" "<<map.size()<<" "<<std::endl;
         std::string best_perm = ws.get_file("perm_"+std::to_string(arg_min));
         load_from_file(best_perm, perm);
 
@@ -318,28 +350,51 @@ struct lc_parser_t{
         return map;
     }
 
+    void update_str_positions(size_t p_size){
+        //update string pointers
+        long acc=0, prev;
+        prev = str_boundaries[0];
+        for(size_t j=0; j<str_boundaries.size()-1;j++){
+            acc += (prev-str_boundaries[j]);
+            prev = str_boundaries[j];
+            str_boundaries[j] = acc;
+        }
+        str_boundaries.back() = (long)p_size;
+    }
+
+    template<typename o_sym_type>
+    size_t produce_next_string_int(std::string& o_file){
+        parse_functor<o_sym_type> pf(map, str_boundaries, o_file);
+        lc_scan(pf, max_sym);
+        size_t p_size = pf.parse_size();
+        update_str_positions(p_size);
+        pf.close();
+
+        std::string tmp_o_file = ws.get_file("tmp_parse_file");
+        i_file_stream<o_sym_type> inv_parse(o_file, BUFFER_SIZE);
+        o_file_stream<o_sym_type> final_parse(tmp_o_file, BUFFER_SIZE, std::ios::out);
+        for(size_t i=inv_parse.size();i-->0;){
+            final_parse.push_back(inv_parse.read(i));
+        }
+        inv_parse.close(true);
+        final_parse.close();
+        rename(tmp_o_file.c_str(), o_file.c_str());
+
+        return p_size;
+    }
+
     size_t produce_next_string(std::string& o_file){
         size_t new_max_sym = max_sym+map.size()-1;
         size_t bps = sym_width(new_max_sym);
-        size_t p_size;
         if(bps<=8){
-            parse_functor<uint8_t> pf(map, str_boundaries, o_file);
-            lc_scan(pf, max_sym);
-            p_size = pf.parse_size();
+            return produce_next_string_int<uint8_t>(o_file);
         }else if(bps<=16){
-            parse_functor<uint16_t> pf(map, str_boundaries, o_file);
-            lc_scan(pf, max_sym);
-            p_size = pf.parse_size();
+            return produce_next_string_int<uint16_t>(o_file);
         }else if(bps<=32){
-            parse_functor<uint32_t> pf(map, str_boundaries, o_file);
-            lc_scan(pf, max_sym);
-            p_size = pf.parse_size();
+            return produce_next_string_int<uint32_t>(o_file);
         }else{
-            parse_functor<uint64_t> pf(map, str_boundaries, o_file);
-            lc_scan(pf, max_sym);
-            p_size = pf.parse_size();
+            return produce_next_string_int<uint64_t>(o_file);
         }
-        return p_size;
     }
 };
 //
@@ -406,10 +461,7 @@ struct parse_functor{
 };
 
 template<class sym_type>
-size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_threads, tmp_workspace &ws);
-
-template<class parse_strategy>
-size_t par_round(parse_strategy &p_strat, parsing_info &p_info, tmp_workspace &ws);
+size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 
 /***
  *
@@ -418,8 +470,8 @@ size_t par_round(parse_strategy &p_strat, parsing_info &p_info, tmp_workspace &w
  * @param hbuff_size : buffer size for the hashing step
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads){
-    build_lc_grammar<sym_type>(i_file, o_file, n_threads, tmp_ws);
+void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
+    build_lc_grammar<sym_type>(i_file, o_file, n_tries, n_threads, tmp_ws);
     std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
 }
 #endif //GRLBWT_EXACT_PAR_PHASE_H
