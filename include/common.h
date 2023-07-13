@@ -5,7 +5,6 @@
 #ifndef GRLBWT_COMMON_H
 #define GRLBWT_COMMON_H
 
-//#include <sdsl/bit_vectors.hpp>
 #include "hash_table.hpp"
 #include "int_array.h"
 #include "rank_support.h"
@@ -13,8 +12,6 @@
 
 #define BUFFER_SIZE 8388608 //8MB of buffer
 
-//typedef sdsl::bit_vector                        bv_t;
-//typedef sdsl::bit_vector::rank_1_type           bv_rs_t;
 typedef int_array<size_t>                       vector_t;
 typedef int_array<size_t>                       string_t;
 typedef hash_table<size_t, 44>                  phrase_map_t;

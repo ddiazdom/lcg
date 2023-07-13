@@ -7,15 +7,377 @@
 
 #include "common.h"
 #include "utils.h"
+#include <random>
+#include "hashing.h"
+
+struct rand_order{
+    size_t str_ptr;
+    size_t str_len;
+    size_t hash;
+    size_t orig_order;
+};
 
 struct parsing_info{
-    size_t lms_phrases=0; //number of LMS phrases in the current parsing round
+    size_t par_phrases=0; //number of parsing phrases in the current round
+    size_t par_symbols=0; //number of symbols in the parsing set of the current round
     size_t p_round=0; //parsing round
     size_t max_symbol=0;
+    size_t min_symbol=0;
     size_t longest_str=0; //longest string in the parsing
     std::vector<long> str_ptrs;
 };
 
+/*
+template<bool identity=false>
+struct perm_type{
+    std::vector<size_t> perm;
+    size_t min_sym;
+    size_t max_sym;
+    unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+
+    inline perm_type(size_t min_sym_, size_t max_sym_) : min_sym(min_sym_),
+                                                         max_sym(max_sym_){
+        size_t len = max_sym-min_sym+1;
+        perm.resize(len);
+        for(size_t i=0;i<perm.size();i++) perm[i] = i;
+        if constexpr(!identity){
+            std::shuffle(perm.begin(), perm.end(), std::default_random_engine(seed));
+        }
+    }
+
+    inline size_t operator()(size_t sym) const {
+        assert(min_sym<=sym && sym<=max_sym);
+        return min_sym + perm[sym-min_sym];
+    }
+
+    inline void new_perm(){
+        if constexpr (!identity){
+            std::shuffle(perm.begin(), perm.end(), std::default_random_engine(seed));
+        }
+    }
+
+    inline size_t serialize(std::ostream &out){
+        size_t written_bytes = serialize_plain_vector(out, perm);
+        written_bytes += serialize_elm(out, min_sym);
+        written_bytes += serialize_elm(out, max_sym);
+        return  written_bytes;
+    }
+
+    void load(std::istream &in){
+        load_plain_vector(in, perm);
+        load_elm(in, min_sym);
+        load_elm(in, max_sym);
+    }
+};*/
+
+template<class sym_type,
+         bool first_round>
+struct lc_parser_t{
+
+    typedef i_file_stream<sym_type>             stream_t;
+    //typedef perm_type<false>                    perm_t;
+    hashing                                  par_function;
+
+    size_t min_sym;
+    size_t max_sym;
+    phrase_map_t map;
+    //perm_t perm;
+    stream_t ifs;
+    std::vector<long>& str_boundaries;
+    tmp_workspace& ws;
+
+    lc_parser_t(std::string& i_file, std::vector<long>& str_boundaries_,
+                size_t min_sym_, size_t max_sym_,
+                tmp_workspace& ws_) : min_sym(min_sym_),
+                                      max_sym(max_sym_),
+                                      //perm(min_sym, max_sym),
+                                      ifs(i_file, BUFFER_SIZE),
+                                      str_boundaries(str_boundaries_),
+                                      ws(ws_) {}
+
+    /*lc_parser_t(std::string& i_file, std::vector<long>& str_boundaries_,
+                size_t min_sym_, size_t max_sym_, perm_t& ext_perm,
+                tmp_workspace& ws_) : min_sym(min_sym_),
+                                      max_sym(max_sym_),
+                                      perm(ext_perm),
+                                      ifs(i_file, BUFFER_SIZE),
+                                      str_boundaries(str_boundaries_),
+                                      ws(ws_){}*/
+
+    struct hash_functor{
+
+        phrase_map_t in_map;
+        std::vector<long>& str_boundaries;
+        size_t first_str;
+        size_t last_str;
+
+        explicit hash_functor(std::vector<long>& str_boundaries_): str_boundaries(str_boundaries_),
+                                                                   first_str(0),
+                                                                   last_str(str_boundaries.size()-2){};
+
+        void process_phrase(string_t& phrase){
+            phrase.mask_tail();
+            in_map.increment_value(phrase.data(), phrase.n_bits(), 1);
+        }
+
+        void forward_comp_str(__attribute__((unused)) size_t& sym){}
+
+        std::pair<long, long> init_str (size_t& str) {
+            if constexpr (first_round){
+                return {str_boundaries[str], str_boundaries[str+1]-2};
+            }else{
+                return {str_boundaries[str], str_boundaries[str+1]-1};
+            }
+        }
+
+        [[nodiscard]] inline size_t get_first_str() const {
+            return first_str;
+        }
+
+        [[nodiscard]] inline size_t get_last_str() const {
+            return last_str;
+        }
+
+        inline void finish_scan(){}
+
+        std::pair<size_t, size_t> get_stats(size_t& m_sym){
+            key_wrapper key_w{sym_width(m_sym), in_map.description_bits(), in_map.get_data()};
+            size_t tot_syms=0;
+            for (auto const &ptr: in_map) {
+                tot_syms+=key_w.size(ptr);
+            }
+            return {tot_syms, in_map.size()};
+        }
+    };
+
+    template<class o_sym_type>
+    struct parse_functor{
+
+        typedef o_file_stream<o_sym_type> o_stream_t;
+        phrase_map_t& map;
+        std::vector<long>& str_boundaries;
+        o_stream_t ofs;
+        size_t first_str;
+        size_t last_str;
+
+        parse_functor(phrase_map_t& map_, std::vector<long>& str_boundaries_,
+                      std::string& o_file): map(map_),
+                                            str_boundaries(str_boundaries_),
+                                            ofs(o_file, BUFFER_SIZE, std::ios::out),
+                                            first_str(0),
+                                            last_str(str_boundaries.size()-2){};
+
+        void process_phrase(string_t& phrase) {
+            phrase.mask_tail();
+            size_t sym = 0;
+            auto res = map.key2value(phrase.data(), phrase.n_bits(), sym);
+            assert(res);
+            ofs.push_back(sym);
+        };
+
+        std::pair<long, long> init_str(size_t& str)  {
+            std::pair<long, long> range;
+            if constexpr (first_round){
+                range = {str_boundaries[str], str_boundaries[str+1]-2};
+            }else{
+                range = {str_boundaries[str], str_boundaries[str+1]-1};
+            }
+
+            if((str+1)<=last_str){
+                str_boundaries[str+1] = ofs.size()-1;
+            }
+
+            return range;
+        };
+
+        inline void finish_scan(){
+            str_boundaries[first_str] = ofs.size()-1;
+        }
+
+        [[nodiscard]] inline size_t get_first_str() const {
+            return first_str;
+        }
+
+        [[nodiscard]] inline size_t get_last_str() const {
+            return last_str;
+        }
+
+        void forward_comp_str(size_t& sym) {
+            ofs.push_back(sym);
+        };
+
+        void close(){
+            ofs.close();
+        }
+
+        [[nodiscard]] inline size_t parse_size() const {
+            return ofs.size();
+        }
+
+        ~parse_functor(){
+            ofs.close(false);
+        }
+    };
+
+    template<class functor>
+    inline void lc_scan(functor& func, size_t max_symbol) {
+
+        sym_type curr_sym, prev_sym;
+        string_t phrase(2, sym_width(max_symbol));
+        size_t end_ps, start_ps;
+        uint8_t type;
+
+        size_t first_str=func.get_first_str();
+        size_t end_str=func.get_last_str();
+
+        for(size_t str=end_str+1;str-->first_str;) {
+
+            auto range = func.init_str(str);
+            assert(range.first<=range.second);
+
+            if(range.first<range.second) { //if this is not true, it means the string was fully compressed
+
+                start_ps = range.first;
+                end_ps = range.second;
+
+                prev_sym = ifs.read(end_ps);
+
+                phrase.push_back(prev_sym);
+                type = 0;
+
+                for (size_t i = end_ps; i-- > start_ps;) {
+
+                    curr_sym = ifs.read(i);
+                    if (curr_sym != prev_sym) {
+
+                        if constexpr (first_round){
+                            type = (type<<1UL) | (par_function.symbol_hash(curr_sym) < par_function.symbol_hash(prev_sym));
+                        }else{
+                            type = (type<<1UL) | (curr_sym < prev_sym);
+                        }
+
+                        if ((type & 3U) == 2) {//LMS suffix
+                            //process the previous phrase
+                            assert(!phrase.empty());
+                            func.process_phrase(phrase);
+                            //create the new phrase
+                            phrase.clear();
+                        }
+                    } else {
+                        type = (type<<1UL) | (type & 1UL);
+                    }
+
+                    phrase.push_back(curr_sym);
+                    prev_sym = curr_sym;
+                }
+
+                assert(!phrase.empty());
+                func.process_phrase(phrase);
+                phrase.clear();
+            } else {
+                assert(range.first==range.second);
+                size_t tmp = ifs.read(range.first);
+                func.forward_comp_str(tmp);
+            }
+        }
+        func.finish_scan();
+    };
+
+    std::pair<size_t, size_t> partition_text(size_t n_it){
+
+        std::pair<size_t, size_t> parse_res;
+        std::string map_file = ws.get_file("map_file");
+        {
+            hash_functor hf(str_boundaries);
+            lc_scan(hf, max_sym);
+            parse_res = hf.get_stats(max_sym);
+            store_to_file(map_file, hf.in_map);
+        }
+        load_from_file(map_file, map);
+
+        /*size_t min=std::numeric_limits<size_t>::max(), arg_min=0;
+        for(size_t i=0;i<n_it;i++){
+            hash_functor hf(str_boundaries);
+            lc_scan(hf, max_sym);
+            auto res = hf.get_stats(max_sym);
+            std::cout<<"try "<<(i+1)<<" : "<<res.first<<" "<<res.second<<std::endl;
+            if(res.first<min){
+                std::string map_file = ws.get_file("map_"+std::to_string(i));
+                store_to_file(map_file, hf.in_map);
+                std::string perm_file = ws.get_file("perm_"+std::to_string(i));
+                store_to_file(perm_file, perm);
+                arg_min = i;
+                min = res.first;
+                parse_res = res;
+            }
+            perm.new_perm();
+        }
+        std::string best_par_set = ws.get_file("map_"+std::to_string(arg_min));
+        load_from_file(best_par_set, map);
+        std::cout<<(arg_min+1)<<" "<<map.size()<<" "<<std::endl;
+        std::string best_perm = ws.get_file("perm_"+std::to_string(arg_min));
+        load_from_file(best_perm, perm);*/
+        return parse_res;
+    }
+
+    phrase_map_t & get_map(){
+        return map;
+    }
+
+    hashing& get_par_function(){
+        return par_function;
+    }
+
+    void update_str_positions(size_t p_size){
+        //update string pointers
+        long acc=0, prev;
+        prev = str_boundaries[0];
+        for(size_t j=0; j<str_boundaries.size()-1;j++){
+            acc += (prev-str_boundaries[j]);
+            prev = str_boundaries[j];
+            str_boundaries[j] = acc;
+        }
+        str_boundaries.back() = (long)p_size;
+    }
+
+    template<typename o_sym_type>
+    size_t produce_next_string_int(std::string& o_file){
+        parse_functor<o_sym_type> pf(map, str_boundaries, o_file);
+        lc_scan(pf, max_sym);
+        size_t p_size = pf.parse_size();
+        update_str_positions(p_size);
+        pf.close();
+
+        std::string tmp_o_file = ws.get_file("tmp_parse_file");
+        i_file_stream<o_sym_type> inv_parse(o_file, BUFFER_SIZE);
+        o_file_stream<o_sym_type> final_parse(tmp_o_file, BUFFER_SIZE, std::ios::out);
+        for(size_t i=inv_parse.size();i-->0;){
+            final_parse.push_back(inv_parse.read(i));
+        }
+        inv_parse.close(true);
+        final_parse.close();
+        rename(tmp_o_file.c_str(), o_file.c_str());
+
+        return p_size;
+    }
+
+    size_t produce_next_string(std::string& o_file){
+        size_t new_max_sym = max_sym+map.size()-1;
+        size_t bps = sym_width(new_max_sym);
+        if(bps<=8){
+            return produce_next_string_int<uint8_t>(o_file);
+        }else if(bps<=16){
+            return produce_next_string_int<uint16_t>(o_file);
+        }else if(bps<=32){
+            return produce_next_string_int<uint32_t>(o_file);
+        }else{
+            return produce_next_string_int<uint64_t>(o_file);
+        }
+    }
+};
+//
+
+/*
 template<typename parse_data_t,
          typename parser_t>
 struct hash_functor{
@@ -32,7 +394,7 @@ struct hash_functor{
             return range;
         };
 
-        auto forward_comp_str = [&](size_t& sym) -> void{ };
+        auto forward_comp_str = [&](__attribute__((unused)) size_t& sym) -> void{ };
 
         parser_t()(data.ifs, data.start_str, data.end_str, data.max_symbol, hash_phrase, init_str, forward_comp_str);
     };
@@ -75,149 +437,10 @@ struct parse_functor{
         ofs.close();
         return ofs.size();
     };
-};
-
-/*
-struct dictionary {
-
-        typedef size_t size_type;
-        size_t alphabet{};      //alphabet of the dictionary
-        size_t prev_alphabet{};  //size of the previous alphabet
-        size_t n_phrases{};     //number of LMS phrases in the dictionary
-        size_t t_size{};        //size of the text from which the dictionary was generated
-        size_t max_sym_freq{};  //maximum symbol frequency in the parse from which the dictionary was created
-        size_t end_str_dummy{}; //symbol to mark the end of a string
-        size_t bwt_dummy{};     //dummy symbol indicating that the induction is from the BWT i+1
-        size_t hocc_dummy{};    //dummy symbol indicating that the induction is from the hocc array
-        size_t metasym_dummy{}; //dummy metasymbol for the compressed suffixes
-        vector_t dict;          //list of phrases in the dictionary
-        vector_t freqs;         //frequency of every dictionary phrase in the original text
-        bv_t d_lim;
-        bv_t phrases_has_hocc; //mark the phrases with hidden occurrences
-        bv_t *desc_bv = nullptr;
-
-        dictionary() = default;
-
-        dictionary(phrase_map_t &mp_map, size_t dict_syms,
-                   size_t max_freq, bv_t &is_suffix_bv, size_t _t_size, size_t _p_alph_size,
-                   size_t _max_sym_freq) : alphabet(is_suffix_bv.size()),
-                                           prev_alphabet(_p_alph_size),
-                                           n_phrases(mp_map.size()),
-                                           t_size(_t_size),
-                                           max_sym_freq(_max_sym_freq),
-                                           end_str_dummy(alphabet),
-                                           bwt_dummy(alphabet + 1),
-                                           hocc_dummy(alphabet + 2),
-                                           dict(dict_syms, 0, sym_width( alphabet)),//the +3 corresponds to the extra symbols I use for the BWT induction
-                                           freqs(n_phrases, 0, sym_width(max_freq)),
-                                           d_lim(dict_syms, false),
-                                           desc_bv(&is_suffix_bv) {
-
-            key_wrapper key_w{sym_width(alphabet), mp_map.description_bits(), mp_map.get_data()};
-            size_t j = 0, k = 0, freq;
-
-            //TODO testing
-            //std::vector<std::vector<size_t>> plain_dict;
-            //
-
-            for (auto const &ptr: mp_map) {
-                //TODO
-                //std::vector<size_t> phrase;
-                //
-
-                for (size_t i = key_w.size(ptr); i-- > 0;) {
-                    dict[j] = key_w.read(ptr, i);
-                    //phrase.push_back(dict[j]);
-                    d_lim[j++] = false;
-                }
-                //plain_dict.emplace_back(phrase);
-                d_lim[j - 1] = true;
-
-                freq = 0;
-                mp_map.get_value_from(ptr, freq);
-                assert(freq <= max_freq);
-                freqs[k++] = freq;
-            }
-
-            //TODO
-            //std::cout<<"storing the dictionary in plain format, delete this"<<std::endl;
-            //std::sort(plain_dict.begin(), plain_dict.end(), [](auto a, auto b){
-            //    for(size_t i=0;i<std::min(a.size(), b.size()); i++){
-            //        if(a[i]!=b[i]) return a[i]<b[i];
-            //    }
-            //    return a.size()<b.size();
-            //});
-
-            //std::ifstream ifs("serialized_dict_"+std::to_string(t_size), std::ios::in | std::ios::binary);
-            //std::vector<std::vector<size_t>> correct_dict;
-            //for(size_t i=0;i<plain_dict.size();i++){
-            //    std::vector<size_t> correct_phrase;
-            //    load_plain_vector(ifs, correct_phrase);
-            //    if(correct_phrase.size()!=plain_dict[i].size()){
-            //        std::cout<<i<<" -> length corr "<<correct_phrase.size()<<" length malo "<<plain_dict[i].size()<<std::endl;
-            //        std::cout<<"bueno: "<<std::endl;
-            //        for(size_t u=0;u<correct_phrase.size();u++){
-            //            std::cout<<correct_phrase[u]<<" ";
-            //        }
-            //        std::cout<<"malo: "<<std::endl;
-            //        for(size_t u=0;u<plain_dict[i].size();u++){
-            //            std::cout<<plain_dict[i][u]<<" ";
-            //        }
-            //    }
-            //    assert(correct_phrase.size()==plain_dict[i].size());
-            //    for(size_t u=0;u<correct_phrase.size();u++){
-            //        assert(correct_phrase[u]==plain_dict[i][u]);
-            //    }
-            //}
-            //ifs.close();
-            //for(auto const &vector : plain_dict ){
-            //    serialize_plain_vector(ofs, vector);
-            //}
-            //
-            assert(j == dict_syms);
-        }
-
-        [[nodiscard]] inline bool is_suffix(size_t sym) const {
-            return (*desc_bv)[sym];
-        };
-
-        size_type serialize(std::ostream &out, sdsl::structure_tree_node *v = nullptr, std::string name = "") const {
-            sdsl::structure_tree_node *child = sdsl::structure_tree::add_child(v, name, sdsl::util::class_name(*this));
-            size_type written_bytes = sdsl::write_member(alphabet, out, child, "alphabet");
-            written_bytes += sdsl::write_member(prev_alphabet, out, child, "p_alpha_size");
-            written_bytes += sdsl::write_member(n_phrases, out, child, "n_phrases");
-            written_bytes += sdsl::write_member(t_size, out, child, "t_size");
-            written_bytes += sdsl::write_member(max_sym_freq, out, child, "max_sym_freq");
-            written_bytes += sdsl::write_member(end_str_dummy, out, child, "end_str_dummy");
-            written_bytes += sdsl::write_member(bwt_dummy, out, child, "bwt_dummy");
-            written_bytes += sdsl::write_member(hocc_dummy, out, child, "hocc_dummy");
-            written_bytes += sdsl::write_member(metasym_dummy, out, child, "metasym_dummy");
-            dict.serialize(out);
-            phrases_has_hocc.serialize(out, child);
-            return written_bytes;
-        }
-
-        void load(std::istream &in) {
-            sdsl::read_member(alphabet, in);
-            sdsl::read_member(prev_alphabet, in);
-            sdsl::read_member(n_phrases, in);
-            sdsl::read_member(t_size, in);
-            sdsl::read_member(max_sym_freq, in);
-            sdsl::read_member(end_str_dummy, in);
-            sdsl::read_member(bwt_dummy, in);
-            sdsl::read_member(hocc_dummy, in);
-            sdsl::read_member(metasym_dummy, in);
-            dict.load(in);
-            phrases_has_hocc.load(in);
-        }
-    };
-*/
+};*/
 
 template<class sym_type>
-size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_threads, float hbuff_frac, tmp_workspace &ws);
-
-template<class parse_strategy>
-size_t par_round(parse_strategy &p_strat, parsing_info &p_info, bv_t &phrase_desc, tmp_workspace &ws);
+size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 
 /***
  *
@@ -226,8 +449,8 @@ size_t par_round(parse_strategy &p_strat, parsing_info &p_info, bv_t &phrase_des
  * @param hbuff_size : buffer size for the hashing step
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, float hbuff_frac){
-    build_lc_grammar<sym_type>(i_file, o_file, n_threads, hbuff_frac, tmp_ws);
+void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
+    build_lc_grammar<sym_type>(i_file, o_file, n_tries, n_threads, tmp_ws);
     std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
 }
 #endif //GRLBWT_EXACT_PAR_PHASE_H
