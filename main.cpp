@@ -64,7 +64,6 @@ void run_int(std::string input_collection, arguments& args){
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
 
-    std::cout<<"Creating the grammar"<<std::endl;
     gram_algo<sym_type>(input_collection, args.output_file, tmp_ws, args.n_tries, args.n_threads);
 }
 

@@ -183,7 +183,7 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
     std::cout<<"  Number of symbols in the file : "<<str_coll.n_syms<<std::endl;
     std::cout<<"  Number of strings             : "<<str_coll.n_strings<<std::endl;
 
-    std::cout << "Parsing the text:    " << std::endl;
+    std::cout << "Creating the locally-consistent grammar:    " << std::endl;
     std::string output_file = ws.get_file("tmp_output");
     std::string tmp_i_file = ws.get_file("tmp_input");
 
@@ -242,16 +242,16 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
     std::cout<<"Compacting and storing the grammar "<<std::endl;
     lc_gram_t gram(gram_buff);
 
-    std::cout<<" Simplifying the grammar "<<std::endl;
+    std::cout<<"Simplifying the grammar "<<std::endl;
     gram.simplify_grammar();
     gram.print_stats();
 
     //TODO check
-    check_plain_grammar(gram, i_file);
+    //check_plain_grammar(gram, i_file);
     //
 
     size_t written_bytes = store_to_file(gram_o_file, gram);
-    std::cout<<"Grammar encoding "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
+    std::cout<<"Size of the grammar encoding: "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
     return iter - 2;
 }
 
