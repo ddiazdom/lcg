@@ -11,7 +11,7 @@ add_library(cdt
 target_compile_options(cdt
         PUBLIC
         -Wall -Wextra -Wno-ignored-qualifiers -pedantic -Wno-deprecated-copy -Wno-unused-function
-        -O3 -funroll-loops -fomit-frame-pointer -ffast-math
+        #-O3 -funroll-loops -fomit-frame-pointer -ffast-math
         )
 
 # this extra flags only applies to clang compilers

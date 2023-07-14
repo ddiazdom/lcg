@@ -2,7 +2,7 @@
 
 #include "CLI11.hpp"
 #include "utils.h"
-#include "build_lc_grammar.hpp"
+#include "grammar_algorithms.h"
 
 struct arguments{
     std::string input_file;
@@ -63,7 +63,6 @@ void run_int(std::string input_collection, arguments& args){
 
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
-
     gram_algo<sym_type>(input_collection, args.output_file, tmp_ws, args.n_tries, args.n_threads);
 }
 
@@ -86,7 +85,6 @@ int main(int argc, char** argv) {
     args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
 
     std::string input_collection = args.input_file;
-    //str_collection str_coll;
 
     if(args.alph_bytes>1){
         std::cout<<"Alphabet type:    integer"<<std::endl;

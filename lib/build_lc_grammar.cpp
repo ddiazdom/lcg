@@ -65,6 +65,29 @@ void assign_symbols_to_phrases_int(std::vector<rand_order>& str_orders, std::vec
     }
 }*/
 
+template<class sym_type>
+void insert_comp_string(lc_gram_buffer_t& gram, std::string& input_file){
+
+    i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
+
+    std::vector<size_t> rules_buffer;
+    basic_load_vector_from_file(gram.rules_file, rules_buffer);
+    assert(rules_buffer.size()==gram.g);
+
+    rules_buffer.reserve(rules_buffer.size()+ifs.size());
+    for(size_t i=0;i<ifs.size();i++){
+        size_t sym = ifs.read(i)<<1UL | (i==0);
+        rules_buffer.push_back(sym);
+    }
+    gram.r++;
+    gram.g+=ifs.size();
+    gram.c=ifs.size();
+    ifs.close();
+
+    assert(gram.g==rules_buffer.size());
+    basic_store_vector_to_file(gram.rules_file, rules_buffer);
+}
+
 template<class sym_type, bool first_round>
 void assign_symbols_to_phrases(phrase_map_t& map, hashing& p_func, lc_gram_buffer_t& gram_buff, parsing_info& p_info, tmp_workspace& ws){
 
@@ -225,8 +248,6 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
 
     gram_buff.rules_buffer.close();
 
-    std::cout<<"Run-length compressing the grammar"<<std::endl;
-    run_length_compress(gram_buff);
 
     size_t bps = sym_width(p_info.max_symbol);
     if(bps<=8){
@@ -239,19 +260,11 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
         insert_comp_string<uint64_t>(gram_buff, tmp_i_file);
     }
 
-    std::cout<<"Compacting and storing the grammar "<<std::endl;
+    //std::cout<<"Compacting and storing the grammar "<<std::endl;
     lc_gram_t gram(gram_buff);
+    store_to_file(gram_o_file, gram);
 
-    std::cout<<"Simplifying the grammar "<<std::endl;
-    gram.simplify_grammar();
-    gram.print_stats();
-
-    //TODO check
-    //check_plain_grammar(gram, i_file);
-    //
-
-    size_t written_bytes = store_to_file(gram_o_file, gram);
-    std::cout<<"Size of the grammar encoding: "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
+    //std::cout<<"Size of the grammar encoding: "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
     return iter - 2;
 }
 

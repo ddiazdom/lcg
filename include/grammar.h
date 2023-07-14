@@ -4,6 +4,7 @@
 
 #ifndef LCG_GRAMMAR_H
 #define LCG_GRAMMAR_H
+#include "common.h"
 
 struct rand_sym_t{
     size_t p;//mersene prime
@@ -79,130 +80,6 @@ struct lc_gram_buffer_t{
     }*/
 };
 
-template<class sym_type>
-void insert_comp_string(lc_gram_buffer_t& gram, std::string& input_file){
-
-    i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
-
-    std::vector<size_t> rules_buffer;
-    basic_load_vector_from_file(gram.rules_file, rules_buffer);
-    assert(rules_buffer.size()==gram.g);
-
-    rules_buffer.reserve(rules_buffer.size()+ifs.size());
-    for(size_t i=0;i<ifs.size();i++){
-        size_t sym = ifs.read(i)<<1UL | (i==0);
-        rules_buffer.push_back(sym);
-    }
-    gram.r++;
-    gram.g+=ifs.size();
-    gram.c=ifs.size();
-    ifs.close();
-
-    assert(gram.g==rules_buffer.size());
-    basic_store_vector_to_file(gram.rules_file, rules_buffer);
-}
-
-void run_length_compress(lc_gram_buffer_t &gram_buff) {
-
-
-    i_file_stream<size_t> rules(gram_buff.rules_file, BUFFER_SIZE);
-
-    std::vector<size_t> rl_rules;
-    rl_rules.reserve(gram_buff.g);
-
-    size_t new_id = gram_buff.r;
-    size_t tmp_sym;
-    phrase_map_t ht;
-    string_t pair(2, sym_width(rules.size()));
-
-    size_t i=gram_buff.max_tsym+2;
-    size_t run_len=1;
-    bool prev_flag = rules.read(i-1) & 1UL;
-    size_t prev_sym = rules.read(i-1) >> 1UL;
-    size_t sym;
-    bool flag;
-    assert(prev_flag);
-
-    //put the terminals
-    for(size_t j=0;j<=gram_buff.max_tsym;j++){
-        rl_rules.push_back(rules.read(j));
-        assert(rules.read(j) & 1UL);
-    }
-
-    while(i<rules.size()) {
-
-        sym = rules.read(i)>>1UL;
-        flag =  rules.read(i) & 1UL;
-
-        if(sym!=prev_sym || flag){
-
-            if(run_len>1){
-                pair.write(0, prev_sym);
-                pair.write(1, run_len);
-                auto res = ht.insert(pair.data(), pair.n_bits(), 0);
-
-                if(res.second){
-                    tmp_sym = new_id++;
-                    ht.insert_value_at(res.first, tmp_sym);
-                }else{
-                    tmp_sym = 0;
-                    ht.get_value_from(res.first, tmp_sym);
-                }
-            } else{
-                tmp_sym = prev_sym;
-            }
-            //n_rules+=prev_flag;
-            tmp_sym = (tmp_sym<<1UL | prev_flag);
-            rl_rules.push_back(tmp_sym);
-
-            prev_flag = flag;
-            prev_sym = sym;
-            run_len=0;
-        }
-        run_len++;
-        i++;
-    }
-
-    if(run_len>1){
-        pair.write(0, prev_sym);
-        pair.write(1, run_len);
-        auto res = ht.insert(pair.data(), pair.n_bits(), 0);
-        if(res.second){
-            tmp_sym = new_id;
-            ht.insert_value_at(res.first, tmp_sym);
-        }else{
-            tmp_sym = 0;
-            ht.get_value_from(res.first, tmp_sym);
-        }
-    } else{
-        tmp_sym = prev_sym;
-    }
-    tmp_sym = (tmp_sym<<1UL | prev_flag);
-    rl_rules.push_back(tmp_sym);
-
-    //
-    const bitstream<phrase_map_t::buff_t>& stream = ht.get_data();
-    key_wrapper key_w{pair.width(), ht.description_bits(), stream};
-    for(auto const& phrase : ht){
-        rl_rules.push_back((key_w.read(phrase, 0)<<1UL) | 1UL);
-        rl_rules.push_back(key_w.read(phrase, 1)<<1UL);
-    }
-
-    gram_buff.rl_rules.first = gram_buff.r;
-    gram_buff.rl_rules.second = ht.size();
-    gram_buff.r += ht.size();
-    gram_buff.g  = rl_rules.size();
-
-    std::cout<<"    Stats:"<<std::endl;
-    std::cout<<"      Grammar size before:        "<<rules.size()<<std::endl;
-    std::cout<<"      Grammar size after:         "<<rl_rules.size()<<std::endl;
-    std::cout<<"      Number of new nonterminals: "<<ht.size()<<std::endl;
-    std::cout<<"      Compression ratio:          "<<float(rl_rules.size())/float(rules.size())<<std::endl;
-
-    basic_store_vector_to_file(gram_buff.rules_file, rl_rules);
-    rules.close();
-}
-
 struct lc_gram_t {
 
     uint8_t                            sigma{}; // terminal's alphabet
@@ -222,6 +99,8 @@ struct lc_gram_t {
     int_array<size_t>                  rl_ptr;
     int_array<size_t>                  rule_exp;// number of rules generated in every grammar level
     std::pair<size_t, size_t>          run_len_nt;
+
+    lc_gram_t(){};
 
     explicit lc_gram_t(lc_gram_buffer_t& gram_buff) {
 
@@ -340,11 +219,11 @@ struct lc_gram_t {
     }
 
     [[nodiscard]] inline size_t n_terminals() const {
-        return sigma;
+        return (max_tsym+1);
     }
 
     [[nodiscard]] inline size_t n_nonterminals() const {
-        return r-(max_tsym+1);
+        return r-n_terminals();
     }
 
     [[nodiscard]] inline size_t comp_str_size() const {
@@ -373,6 +252,14 @@ struct lc_gram_t {
         return r-1;
     }
 
+    [[nodiscard]] inline size_t n_strings() const {
+        return str_boundaries.size()-1;
+    }
+
+    [[nodiscard]] inline std::pair<size_t, size_t> str2phrase(size_t str) const {
+        return {str_boundaries[str], str_boundaries[str+1]-1};
+    }
+
     void print_stats(){
         std::cout<<"Grammar stats: "<<std::endl;
         std::cout<<"  Number of strings: "<<str_boundaries.size()-1<<std::endl;
@@ -397,252 +284,9 @@ struct lc_gram_t {
         std::cout << "    Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
     }
 
-    std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols() {
+    void access(size_t str_id, size_t start, size_t end, std::string& output){
 
-        //compute which nonterminals are repeated and
-        // which have a replacement of length 1
-        std::vector<uint8_t> rep_nts(r + 1, 0);
-        for(size_t rule=max_tsym+1;rule<r;rule++){
-            auto range = nt2phrase(rule);
-            if(is_rl_sym((rule))){
-                rep_nts[rules[range.first]] = 2;
-            }else{
-                for(size_t i=range.first;i<=range.second;i++){
-                    rep_nts[rules[i]]+=rep_nts[rules[i]]<2;
-                }
-            }
-        }
-
-        std::vector<uint8_t> rem_nts(r + 1, 0);
-        //mark the rules to remove
-        //1) nonterminals with freq 1
-        //2) terminal symbols between [min_sym..max_sym] with
-        // frequency zero: to compress the alphabet
-        bool remove;
-        size_t n_rem=0;
-        size_t start_sym = start_symbol();
-        for(size_t sym=0;sym<start_sym;sym++){
-            remove = rep_nts[sym]==0 || (rep_nts[sym]==1 && sym > max_tsym && !is_rl_sym(sym));
-            rem_nts[sym] = remove;
-            n_rem+=remove;
-        }
-        return {rem_nts, n_rem};
-    }
-
-    void simplify_grammar() {
-
-        assert(!simplified);
-
-        auto rem_syms = mark_disposable_symbols();
-        int_array<size_t> new_rules(g-rem_syms.second, sym_width(r-rem_syms.second));
-        int_array<size_t> new_rl_ptrs(r-rem_syms.second, sym_width((g+1)-rem_syms.second));
-        int_array<size_t> offsets(r, sym_width(r));
-
-        size_t del_syms=0;
-        for(size_t sym=0;sym<r;sym++){
-            offsets[sym] = del_syms;
-            del_syms+=rem_syms.first[sym];
-        }
-
-        size_t n_ter=0, new_ter;
-        for(size_t ter=0;ter<=max_tsym;ter++){
-            if(!rem_syms.first[ter]){
-                new_ter = ter-offsets[ter];
-                terminals[new_ter] = ter;
-                new_rules.push_back(new_ter);
-                n_ter++;
-            }
-        }
-
-        std::stack<size_t> stack;
-        size_t start_sym = start_symbol();
-        for(size_t sym=max_tsym+1;sym<start_sym;sym++){
-
-
-            if(!rem_syms.first[sym]) {
-
-                auto range = nt2phrase(sym);
-                new_rl_ptrs.push_back(new_rules.size());
-
-                //TODO testing
-                //std::cout<<sym<<" "<<sym-offsets[sym]<<" "<<sym-offsets[sym]-(sigma-1)<<" "<<(int)rem_syms.first[sym]<<" "<<new_rl_ptrs[sym-offsets[sym]-(sigma-1)]<<" "<<std::endl;
-                //
-
-                if(is_rl_sym(sym)){
-                    new_rules.push_back(rules[range.first]-offsets[rules[range.first]]);
-                    new_rules.push_back(rules[range.second]);
-                }else{
-                    for(size_t j=range.first;j<=range.second;j++){
-                        if(rem_syms.first[rules[j]]) {
-                            stack.push(rules[j]);
-                            while(!stack.empty()){
-                                auto nt = stack.top();
-                                stack.pop();
-                                if(rem_syms.first[nt]){
-                                    assert(nt>max_tsym);
-                                    assert(!is_rl_sym(nt));
-                                    auto range2 = nt2phrase(nt);
-                                    for(size_t k=range2.second+1;k-->range2.first;){
-                                        stack.push(rules[k]);
-                                    }
-                                }else{
-                                    new_rules.push_back(nt - offsets[nt]);
-                                }
-                            }
-                        }else{
-                            new_rules.push_back(rules[j] - offsets[rules[j]]);
-                        }
-                    }
-                }
-            }
-        }
-
-        //deal with the start symbol
-        auto range = nt2phrase(start_sym);
-        size_t str=0;
-        //std::cout<<start_sym<<" "<<start_sym-offsets[start_sym]<<" "<<new_rules.size()<<std::endl;
-        new_rl_ptrs.push_back(new_rules.size());
-        for(size_t j=range.first;j<=range.second;j++){
-            str_boundaries[str++] = new_rules.size();
-            if(rem_syms.first[rules[j]]) {
-                stack.push(rules[j]);
-                while(!stack.empty()){
-                    auto nt = stack.top();
-                    stack.pop();
-                    if(rem_syms.first[nt]){
-                        auto range2 = nt2phrase(nt);
-                        for(size_t k=range2.second+1;k-->range2.first;){
-                            stack.push(rules[k]);
-                        }
-                    }else{
-                        new_rules.push_back(nt - offsets[nt]);
-                    }
-                }
-            }else{
-                new_rules.push_back(rules[j] - offsets[rules[j]]);
-            }
-        }
-        new_rl_ptrs.push_back(new_rules.size());
-
-        //TODO testing
-        //size_t rm_nt=0;
-        //for(size_t i=max_tsym+1;i<r;i++){
-        //    if(rem_syms.first[i]) rm_nt++;
-        //}
-        //
-
-        size_t del_nt = (rem_syms.second-(max_tsym+1-n_ter));
-        //size_t del_ter = rem_syms.second - del_nt;
-        //std::cout<<del_ter<<std::endl;
-        //std::cout<<new_rules.size()<<" "<<rules.size()<<" "<<rules.size()-new_rules.size()<<" "<<rem_syms.second<<std::endl;
-        //std::cout<<new_rl_ptrs.size()<<" "<<rl_ptr.size()<<" "<<(rl_ptr.size()-new_rl_ptrs.size())<<" "<<rm_nt<<std::endl;
-
-        assert(new_rules.size()==rules.size()-rem_syms.second);
-        assert(new_rl_ptrs.size()==(rl_ptr.size()-del_nt));
-
-        float rm_per = float(rem_syms.second)/float(r)*100;
-        float comp_rat = float(new_rules.size())/float(rules.size());
-        std::cout<<"  Stats:"<<std::endl;
-        std::cout<<"    Grammar size before:  "<<g<<std::endl;
-        std::cout<<"    Grammar size after:   "<<new_rules.size()<<std::endl;
-        std::cout<<"    Deleted nonterminals: "<<rem_syms.second<<" ("<<rm_per<<"%)"<<std::endl;
-        std::cout<<"    Compression ratio:    "<<comp_rat<<std::endl;
-
-        c = new_rules.size()-str_boundaries[0];
-        r -= rem_syms.second;
-        g = new_rules.size();
-
-        rules.swap(new_rules);
-        rl_ptr.swap(new_rl_ptrs);
-
-        for(auto &sym : lvl_rules){
-            //std::cout<<sym<<" "<<sym-offsets[sym]<<" "<<offsets[sym]<<std::endl;
-            sym -= offsets[sym];
-        }
-
-        run_len_nt.first -= offsets[run_len_nt.first];
-
-        max_tsym = n_ter-1;
-        simplified = true;
-
-        //TODO test
-        /*for(size_t sym=run_len_nt.first;sym<(run_len_nt.first+run_len_nt.second);sym++){
-            auto range = nt2phrase(sym);
-            std::cout<<sym<<" "<<range.first<<" "<<range.second<<std::endl;
-            assert(is_rl_sym(sym));
-            assert((range.second-range.first+1)==2);
-        }*/
-        //
     }
 };
-
-
-void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
-
-    std::cout<<"Checking the grammar produces the exact input string"<<std::endl;
-    std::cout<<"  This step is optional and for debugging purposes"<<std::endl;
-    std::cout<<"  Terminals:              "<<gram.n_terminals()<<std::endl;
-    std::cout<<"  Number of nonterminals: "<<gram.n_nonterminals()<<std::endl;
-    std::cout<<"  Compressed string:      "<<gram.comp_str_size()<<std::endl;
-
-
-    i_file_stream<uint8_t> if_stream(uncomp_file, BUFFER_SIZE);
-
-    size_t start_symbol = gram.start_symbol();
-    auto res = gram.nt2phrase(start_symbol);
-
-    std::stack<size_t> stack;
-
-    size_t f = res.first;
-    size_t l = res.second;
-    size_t idx=0;
-
-    std::string decompression;
-    size_t str=0;
-
-    for(size_t i=f; i <= l; i++) {
-
-        stack.emplace(gram.pos2symbol(i));
-        assert(stack.size()<=if_stream.size());
-
-        while(!stack.empty()){
-
-            auto curr_sym = stack.top() ;
-            stack.pop();
-
-            if(gram.is_terminal(curr_sym)){
-                decompression.push_back((char)gram.get_byte_ter(curr_sym));
-            }else{
-                auto res2 = gram.nt2phrase(curr_sym);
-
-                if(gram.is_rl_sym(curr_sym)){
-                    assert(res2.second-res2.first+1==2);
-                    size_t len = gram.pos2symbol(res2.second);
-                    for(size_t j=0;j<len;j++){
-                        stack.emplace(gram.pos2symbol(res2.first));
-                    }
-                }else{
-                    for(size_t j=res2.second+1; j-->res2.first;){
-                        stack.emplace(gram.pos2symbol(j));
-                    }
-                }
-            }
-        }
-
-        for(char sym : decompression){
-            if(sym!=(char)if_stream.read(idx)){
-                std::cout<<(int)sym<<" "<<if_stream.read(idx)<<" "<<str<<" "<<gram.str_boundaries.size()-1<<std::endl;
-            }
-            assert(sym==(char)if_stream.read(idx));
-            idx++;
-        }
-        if(gram.str_boundaries[str+1]==(i+1)){
-            idx++;
-            str++;
-        }
-        decompression.clear();
-    }
-    std::cout<<"\tGrammar is correct!!"<<std::endl;
-}
 
 #endif //LCG_GRAMMAR_H

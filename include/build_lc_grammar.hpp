@@ -442,15 +442,4 @@ struct parse_functor{
 template<class sym_type>
 size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 
-/***
- *
- * @param i_file : input text file
- * @param n_threads : number of working threads
- * @param hbuff_size : buffer size for the hashing step
- */
-template<class sym_type>
-void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
-    build_lc_grammar<sym_type>(i_file, o_file, n_tries, n_threads, tmp_ws);
-    std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
-}
 #endif //GRLBWT_EXACT_PAR_PHASE_H
