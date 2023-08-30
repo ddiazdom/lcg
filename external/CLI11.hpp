@@ -730,7 +730,7 @@ class RequiredError : public ParseError {
             return RequiredError("At least 1 option from [" + option_list + "]");
         if(used < min_option) {
             return RequiredError("Requires at least " + std::to_string(min_option) + " options used and only " +
-                                     std::to_string(used) + "were given from [" + option_list + "]",
+                                     std::to_string(used) + " were given from [" + option_list + "]",
                                  ExitCodes::RequiredError);
         }
         if(max_option == 1)
@@ -738,7 +738,7 @@ class RequiredError : public ParseError {
                                  ExitCodes::RequiredError);
 
         return RequiredError("Requires at most " + std::to_string(max_option) + " options be used and " +
-                                 std::to_string(used) + "were given from [" + option_list + "]",
+                                 std::to_string(used) + " were given from [" + option_list + "]",
                              ExitCodes::RequiredError);
     }
 };
@@ -6273,7 +6273,7 @@ class App {
     }
 
     /// Get a display name for an app
-    std::string get_display_name() const { return (!name_.empty()) ? name_ : "[Option Group: " + get_group() + "]"; }
+    std::string get_display_name() const { return (!name_.empty()) ? name_ : ""/*"[Option Group: " + get_group() + "]"*/; }
 
     /// Check the name, case insensitive and underscore insensitive if set
     bool check_name(std::string name_to_check) const {
@@ -7960,7 +7960,7 @@ inline std::string
 Formatter::make_group(std::string group, bool is_positional, std::vector<const Option *> opts) const {
     std::stringstream out;
 
-    out << "\n" << group << ":\n";
+    //out << "\n" <<group << ":\n";
     for(const Option *opt : opts) {
         out << make_option(opt, is_positional);
     }
@@ -8017,13 +8017,13 @@ inline std::string Formatter::make_description(const App *app) const {
         }
     } else if(max_options > 0) {
         if(min_options > 0) {
-            desc += " \n[Between " + std::to_string(min_options) + " and " + std::to_string(max_options) +
+            //desc += " \n[Between " + std::to_string(min_options) + " and " + std::to_string(max_options) +
                     " of the follow options are required]";
         } else {
-            desc += " \n[At most " + std::to_string(max_options) + " of the following options are allowed]";
+            //desc += " \n[At most " + std::to_string(max_options) + " of the following options are allowed]";
         }
     } else if(min_options > 0) {
-        desc += " \n[At least " + std::to_string(min_options) + " of the following options are required]";
+        // desc += " \n[At least " + std::to_string(min_options) + " of the following options are required]";
     }
     return (!desc.empty()) ? desc + "\n" : std::string{};
 }
@@ -8153,10 +8153,9 @@ inline std::string Formatter::make_subcommand(const App *sub) const {
 inline std::string Formatter::make_expanded(const App *sub) const {
     std::stringstream out;
     out << sub->get_display_name() << "\n";
-
     out << make_description(sub);
     out << make_positionals(sub);
-    out << make_groups(sub, AppFormatMode::Sub);
+    out << make_groups(sub, AppFormatMode::Normal);
     out << make_subcommands(sub, AppFormatMode::Sub);
 
     // Drop blank spaces

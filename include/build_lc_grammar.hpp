@@ -21,6 +21,7 @@ struct parsing_info{
     size_t par_phrases=0; //number of parsing phrases in the current round
     size_t par_symbols=0; //number of symbols in the parsing set of the current round
     size_t p_round=0; //parsing round
+    std::vector<hashing> p_functions;
     size_t max_symbol=0;
     size_t min_symbol=0;
     size_t longest_str=0; //longest string in the parsing
@@ -86,20 +87,21 @@ struct lc_parser_t{
     std::vector<long>& str_boundaries;
     tmp_workspace& ws;
 
-    lc_parser_t(std::string& i_file, std::vector<long>& str_boundaries_,
-                size_t min_sym_, size_t max_sym_,
-                tmp_workspace& ws_) : min_sym(min_sym_),
-                                      max_sym(max_sym_),
-                                      //perm(min_sym, max_sym),
-                                      ifs(i_file, BUFFER_SIZE),
-                                      str_boundaries(str_boundaries_),
-                                      ws(ws_) {}
+    lc_parser_t(std::string& i_file, parsing_info& p_info, tmp_workspace& ws_) : min_sym(p_info.min_symbol),
+                                                                                 max_sym(p_info.max_symbol),
+                                                                                 ifs(i_file, BUFFER_SIZE),
+                                                                                 str_boundaries(p_info.str_ptrs),
+                                                                                 ws(ws_) {
+        if(p_info.p_round<p_info.p_functions.size()){
+            par_function = p_info.p_functions[p_info.p_round];
+        }
+    }
 
     /*lc_parser_t(std::string& i_file, std::vector<long>& str_boundaries_,
-                size_t min_sym_, size_t max_sym_, perm_t& ext_perm,
-                tmp_workspace& ws_) : min_sym(min_sym_),
+                size_t min_sym_, size_t max_sym_, hashing& par_function_,
+                tmp_workspace& ws_) : par_function(par_function_),
+                                      min_sym(min_sym_),
                                       max_sym(max_sym_),
-                                      perm(ext_perm),
                                       ifs(i_file, BUFFER_SIZE),
                                       str_boundaries(str_boundaries_),
                                       ws(ws_){}*/
@@ -440,6 +442,6 @@ struct parse_functor{
 };*/
 
 template<class sym_type>
-size_t build_lc_grammar(std::string &i_file, std::string & o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+size_t build_lc_grammar(std::string &i_file, std::string& pf_file, std::string & o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 
 #endif //GRLBWT_EXACT_PAR_PHASE_H

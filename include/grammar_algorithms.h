@@ -8,6 +8,108 @@
 #include "grammar.h"
 #include "build_lc_grammar.hpp"
 
+void add_random_access_support(lc_gram_t& gram){
+
+    std::vector<size_t> exp(gram.g, 0);
+
+    size_t start_sym = gram.start_symbol(), pos=0, sym, tmp_sym, len, exp_size;
+
+    size_t first_sym = gram.max_tsym+1;
+    size_t last_sym = gram.first_rl_sym();
+    size_t rank=0;
+
+    for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
+
+        auto range = gram.nt2phrase(sym);
+        exp_size = 0;
+
+        for(size_t i=range.first;i<=range.second;i++){
+
+            tmp_sym = gram.rules[i];
+            len = 1;
+            if(gram.is_rl_sym(tmp_sym)) {
+                auto range2 = gram.nt2phrase(tmp_sym);
+                len = gram.rules[range2.second];
+                tmp_sym = gram.rules[range2.first];
+            }
+
+            if(gram.is_terminal(tmp_sym)){
+                exp_size+=len;
+            } else{
+                rank = tmp_sym - gram.max_tsym;
+                exp_size += exp[gram.rl_ptr[rank]-gram.max_tsym-2]*len;
+            }
+            exp[pos++]=exp_size;
+        }
+    }
+
+    first_sym = gram.first_rl_sym();
+    last_sym = gram.last_rl_sym();
+    for(size_t sym=first_sym;sym<=last_sym;sym++) {
+        auto range = gram.nt2phrase(sym);
+        tmp_sym = gram.rules[range.first];
+        len = gram.rules[range.second];
+        if(gram.is_terminal(tmp_sym)){
+            exp[pos++] = 1;
+            exp[pos++] = len;
+        }else{
+            rank = tmp_sym - gram.max_tsym;
+            exp[pos++] = exp[gram.rl_ptr[rank]-gram.max_tsym-2];
+            exp[pos++] = exp[pos-1]*len;
+        }
+    }
+
+    size_t longest_exp=0;
+    for(size_t str=0;str<gram.n_strings();str++){
+        auto range = gram.str2phrase(str);
+        exp_size = 0;
+        for(size_t i=range.first;i<=range.second;i++){
+            tmp_sym = gram.rules[i];
+            len = 1;
+            if(gram.is_rl_sym(tmp_sym)) {
+                auto range2 = gram.nt2phrase(tmp_sym);
+                len = gram.rules[range2.second];
+                tmp_sym = gram.rules[range2.first];
+            }
+
+            if(gram.is_terminal(tmp_sym)){
+                exp_size+=len;
+            } else{
+                rank = tmp_sym - gram.max_tsym;
+                exp_size += exp[gram.rl_ptr[rank]-gram.max_tsym-2]*len;
+            }
+            exp[pos++]=exp_size;
+        }
+        if(exp_size>longest_exp) longest_exp = exp_size;
+        //std::cout<<str<<" : "<<exp_size<<std::endl;
+    }
+    int_array<size_t> new_exp(pos, sym_width(longest_exp));
+
+    //store the sampled elements
+    size_t samp_rate = gram.samp_rate;
+    first_sym = gram.max_tsym+1;
+    last_sym = gram.last_rl_sym();
+    for(size_t sym = first_sym; sym<=last_sym; sym++){
+        auto range = gram.nt2phrase(sym);
+        for(size_t i=range.first+samp_rate-1;i<=range.second;i+=samp_rate){
+            new_exp.push_back(exp[i]);
+        }
+    }
+    for(size_t str=0;str<gram.n_strings();str++){
+        auto range = gram.str2phrase(str);
+        for(size_t i=range.first+samp_rate-1;i<=range.second;i+=samp_rate){
+            new_exp.push_back(exp[i]);
+        }
+    }
+    new_exp.resize(new_exp.size());
+    new_exp.swap(gram.rule_exp);
+    gram.has_rand_access = true;
+}
+
+void merge_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
+
+}
+
 size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
 
     size_t prev_sym, curr_sym, run_len, tmp_sym;
@@ -21,12 +123,14 @@ size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
         prev_sym = gram.rules[range.first];
         run_len = 1;
 
-        for(size_t j=range.first+1;j<=range.second;j++){
+        for(size_t j=range.first+1;j<=range.second;j++) {
             curr_sym = gram.rules[j];
             if(curr_sym!=prev_sym){
                 if(run_len>1){
+                    //std::cout<<j<<" "<<prev_sym<<" "<<run_len<<std::endl;
                     pair.write(0, prev_sym);
                     pair.write(1, run_len);
+                    pair.mask_tail();
                     auto res = ht.insert(pair.data(), pair.n_bits(), 0);
                     if(res.second){
                         tmp_sym = new_id++;
@@ -43,6 +147,7 @@ size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
         if(run_len>1){
             pair.write(0, prev_sym);
             pair.write(1, run_len);
+            pair.mask_tail();
             auto res = ht.insert(pair.data(), pair.n_bits(), 0);
             if(res.second){
                 tmp_sym = new_id++;
@@ -61,9 +166,11 @@ size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
         for(size_t j=range.first+1;j<=range.second;j++){
             curr_sym = gram.rules[j];
             if(curr_sym!=prev_sym){
+
                 if(run_len>1){
                     pair.write(0, prev_sym);
                     pair.write(1, run_len);
+                    pair.mask_tail();
                     auto res = ht.insert(pair.data(), pair.n_bits(), 0);
                     if(res.second){
                         tmp_sym = new_id++;
@@ -81,20 +188,23 @@ size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
         if(run_len>1){
             pair.write(0, prev_sym);
             pair.write(1, run_len);
+            pair.mask_tail();
             auto res = ht.insert(pair.data(), pair.n_bits(), 0);
             if(res.second){
-                tmp_sym = new_id;
+                tmp_sym = new_id++;
                 ht.insert_value_at(res.first, tmp_sym);
             }
         }
         new_size++;
     }
 
+
     return new_size+(ht.size()*2);
 }
 
 void run_length_compress(lc_gram_t& gram) {
 
+    assert(!gram.has_rl_rules);
     phrase_map_t ht;
     size_t new_size = get_new_rl_rules(gram, ht);
 
@@ -103,10 +213,13 @@ void run_length_compress(lc_gram_t& gram) {
     size_t start_sym = gram.start_symbol(), prev_sym, run_len, curr_sym;
     string_t pair(2, sym_width(gram.rules.size()));
 
-    for(size_t i=0;i<=gram.max_tsym;i++){
+    //insert terminals
+    for(size_t i=0;i<gram.n_terminals();i++){
         new_rules.push_back(i);
     }
+    //std::cout<<new_rules.size()<<" "<<new_size<<std::endl;
 
+    //insert regular rules
     for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
 
         new_rl_ptrs.push_back(new_rules.size());
@@ -120,14 +233,16 @@ void run_length_compress(lc_gram_t& gram) {
             curr_sym = gram.rules[j];
             if(curr_sym!=prev_sym){
                 if(run_len>1){
+                    //std::cout<<j<<" "<<prev_sym<<" "<<run_len<<std::endl;
                     pair.write(0, prev_sym);
                     pair.write(1, run_len);
-                    curr_sym=0;
+                    pair.mask_tail();
                     auto res = ht.find(pair.data(), pair.n_bits());
                     assert(res.second);
-                    ht.get_value_from(res.first, curr_sym);
+                    prev_sym=0;
+                    ht.get_value_from(res.first, prev_sym);
                 }
-                new_rules.push_back(curr_sym);
+                new_rules.push_back(prev_sym);
                 prev_sym = curr_sym;
                 run_len=0;
             }
@@ -137,19 +252,30 @@ void run_length_compress(lc_gram_t& gram) {
         if(run_len>1){
             pair.write(0, prev_sym);
             pair.write(1, run_len);
-            auto res = ht.insert(pair.data(), pair.n_bits(), 0);
-            if(res.second){
-                curr_sym = 0;
-                ht.insert_value_at(res.first, curr_sym);
-            }
+            pair.mask_tail();
+            auto res = ht.find(pair.data(), pair.n_bits());
+            assert(res.second);
+            prev_sym = 0;
+            ht.get_value_from(res.first, prev_sym);
         }
-        new_rules.push_back(curr_sym);
+        new_rules.push_back(prev_sym);
+        //std::cout<<new_rules.size()<<" "<<new_size<<std::endl;
+    }
+    assert(new_rl_ptrs.size()==gram.n_nonterminals()-1);
+
+    //insert the new rl rules
+    const bitstream<phrase_map_t::buff_t>& stream = ht.get_data();
+    key_wrapper key_w{pair.width(), ht.description_bits(), stream};
+    //size_t rl_id;
+    for(auto const& phrase : ht){
+        //rl_id=0;
+        //ht.get_value_from(phrase, rl_id);
+        new_rl_ptrs.push_back(new_rules.size());
+        new_rules.push_back(key_w.read(phrase, 0));
+        new_rules.push_back(key_w.read(phrase, 1));
     }
 
-    //insert the new strings
-    
-
-    //deal with the strings
+    //insert the compressed strings
     new_rl_ptrs.push_back(new_rules.size());
     for(size_t str=0;str<gram.n_strings();str++){
         auto range = gram.str2phrase(str);
@@ -164,12 +290,13 @@ void run_length_compress(lc_gram_t& gram) {
                 if(run_len>1){
                     pair.write(0, prev_sym);
                     pair.write(1, run_len);
-                    curr_sym=0;
+                    pair.mask_tail();
                     auto res = ht.find(pair.data(), pair.n_bits());
                     assert(res.second);
-                    ht.get_value_from(res.first, curr_sym);
+                    prev_sym=0;
+                    ht.get_value_from(res.first, prev_sym);
                 }
-                new_rules.push_back(curr_sym);
+                new_rules.push_back(prev_sym);
                 prev_sym = curr_sym;
                 run_len=0;
             }
@@ -179,15 +306,26 @@ void run_length_compress(lc_gram_t& gram) {
         if(run_len>1){
             pair.write(0, prev_sym);
             pair.write(1, run_len);
-            auto res = ht.insert(pair.data(), pair.n_bits(), 0);
-            if(res.second){
-                curr_sym = 0;
-                ht.insert_value_at(res.first, curr_sym);
-            }
+            pair.mask_tail();
+            auto res = ht.find(pair.data(), pair.n_bits());
+            assert(res.second);
+            prev_sym = 0;
+            ht.get_value_from(res.first, prev_sym);
         }
-        new_rules.push_back(curr_sym);
+        new_rules.push_back(prev_sym);
     }
     new_rl_ptrs.push_back(new_rules.size());
+    gram.str_boundaries[gram.n_strings()]=new_rules.size();
+
+    assert(gram.str2phrase(gram.n_strings()-1).second==new_rules.size()-1);
+    assert(new_rules.size()==new_size);
+    assert(new_rl_ptrs.size()==(gram.rl_ptr.size()+ht.size()));
+
+    std::cout<<"  Stats:"<<std::endl;
+    std::cout<<"    Grammar size before:        "<<gram.rules.size()<<std::endl;
+    std::cout<<"    Grammar size after:         "<<new_rules.size()<<std::endl;
+    std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
+    std::cout<<"    Compression ratio:          "<<float(new_rules.size())/float(gram.rules.size())<<std::endl;
 
     gram.run_len_nt.first = start_sym;
     gram.run_len_nt.second = ht.size();
@@ -195,12 +333,17 @@ void run_length_compress(lc_gram_t& gram) {
     gram.g  = new_rules.size();
     gram.c = gram.g - gram.str_boundaries[0];
 
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:        "<<gram.rules.size()<<std::endl;
-    std::cout<<"    Grammar size after:         "<<new_rules.size()<<std::endl;
-    std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
-    std::cout<<"    Compression ratio:          "<<float(new_rules.size())/float(gram.rules.size())<<std::endl;
+    new_rules.swap(gram.rules);
+    new_rl_ptrs.swap(gram.rl_ptr);
+    gram.has_rl_rules = true;
+
+    //std::cout<<gram.run_len_nt.first<<" "<<gram.run_len_nt.second<<std::endl;
+
+    if(gram.has_rand_access){
+        add_random_access_support(gram);
+    }
 }
+
 
 void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
 
@@ -255,9 +398,12 @@ void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
 
         for(char sym : decompression){
             if(sym!=(char)if_stream.read(idx)){
-                std::cout<<(int)sym<<" "<<if_stream.read(idx)<<" "<<str<<" "<<gram.str_boundaries.size()-1<<std::endl;
+                std::string rand_file = "error_pf_functions.pf";
+                store_pl_vector(rand_file, gram.par_functions);
+                std::cout<<"Error: decomp sym: "<<(int)sym<<" real sym: "<<if_stream.read(idx)<<" str: "<<str<<" position: "<<idx<<std::endl;
+                std::cout<<"The parsing functions were stored in the file "<<rand_file<<std::endl;
+                assert(sym==(char)if_stream.read(idx));
             }
-            assert(sym==(char)if_stream.read(idx));
             idx++;
         }
         if(gram.str_boundaries[str+1]==(i+1)){
@@ -266,7 +412,46 @@ void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
         }
         decompression.clear();
     }
-    std::cout<<"\tGrammar is correct!!"<<std::endl;
+    std::cout<<"Grammar is correct!!"<<std::endl;
+}
+
+void get_v_byte_size(lc_gram_t& gram){
+    std::vector<size_t> freqs(gram.r, 0);
+    auto res1 = gram.nt2phrase(gram.first_rl_sym());
+    auto res2 = gram.nt2phrase(gram.last_rl_sym());
+
+    for(size_t i=0;i<res1.first;i++){
+        freqs[gram.rules[i]]++;
+    }
+
+    for(size_t i=res1.first;i<=res2.second;i+=2){
+        freqs[gram.rules[i]]++;
+    }
+
+    for(size_t i=res2.second+1;i<gram.rules.size();i++){
+        freqs[gram.rules[i]]++;
+    }
+
+    std::vector<std::pair<size_t, size_t>> sorted_freqs(gram.r);
+    for(size_t i=0;i<freqs.size();i++){
+        sorted_freqs[i] = {i, freqs[i]};
+    }
+
+    std::sort(sorted_freqs.begin(), sorted_freqs.end(), [](auto a, auto b){
+        return a.second>b.second;
+    });
+
+    size_t tot_bytes=0;
+    size_t new_sym=1;
+    for(auto & sorted_freq : sorted_freqs){
+        size_t n_bytes = INT_CEIL(sym_width(new_sym), 8);
+        size_t n_bits = n_bytes + sym_width(new_sym);
+        n_bytes = INT_CEIL(n_bits, 8);
+        //std::cout<<sorted_freq.first<<" "<<n_bytes<<std::endl;
+        tot_bytes+=n_bytes*sorted_freq.second;
+        new_sym++;
+    }
+    std::cout<<"new: "<<tot_bytes<<" versus old: "<<INT_CEIL(gram.rules.size()*gram.rules.width(), 8)<<std::endl;
 }
 
 std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const lc_gram_t& gram) {
@@ -303,7 +488,7 @@ std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const lc_gram_t&
 
 void simplify_grammar(lc_gram_t& gram) {
 
-    assert(!gram.simplified);
+    assert(!gram.is_simplified);
 
     auto rem_syms = mark_disposable_symbols(gram);
     int_array<size_t> new_rules(gram.g-rem_syms.second, sym_width(gram.r-rem_syms.second));
@@ -368,7 +553,7 @@ void simplify_grammar(lc_gram_t& gram) {
         }
     }
 
-    //deal with the start symbol
+    //deal with the compressed strings
     auto range = gram.nt2phrase(start_sym);
     size_t str=0;
     //std::cout<<start_sym<<" "<<start_sym-offsets[start_sym]<<" "<<new_rules.size()<<std::endl;
@@ -394,22 +579,12 @@ void simplify_grammar(lc_gram_t& gram) {
         }
     }
     new_rl_ptrs.push_back(new_rules.size());
-
-    //TODO testing
-    //size_t rm_nt=0;
-    //for(size_t i=max_tsym+1;i<r;i++){
-    //    if(rem_syms.first[i]) rm_nt++;
-    //}
-    //
+    gram.str_boundaries[gram.n_strings()]=new_rules.size();
 
     size_t del_nt = (rem_syms.second-(gram.max_tsym+1-n_ter));
-    //size_t del_ter = rem_syms.second - del_nt;
-    //std::cout<<del_ter<<std::endl;
-    //std::cout<<new_rules.size()<<" "<<rules.size()<<" "<<rules.size()-new_rules.size()<<" "<<rem_syms.second<<std::endl;
-    //std::cout<<new_rl_ptrs.size()<<" "<<rl_ptr.size()<<" "<<(rl_ptr.size()-new_rl_ptrs.size())<<" "<<rm_nt<<std::endl;
-
     assert(new_rules.size()==gram.rules.size()-rem_syms.second);
     assert(new_rl_ptrs.size()==(gram.rl_ptr.size()-del_nt));
+    assert(gram.str2phrase(gram.n_strings()-1).second==new_rules.size()-1);
 
     float rm_per = float(rem_syms.second)/float(gram.r)*100;
     float comp_rat = float(new_rules.size())/float(gram.rules.size());
@@ -427,23 +602,34 @@ void simplify_grammar(lc_gram_t& gram) {
     gram.rl_ptr.swap(new_rl_ptrs);
 
     for(auto &sym : gram.lvl_rules){
-        //std::cout<<sym<<" "<<sym-offsets[sym]<<" "<<offsets[sym]<<std::endl;
         sym -= offsets[sym];
     }
 
     gram.run_len_nt.first -= offsets[gram.run_len_nt.first];
 
     gram.max_tsym = n_ter-1;
-    gram.simplified = true;
+    gram.is_simplified = true;
 
-    //TODO test
-    /*for(size_t sym=run_len_nt.first;sym<(run_len_nt.first+run_len_nt.second);sym++){
-        auto range = nt2phrase(sym);
-        std::cout<<sym<<" "<<range.first<<" "<<range.second<<std::endl;
-        assert(is_rl_sym(sym));
-        assert((range.second-range.first+1)==2);
-    }*/
-    //
+    if(gram.has_rand_access){
+        add_random_access_support(gram);
+    }
+}
+
+void print_metadata(std::string& gram_file){
+    lc_gram_t gram;
+    std::ifstream ifs(gram_file, std::ios::binary);
+    gram.load_metadata(ifs);
+    gram.stats();
+}
+
+void get_par_functions(std::string& gram_file, std::string& output_file){
+    std::cout<<"Extracting the parsing functions from "<<gram_file<<std::endl;
+    lc_gram_t gram;
+    std::ifstream ifs(gram_file, std::ios::binary);
+    gram.load_metadata(ifs);
+    store_pl_vector(output_file, gram.par_functions);
+    std::cout<<gram.par_functions.size()<<" functions were extracted from the grammar"<<std::endl;
+    std::cout<<"The functions (PF format) are in "<<gram_file<<std::endl;
 }
 
 /***
@@ -453,26 +639,29 @@ void simplify_grammar(lc_gram_t& gram) {
  * @param hbuff_size : buffer size for the hashing step
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
+void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
 
-    build_lc_grammar<sym_type>(i_file, o_file, n_tries, n_threads, tmp_ws);
+    build_lc_grammar<sym_type>(i_file, pf_file, o_file, n_tries, n_threads, tmp_ws);
 
     lc_gram_t gram;
     load_from_file(o_file, gram);
 
+    std::cout<<"Simplifying the grammar "<<std::endl;
+    simplify_grammar(gram);
+
     std::cout<<"Run-length compressing the grammar"<<std::endl;
     run_length_compress(gram);
 
-    //std::cout<<"Simplifying the grammar "<<std::endl;
-    //simplify_grammar(gram);
+    get_v_byte_size(gram);
+    add_random_access_support(gram);
 
-    gram.print_stats();
+    gram.breakdown();
 
     //optional check
-    check_plain_grammar(gram, i_file);
+    //check_plain_grammar(gram, i_file);
     //
 
-    store_to_file(o_file, gram);
-    std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
+    size_t written_bytes = store_to_file(o_file, gram);
+    std::cout<<"The resulting grammar uses "<<float(written_bytes)/1000000<<" MBs and was stored in "<<o_file<<std::endl;
 }
 #endif //LCG_GRAMMAR_ALGORITHMS_H

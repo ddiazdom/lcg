@@ -178,13 +178,15 @@ void assign_symbols_to_phrases(phrase_map_t& map, hashing& p_func, lc_gram_buffe
 }
 
 template<class sym_type, bool first_round>
-size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_info, lc_gram_buffer_t& gram_buff, size_t n_tries, size_t n_threads,  tmp_workspace& ws){
+size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_info, lc_gram_buffer_t& gram_buff,
+                   size_t n_tries, size_t n_threads,  tmp_workspace& ws){
 
-    lc_parser_t<sym_type, first_round> lcp(i_file, p_info.str_ptrs, p_info.min_symbol, p_info.max_symbol, ws);
+    lc_parser_t<sym_type, first_round> lcp(i_file, p_info, ws);
     std::tie(p_info.par_symbols, p_info.par_phrases) = lcp.partition_text(n_tries);
 
     assign_symbols_to_phrases<sym_type, first_round>(lcp.get_map(), lcp.get_par_function(), gram_buff, p_info, ws);
     size_t p_size = lcp.produce_next_string(o_file);
+    gram_buff.par_functions.push_back(lcp.get_par_function());
 
     std::cout << "    Stats:" << std::endl;
     std::cout << "      Parsing phrases:                  " << p_info.par_phrases << std::endl;
@@ -195,7 +197,7 @@ size_t p_round_int(std::string& i_file, std::string& o_file, parsing_info& p_inf
 }
 
 template<class sym_type>
-size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws) {
+size_t build_lc_grammar(std::string &i_file, std::string& pf_file, std::string &gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws) {
 
     std::cout<<"Reading the file"<<std::endl;
     str_collection str_coll = collection_stats<sym_type>(i_file);
@@ -218,9 +220,13 @@ size_t build_lc_grammar(std::string &i_file, std::string &gram_o_file, size_t n_
     p_info.str_ptrs.push_back((long) str_coll.n_syms);
     p_info.str_ptrs.shrink_to_fit();
     p_info.longest_str = str_coll.longest_string;
+    if(!pf_file.empty()){
+        load_pl_vector(pf_file, p_info.p_functions);
+        std::cout<<"Using the parsing functions in \""<<pf_file<<"\" for the first "<<p_info.p_functions.size()<<" parsing rounds "<<std::endl;
+    }
 
     std::string gram_file = ws.get_file("gram");
-    lc_gram_buffer_t gram_buff(gram_file, str_coll.alphabet, p_info.str_ptrs, str_coll.sep_symbol);
+    lc_gram_buffer_t gram_buff(gram_file, str_coll.alphabet, p_info.str_ptrs, p_info.longest_str, str_coll.sep_symbol);
     assert(gram_buff.rules_buffer.size()==(gram_buff.max_tsym+1));
 
     size_t iter = 1;
@@ -343,7 +349,7 @@ size_t par_round(parse_strategy_t &p_strategy, parsing_info &p_info, lc_gram_buf
     return (p_info.str_ptrs.size()-1) == psize ? 0 : p_info.lms_phrases;
 }
 */
-template unsigned long build_lc_grammar<uint8_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint16_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint32_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
-template unsigned long build_lc_grammar<uint64_t>(std::string &i_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint8_t>(std::string &i_file, std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint16_t>(std::string &i_file,std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint32_t>(std::string &i_file, std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
+template unsigned long build_lc_grammar<uint64_t>(std::string &i_file, std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);

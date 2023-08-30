@@ -164,14 +164,14 @@ struct int_array{
     };
 
     void move(int_array<word_t>&& other) noexcept {
-        m_size = std::exchange(other.m_size, 0);
-        m_cap = std::exchange(other.m_cap, 0);
-        m_width = std::exchange(other.m_width, 0);
-        bits.stream_size = std::exchange(other.bits.stream_size, 0);
-        if(bits.stream!= nullptr){
+        m_size = std::exchange(other.m_size, m_size);
+        m_cap = std::exchange(other.m_cap, m_cap);
+        m_width = std::exchange(other.m_width, m_width);
+        bits.stream_size = std::exchange(other.bits.stream_size, bits.stream_size);
+        /*if(bits.stream!= nullptr){
             allocator::deallocate(bits.stream);
-        }
-        bits.stream = std::exchange(other.bits.stream, nullptr);
+        }*/
+        bits.stream = std::exchange(other.bits.stream, bits.stream);
     }
 
     inline void copy(const int_array<word_t> &other) {

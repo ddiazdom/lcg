@@ -5,29 +5,22 @@
 #ifndef LCG_GRAMMAR_H
 #define LCG_GRAMMAR_H
 #include "common.h"
-
-struct rand_sym_t{
-    size_t p;//mersene prime
-    size_t a;
-    size_t b;
-
-    inline size_t operator()(size_t& sym) const {
-        return (a*sym + b) % p;
-    }
-};
+#include "hashing.h"
 
 struct lc_gram_buffer_t{
-    uint8_t                            sigma{}; // terminal's alphabet
+
+    size_t                             n{}; //n: number of symbols
     size_t                             r{}; //r: number of grammar symbols (nter + ter)
     size_t                             c{}; //c: length of the right-hand of the start symbol
     size_t                             g{}; //g: sum of the rules' right-hand sides
     size_t                             max_tsym{}; //highest terminal symbol
+    size_t                             long_str{};
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
     std::pair<size_t, size_t>          rl_rules={0,0}; //mark the range of run-length compressed rules
 
     std::string                        rules_file; // rules are concatenated in this array
     std::vector<uint8_t>               terminals;
-    std::vector<rand_sym_t>            seq_breakers;
+    std::vector<hashing>               par_functions;
 
     o_file_stream<size_t>              rules_buffer;
     std::vector<long>&                 str_boundaries;//
@@ -39,16 +32,18 @@ struct lc_gram_buffer_t{
     lc_gram_buffer_t(std::string& rules_f,
                      std::vector<uint8_t>& alphabet,
                      std::vector<long>& str_bd_,
+                     size_t long_str_,
                      uint8_t sep_symbol_): sep_tsym(sep_symbol_),
                                            rules_file(rules_f),
                                            rules_buffer(rules_file, BUFFER_SIZE, std::ios::out),
                                            str_boundaries(str_bd_){
 
         terminals = alphabet;
-        sigma = terminals.size();
+        n = str_boundaries.back();
         max_tsym = terminals.back();
         r = max_tsym + 1;
         g = r;
+        long_str = long_str_;
 
         for(size_t i=0;i<=max_tsym; i++){
             rules_buffer.push_back((i<<1UL) | 1UL);
@@ -82,23 +77,27 @@ struct lc_gram_buffer_t{
 
 struct lc_gram_t {
 
-    uint8_t                            sigma{}; // terminal's alphabet
+    size_t                             n{}; //n: number of symbols in the original text
     size_t                             r{}; //r: number of grammar symbols (nter + ter)
     size_t                             c{}; //c: length of the right-hand of the start symbol
     size_t                             g{}; //g: sum of the rules' right-hand sides
+    size_t                             s{}; //s: number of strings
+    size_t                             samp_rate=4;
     size_t                             max_tsym{}; //highest terminal symbol
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
-    bool                               simplified=false;
+    bool                               is_simplified=false;
+    bool                               has_rl_rules=false;
+    bool                               has_rand_access=false;
 
     std::vector<uint8_t>               terminals;
-    std::vector<rand_sym_t>            seq_breakers;
+    std::vector<hashing>               par_functions;
     std::vector<size_t>                str_boundaries;//
-    std::vector<size_t>                lvl_rules;// number of rules generated in every grammar level
+    std::vector<size_t>                lvl_rules; // number of rules generated in every round of locally-consistent parsing
 
     int_array<size_t>                  rules;
     int_array<size_t>                  rl_ptr;
-    int_array<size_t>                  rule_exp;// number of rules generated in every grammar level
-    std::pair<size_t, size_t>          run_len_nt;
+    int_array<size_t>                  rule_exp;// length of the nt expansions
+    std::pair<size_t, size_t>          run_len_nt; //first rl rules and total number of rl rules
 
     lc_gram_t(){};
 
@@ -106,15 +105,17 @@ struct lc_gram_t {
 
         i_file_stream<size_t> rules_buffer(gram_buff.rules_file, BUFFER_SIZE);
 
-        sigma = gram_buff.sigma;
+        n = gram_buff.n;
         r = gram_buff.r;
         g = gram_buff.g;
         c = gram_buff.c;
+        s = gram_buff.str_boundaries.size()-1;
+
         max_tsym = gram_buff.max_tsym;
         sep_tsym = gram_buff.sep_tsym;
 
         terminals = gram_buff.terminals;
-        seq_breakers = gram_buff.seq_breakers;
+        par_functions = gram_buff.par_functions;
         lvl_rules = gram_buff.lvl_rules;
 
         run_len_nt = gram_buff.rl_rules;
@@ -166,39 +167,52 @@ struct lc_gram_t {
 
     size_t serialize(std::ofstream &ofs){
         size_t written_bytes=0;
-        written_bytes +=serialize_elm(ofs, sigma);
+        written_bytes +=serialize_elm(ofs, n);
         written_bytes +=serialize_elm(ofs, r);
         written_bytes +=serialize_elm(ofs, g);
         written_bytes +=serialize_elm(ofs, c);
+        written_bytes +=serialize_elm(ofs, s);
+        written_bytes +=serialize_elm(ofs, samp_rate);
         written_bytes +=serialize_elm(ofs, max_tsym);
         written_bytes +=serialize_elm(ofs, sep_tsym);
-        written_bytes +=serialize_elm(ofs, simplified);
+        written_bytes +=serialize_elm(ofs, is_simplified);
+        written_bytes +=serialize_elm(ofs, has_rl_rules);
+        written_bytes +=serialize_elm(ofs, has_rand_access);
         written_bytes +=serialize_elm(ofs, run_len_nt.first);
         written_bytes +=serialize_elm(ofs, run_len_nt.second);
-        written_bytes +=serialize_plain_vector(ofs, terminals);
-        written_bytes +=serialize_plain_vector(ofs, seq_breakers);
-        written_bytes +=serialize_plain_vector(ofs, str_boundaries);
         written_bytes +=serialize_plain_vector(ofs, lvl_rules);
+        written_bytes +=serialize_plain_vector(ofs, par_functions);
+
+        written_bytes +=serialize_plain_vector(ofs, terminals);
+        written_bytes +=serialize_plain_vector(ofs, str_boundaries);
         written_bytes +=rules.serialize(ofs);
         written_bytes +=rl_ptr.serialize(ofs);
         written_bytes +=rule_exp.serialize(ofs);
         return written_bytes;
     }
 
-    void load(std::ifstream &ifs){
-        load_elm(ifs, sigma);
+    void load_metadata(std::ifstream &ifs){
+        load_elm(ifs, n);
         load_elm(ifs, r);
         load_elm(ifs, g);
         load_elm(ifs, c);
+        load_elm(ifs, s);
+        load_elm(ifs, samp_rate);
         load_elm(ifs, max_tsym);
         load_elm(ifs, sep_tsym);
-        load_elm(ifs, simplified);
+        load_elm(ifs, is_simplified);
+        load_elm(ifs, has_rl_rules);
+        load_elm(ifs, has_rand_access);
         load_elm(ifs, run_len_nt.first);
         load_elm(ifs, run_len_nt.second);
-        load_plain_vector(ifs, terminals);
-        load_plain_vector(ifs, seq_breakers);
-        load_plain_vector(ifs, str_boundaries);
         load_plain_vector(ifs, lvl_rules);
+        load_plain_vector(ifs, par_functions);
+    }
+
+    void load(std::ifstream &ifs){
+        load_metadata(ifs);
+        load_plain_vector(ifs, terminals);
+        load_plain_vector(ifs, str_boundaries);
         rules.load(ifs);
         rl_ptr.load(ifs);
         rule_exp.load(ifs);
@@ -218,6 +232,14 @@ struct lc_gram_t {
         return run_len_nt.first<=symbol && symbol<(run_len_nt.first+run_len_nt.second);
     }
 
+    [[nodiscard]] inline size_t first_rl_sym() const{
+        return run_len_nt.first;
+    }
+
+    [[nodiscard]] inline size_t last_rl_sym() const{
+        return run_len_nt.first+run_len_nt.second-1;
+    }
+
     [[nodiscard]] inline size_t n_terminals() const {
         return (max_tsym+1);
     }
@@ -232,7 +254,7 @@ struct lc_gram_t {
 
     inline size_t get_byte_ter(size_t sym){
         assert(is_terminal(sym));
-        if(simplified){
+        if(is_simplified){
             return terminals[sym];
         }else{
             return sym;
@@ -260,13 +282,38 @@ struct lc_gram_t {
         return {str_boundaries[str], str_boundaries[str+1]-1};
     }
 
-    void print_stats(){
+    void stats() const {
+        size_t n_ter = n_terminals();
+        size_t n_nter = n_nonterminals();
+
+        auto pt_mbs = float((r-n_ter)*sym_width(g))/8000000;//space of the pointers for the nonterminals
+        auto g_mbs = float(g*sym_width(r))/8000000; //space of the expansions
+        auto exp_mbs = 0;//float((g-n_ter)*sym_width(long_str))/8000000; //space of the grammar
+        auto pt_str_mbs = float((s+1)*sizeof(size_t))/1000000;  //space of the pointers to the strings
+
+        float comp_ratio = (float(n)/1000000)/(pt_mbs+g_mbs+pt_str_mbs+exp_mbs);
         std::cout<<"Grammar stats: "<<std::endl;
-        std::cout<<"  Number of strings: "<<str_boundaries.size()-1<<std::endl;
-        std::cout<<"  Number of terminals: "<<terminals.size()<<std::endl;
-        std::cout<<"  Number of non-terminals: "<<n_nonterminals()<<" ("<<float(rl_ptr.size()*rl_ptr.width())/8000000<<" MBs in pointers)"<<std::endl;
-        std::cout<<"  Grammar size: "<<rules.size()<<" ("<<float(rules.size()*rules.width())/8000000<<" MBs)"<<std::endl;
-        std::cout<<"  Grammar breakdown: "<<std::endl;
+        std::cout<<"  Number of compressed symbols: "<<n<<std::endl;
+        std::cout<<"  Number of compressed strings: "<<s<<" ("<<pt_str_mbs<<" MBs in pointers)"<<std::endl;
+        std::cout<<"  Separator symbol:             "<<(int)sep_tsym<<std::endl;
+        std::cout<<"  Number of terminals:          "<<n_ter<<std::endl;
+        std::cout<<"  Number of non-terminals:      "<<n_nter<<" ("<<pt_mbs<<" MBs in pointers)"<<std::endl;
+        std::cout<<"  Grammar size:                 "<<g<<" ("<<g_mbs<<" MBs)"<<std::endl;
+        std::cout<<"  Approx. compression ratio:    "<<comp_ratio<<std::endl;
+        std::cout<<"  Simplified:                   "<<(is_simplified ? "yes" : "no")<<std::endl;
+        std::cout<<"  Run-len rules:                "<<(has_rl_rules ? "yes" : "no")<<std::endl;
+        std::cout<<"  Random access support:        "<<(has_rand_access? "yes" : "no")<<std::endl;
+        /*if(has_rand_access){
+            std::cout<<"  Random access space:          "<<exp_mbs<<" MBs"<<std::endl;
+        }*/
+    }
+
+    void breakdown(){
+        assert(g==rules.size());
+        assert(r-(max_tsym+1)==(rl_ptr.size()-1));
+        assert(s=str_boundaries.size()-1);
+        stats();
+        std::cout<<"  Grammar breakdown:            "<<std::endl;
         size_t tot_sym, n_rules;
         for(size_t i=0;i<lvl_rules.size()-1; i++){
             n_rules = lvl_rules[i+1]-lvl_rules[i];//number of rules in the level
@@ -277,11 +324,14 @@ struct lc_gram_t {
                 std::cout << "    Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
             }
         }
-
-        if(run_len_nt.second>0){
+        if(has_rl_rules){
             std::cout << "    Number of run-length rules: " << run_len_nt.second <<std::endl;
         }
         std::cout << "    Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
+    }
+
+    void set_samp_rate(size_t samp_rate){
+
     }
 
     void access(size_t str_id, size_t start, size_t end, std::string& output){
