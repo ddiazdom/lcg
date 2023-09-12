@@ -266,89 +266,11 @@ size_t build_lc_grammar(std::string &i_file, std::string& pf_file, std::string &
         insert_comp_string<uint64_t>(gram_buff, tmp_i_file);
     }
 
-    //std::cout<<"Compacting and storing the grammar "<<std::endl;
     lc_gram_t gram(gram_buff);
     store_to_file(gram_o_file, gram);
 
-    //std::cout<<"Size of the grammar encoding: "<<float(written_bytes)/1000000<<" MBs"<<std::endl;
     return iter - 2;
 }
-
-/*
-template<class parse_strategy_t>
-size_t par_round(parse_strategy_t &p_strategy, parsing_info &p_info, lc_gram_buffer_t& gram, tmp_workspace &ws) {
-
-#ifdef __linux__
-    malloc_trim(0);
-#endif
-    std::cout << "    Computing the dictionary of phrases" << std::flush;
-    auto start = std::chrono::steady_clock::now();
-    auto res = p_strategy.get_phrases();
-    auto end = std::chrono::steady_clock::now();
-    report_time(start, end, 22);
-
-    store_pl_vector(ws.get_file("str_ptr"), p_info.str_ptrs);
-    std::vector<long>().swap(p_info.str_ptrs);
-
-#ifdef __linux__
-    malloc_trim(0);
-#endif
-    phrase_map_t &map = p_strategy.map;
-    size_t psize;//<- for the iter stats
-    assert(map.size() > 0);
-
-    size_t dict_sym = res.first;
-    {
-        std::cout << "    Assigning metasymbols to the phrases" << std::flush;
-        start = std::chrono::steady_clock::now();
-        size_t j = gram.r;
-        for (auto const &ptr: map) {
-            size_t val = j++;
-            map.insert_value_at(ptr, val);
-        }
-        create_lc_rules(gram, map, gram.r);
-        end = std::chrono::steady_clock::now();
-        report_time(start, end, 21);
-    }
-
-    std::cout<< "    Creating the parse of the text" << std::flush;
-    start = std::chrono::steady_clock::now();
-    load_pl_vector(ws.get_file("str_ptr"), p_info.str_ptrs);
-
-    p_info.max_symbol = gram.r-1;
-
-    size_t bps = sym_width(p_info.max_symbol);
-    if(bps<=8){
-        psize = p_strategy.template parse_text<uint8_t>();
-    }else if(bps<=16){
-        psize = p_strategy.template parse_text<uint16_t>();
-    } else if(bps<=32){
-        psize = p_strategy.template parse_text<uint32_t>();
-    }else{
-        psize = p_strategy.template parse_text<uint64_t>();
-    }
-    assert(psize>=map.size());//the parse can't be smaller than the number of phrases
-
-    end = std::chrono::steady_clock::now();
-    report_time(start, end, 27);
-
-    p_info.lms_phrases = map.size();
-    p_info.p_round++;
-
-    std::cout << "    Stats:" << std::endl;
-    std::cout << "      Parsing phrases:                  " << p_info.lms_phrases << std::endl;
-    std::cout << "      Number of symbols in the phrases: " << dict_sym << std::endl;
-    std::cout << "      Parse size:                       " << psize << std::endl;
-
-    map.destroy_data();
-    map.destroy_table();
-
-#ifdef __linux__
-    malloc_trim(0);
-#endif
-    return (p_info.str_ptrs.size()-1) == psize ? 0 : p_info.lms_phrases;
-}
-*/
 template unsigned long build_lc_grammar<uint8_t>(std::string &i_file, std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 template unsigned long build_lc_grammar<uint16_t>(std::string &i_file,std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);
 template unsigned long build_lc_grammar<uint32_t>(std::string &i_file, std::string &pf_file, std::string& gram_o_file, size_t n_tries, size_t n_threads, tmp_workspace &ws);

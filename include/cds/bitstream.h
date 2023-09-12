@@ -54,8 +54,8 @@ struct bitstream{
         }else{
             size_t cell_j = j >> word_shift;
             if(cell_i==cell_j){
-                stream[cell_i] &= ~(masks[(j - i + 1UL)] << i_pos);
-                stream[cell_i] |= value << i_pos;
+                stream[cell_i] &= ~(masks[j-i+1UL] << i_pos);
+                stream[cell_i] |= (value & masks[j-i+1UL]) << i_pos;
             }else{
                 size_t right = word_bits - i_pos;
                 size_t left = 1+(j & (word_bits - 1UL));

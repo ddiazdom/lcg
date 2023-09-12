@@ -4,9 +4,7 @@
 
 #ifndef LCG_GRAMMAR_H
 #define LCG_GRAMMAR_H
-#include "cds/cdt_common.hpp"
-#include "cds/int_array.h"
-#include "cds/file_streams.hpp"
+#include "common.h"
 #include "hashing.h"
 
 struct lc_gram_buffer_t{
@@ -25,7 +23,7 @@ struct lc_gram_buffer_t{
     std::vector<hashing>               par_functions;
 
     o_file_stream<size_t>              rules_buffer;
-    std::vector<off_t>&                str_boundaries;//
+    std::vector<long>&                 str_boundaries;//
     std::vector<size_t>                lvl_rules; // number of rules generated in every parsing round
     std::vector<size_t>                lvl_size; // number of rules generated in every parsing round
 
@@ -33,7 +31,7 @@ struct lc_gram_buffer_t{
 
     lc_gram_buffer_t(std::string& rules_f,
                      std::vector<uint8_t>& alphabet,
-                     std::vector<off_t>& str_bd_,
+                     std::vector<long>& str_bd_,
                      size_t long_str_,
                      uint8_t sep_symbol_): sep_tsym(sep_symbol_),
                                            rules_file(rules_f),
@@ -54,44 +52,6 @@ struct lc_gram_buffer_t{
 
     ~lc_gram_buffer_t(){
         rules_buffer.close();
-    }
-
-    template<class vector_type>
-    void create_lc_rules(std::vector<rand_order>& str_orders, vector_type& parsing_set){
-        size_t sym, tot_syms=0, len;
-        bool first;
-        for(auto & str : str_orders){
-            first = true;
-            len = str.str_len;
-            for(size_t j=0;j<len;j++){
-                sym = r+parsing_set[str.str_ptr+j];
-                assert(sym>0);
-                sym = (sym<<1UL) | first;
-                rules_buffer.push_back(sym);
-                first = false;
-            }
-            tot_syms+=len;
-        }
-        r += str_orders.size();
-        g += tot_syms;
-        lvl_rules.push_back(str_orders.size());
-        lvl_size.push_back(tot_syms);
-    }
-
-    template<class sym_type>
-    void insert_comp_string(std::string& input_file){
-
-        i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
-        for(size_t i=0;i<ifs.size();i++){
-            size_t sym = r+ifs.read(i);
-            sym = sym<<1UL | (i==0);
-            rules_buffer.push_back(sym);
-        }
-        r++;
-        g+=ifs.size();
-        c=ifs.size();
-        ifs.close();
-        assert(g==rules_buffer.size());
     }
 
     //void save_to_file(std::string& output_file);
@@ -189,7 +149,7 @@ struct lc_gram_t {
         size_t offset = g-c;
         str_boundaries.resize(gram_buff.str_boundaries.size());
         size_t str=0;
-        for(off_t & str_boundary : gram_buff.str_boundaries){
+        for(long & str_boundary : gram_buff.str_boundaries){
             str_boundaries[str++] = str_boundary + offset;
         }
         assert(str_boundaries[0]==offset);

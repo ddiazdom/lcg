@@ -8,36 +8,17 @@
 #include <iostream>
 #include <fstream>
 
+#define BUFFER_SIZE 8388608
+
 uint8_t sym_width(unsigned long val);
 
 size_t next_power_of_two(unsigned long val);
 
+size_t round_to_power_of_two(unsigned long val);
+
 size_t prev_power_of_two(unsigned long val);
 
 bool is_power_of_two(unsigned long val);
-
-template<class data_type>
-void load_from_file(std::string const& file, data_type& dt){
-    std::ifstream ifs(file, std::ios::binary);
-    dt.load(ifs);
-    ifs.close();
-}
-
-template<class data_type>
-size_t store_to_file(std::string const& file, data_type& dt){
-    std::ofstream ofs(file, std::ios::binary);
-    size_t written_bytes = dt.serialize(ofs);
-    ofs.close();
-    return written_bytes;
-}
-
-template<class vector_t>
-size_t serialize_plain_vector(std::ostream& ofs, vector_t& vector){
-    size_t n = vector.size();
-    ofs.write((char *)&n, sizeof(n));
-    ofs.write((char *)vector.data(), (std::streamsize)(sizeof(typename vector_t::value_type)*n));
-    return sizeof(n)+ sizeof(typename vector_t::value_type)*n;
-}
 
 template<class vector_t>
 size_t basic_store_vector_to_file(std::string const& file, vector_t& vector){
@@ -58,6 +39,28 @@ size_t basic_load_vector_from_file(std::string const& file, vector_t& vector){
     ifs.read((char *)vector.data(), n_bytes);
     ifs.close();
     return n_bytes;
+}
+
+template<class data_type>
+void load_from_file(std::string const& file, data_type& dt){
+    std::ifstream ifs(file, std::ios::binary);
+    dt.load(ifs);
+    ifs.close();
+}
+
+template<class data_type>
+void store_to_file(std::string const& file, data_type& dt){
+    std::ofstream ofs(file, std::ios::binary);
+    dt.serialize(ofs);
+    ofs.close();
+}
+
+template<class vector_t>
+size_t serialize_plain_vector(std::ostream& ofs, vector_t& vector){
+    size_t n = vector.size();
+    ofs.write((char *)&n, sizeof(n));
+    ofs.write((char *)vector.data(), (std::streamsize)(sizeof(typename vector_t::value_type)*n));
+    return sizeof(n)+ sizeof(typename vector_t::value_type)*n;
 }
 
 template<class size_type>

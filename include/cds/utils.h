@@ -2,8 +2,9 @@
 // Created by Diaz, Diego on 27.10.2021.
 //
 
-#ifndef LHTIGS_UTILS_H
-#define LHTIGS_UTILS_H
+#ifndef PARALLEL_PARSER_H
+#define PARALLEL_PARSER_H
+
 #include <chrono>
 #include <iostream>
 #include <vector>
@@ -17,38 +18,28 @@
 #endif
 
 struct str_collection {
-    std::vector<long> str_ptrs;
     std::vector<uint8_t> alphabet;
-    uint8_t sep_symbol;
+    std::vector<size_t> sym_freqs;
+    std::vector<long> str_ptrs;
     size_t n_strings=0;
     size_t longest_string=0;
-    size_t max_sym=0;
-    size_t min_sym=std::numeric_limits<size_t>::max();
-    size_t n_syms=0;
-    size_t max_sym_freq=0;
+    uint8_t max_sym=0;
+    uint8_t min_sym=255;
+    size_t n_char=0;
 };
 
-//check if the file is gzipped
-bool check_gzip(const std::string& file);
+std::ifstream::pos_type file_size(std::string & filename);
+
 
 //check if file exists
 bool file_exists(const std::filesystem::path& p, std::filesystem::file_status const& s = std::filesystem::file_status{});
 
-//create temporal folder
-std::string create_temp_folder(std::string& base_folder, std::string const & prefix);
-
-//a helper function to modify the output
-bool ends_with(std::string const & value, std::string const & ending);
-
-//remove extension
-std::string remove_ext(std::string& input_string, std::vector<std::string>& exts);
-
 //produce a random string
 std::string random_string(size_t length);
 
-//check if it is in FASTx
-bool is_fastx(const std::string& file);
-
+#ifdef __linux__
+void empty_page_cache(const char *filename);
+#endif
 
 struct tmp_workspace{
 
@@ -104,7 +95,6 @@ struct tmp_workspace{
     }
 };
 
-template<class sym_type>
 str_collection collection_stats(std::string& input_file);
 
 template<class time_t>
@@ -128,4 +118,5 @@ void report_time(time_t start, time_t end, size_t padding){
 }
 
 void report_mem_peak();
-#endif //LHTIGS_UTILS_H
+
+#endif //PARALLEL_PARSER_H

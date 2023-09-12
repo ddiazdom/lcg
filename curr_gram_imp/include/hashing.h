@@ -7,13 +7,6 @@
 #include <random>
 #include <cinttypes>
 
-struct rand_order{
-    size_t str_ptr;
-    size_t str_len;
-    size_t hash;
-    size_t orig_order;
-};
-
 constexpr unsigned __int128 ultra_long_mersenne_number() {
     __uint128_t tmp = 1;
     tmp<<=89;
