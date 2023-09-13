@@ -21,7 +21,7 @@ constexpr unsigned __int128 ultra_long_mersenne_number() {
     return tmp;
 }
 
-struct hashing{
+struct hashing {
 
     uint32_t str_chunk[64]={0};
     uint64_t a1[65]={0};
@@ -102,6 +102,13 @@ struct hashing{
         return (a1[0]*x) >> (64-l);
     }
 
+    [[nodiscard]] inline bool local_minimum(uint64_t x, uint64_t y, uint64_t z, uint64_t shift=64) const {
+        uint64_t px = (a1[0]*x) >> (64-shift);
+        uint64_t py = (a1[0]*y) >> (64-shift);
+        uint64_t pz = (a1[0]*z) >> (64-shift);
+        return px > py && py< pz;
+    }
+
     //the resulting hash will be l-bits long
     uint64_t string_hash(const char * string, size_t len, size_t l){
 
@@ -111,8 +118,7 @@ struct hashing{
             }else{
                 return short_string_long_hash(string, len, l);
             }
-        }else{//long string
-
+        } else{//long string
             size_t n_chunks = (len+255) >> 8;//fast version of ceil(len, 256);
             uint64_t xi;
             unsigned __int128 hash = 0;

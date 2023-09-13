@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <cds/int_array.h>
 #include <vector>
+#include "hashing.h"
 
 struct parsing_opts{
     off_t chunk_size{};
@@ -15,6 +16,7 @@ struct parsing_opts{
     size_t n_threads{};
     off_t page_cache_limit = 262144000;
     size_t max_mt_sym_in_buff{};
+    std::vector<hashing> p_functions;
 
     //vbyte compression paramters
     float vbyte_threshold{};//if the vbyte compression achieves this threshold, then we use vbyte encoding for the parse
@@ -28,12 +30,21 @@ struct parsing_opts{
     size_t vbyte_size;
     size_t p_round=0;
     uint8_t p_alph_bytes;// number of bytes required by the parse's alphabet
-    std::vector<uint32_t> sym_perm;
-    std::vector<uint32_t> new_sym_perm;
+    std::vector<uint32_t> vbyte_sym_perm;
+    std::vector<uint32_t> new_vbyte_sym_perm;
     std::vector<off_t> *str_ptr= nullptr;
     float vbyte_comp_ratio;
     bool parse_compressible=false;
+    hashing p_func;
     //
+
+    void next_p_function(){
+        if(p_round<p_functions.size()){
+            p_func = p_functions[p_round];
+        }else{
+            p_func = hashing();
+        }
+    }
 };
 
 #include "parsers/local_minima_parser.hpp"

@@ -43,6 +43,8 @@ struct lms_parsing {
         auto const *l_boundary = ptr-1;
         auto const *r_boundary = ptr+(end_ps-ps);
 
+        bool local_minimum;
+
         //leftmost byte of the rightmost valid symbol
         off_t lb_rm_s = end_ps - decoder_t::backward(&text_chunk.buffer[end_ps], l_boundary, 1);
 
@@ -75,8 +77,13 @@ struct lms_parsing {
                 ps += text_chunk.mov_to_next_diff_sym(ptr, r_boundary, next_sym);
             }
 
-            if(prev_sym>curr_sym && curr_sym<next_sym){
+            if constexpr (text_chunk_t::first_round){
+                local_minimum = text_chunk.perm_func->local_minimum(prev_sym, curr_sym, next_sym);
+            }else{
+                local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
+            }
 
+            if(local_minimum){
                 len = rb - lb;
                 if constexpr (parse){
                     typename map_type::value_type val=0;
@@ -149,6 +156,8 @@ struct lms_parsing {
             ps -= text_chunk.mov_to_prev_diff_sym(ptr, l_boundary, curr_sym);
         }
 
+        bool local_minimum;
+
         while(ps>lb && ps>0) {
 
             if constexpr (std::is_same<decoder_t, plain_decoder<sym_type>>::value){
@@ -157,9 +166,16 @@ struct lms_parsing {
                 ps -= text_chunk.mov_to_prev_diff_sym(ptr, l_boundary, left_sym);
             }
 
-            if(left_sym>curr_sym && curr_sym<right_sym){
+            if constexpr (text_chunk_t::first_round){
+                local_minimum = text_chunk.perm_func->local_minimum(left_sym, curr_sym, right_sym);
+            }else{
+                local_minimum = left_sym>curr_sym && curr_sym<right_sym;
+            }
+
+            if(local_minimum){
                 return ps+decoder_t::forward(ptr, 1)-1;
             }
+
             right_sym = curr_sym;
             curr_sym = left_sym;
         }
@@ -237,7 +253,7 @@ struct lms_parsing {
                 p_opts.n_sym++;
 
                 if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-                    sym = p_opts.sym_perm[sym];
+                    sym = p_opts.vbyte_sym_perm[sym];
                 }
 
                 if(sym>p_opts.max_sym){
@@ -275,7 +291,7 @@ struct lms_parsing {
                 p_opts.n_sym++;
 
                 if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-                    sym = p_opts.sym_perm[sym];
+                    sym = p_opts.vbyte_sym_perm[sym];
                 }
 
                 if(sym>p_opts.max_sym){
@@ -316,7 +332,9 @@ struct lms_parsing {
     }
 
     template<class map_t, class decoder_t>
-    static void assign_met(map_t &map, parsing_opts& p_opts, lc_gram_buffer_t& gram_buffer, tmp_workspace& ws){
+    static void assign_met(map_t &map, parsing_opts& p_opts,
+                           lc_gram_buffer_t& gram_buffer,
+                           tmp_workspace& ws){
 
         using sym_type = typename decoder_t::sym_type;
 
@@ -337,33 +355,89 @@ struct lms_parsing {
         size_t len, bytes, k=0;
         int_array<size_t> parsing_set(p_opts.n_sym, sym_width(p_opts.max_sym));
         std::vector<rand_order> r_order(map.size());
+        std::vector<size_t> hash_values_vector;
 
+        if(p_opts.p_round==0){
+            hash_values_vector.resize(p_opts.max_sym+1);
+            for(size_t i=0;i<=p_opts.max_sym;i++){
+                hash_values_vector[i] = p_opts.p_func.symbol_hash(i);
+            }
+        }else{
+            std::string hash_values_file = ws.get_file("hash_values_round_"+std::to_string(p_opts.p_round-1));
+            load_pl_vector(hash_values_file, hash_values_vector);
+            assert(!hash_values_vector.empty());
+        }
+
+        std::vector<size_t> tmp_vector;
         for(auto const& pair : map){
             len = pair.first.second;
             auto * ptr = (uint8_t*)pair.first.first;
 
             r_order[k].str_ptr = parsing_set.size();
             r_order[k].orig_order = k;
-            r_order[k].str_len = 0;
 
             while(len>0){
+
                 bytes = decoder_t::read_forward(ptr, sym);
                 ptr+=bytes;
                 len-=bytes;
-
                 if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-                    sym = p_opts.sym_perm[sym];
+                    sym = p_opts.vbyte_sym_perm[sym];
                 }
+                tmp_vector.push_back(hash_values_vector[sym]);
                 parsing_set.push_back(sym);
-                r_order[k].str_len++;
             }
+
+            r_order[k].hash = p_opts.p_func.string_hash((char *)tmp_vector.data(), tmp_vector.size()*sizeof(size_t), 64);
+            r_order[k].str_len = tmp_vector.size();
+            tmp_vector.clear();
             k++;
         }
         assert(p_opts.n_sym==parsing_set.size());
         map.store_buffers(ws.get_file("tmp_buffers"));
         map.destroy_buffers();
 
+        //sort the phrases according their hash values
+        std::sort(r_order.begin(), r_order.end(), [&](auto a, auto b) -> bool{
+            return a.hash<b.hash;
+        });
+
+        //resolve colliding phrases according the lexicographical rank of their random symbols
+        size_t prev_hash = r_order[0].hash;
+        off_t prev_pos=0, tot_phrases=long(r_order.size());
+        for(off_t i=0; i<tot_phrases; i++){
+            if(prev_hash!=r_order[i].hash){
+                if((i-prev_pos)>1){
+                    std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
+
+                    //sort the range [prev_pos..i-1]
+                    std::sort(r_order.begin()+prev_pos, r_order.begin()+i, [&](auto a, auto b) -> bool{
+                        size_t len = std::min(a.str_len, b.str_len);
+                        size_t j=0;
+                        while(j<len && parsing_set[a.str_ptr+j]==parsing_set[b.str_ptr+j]) j++;
+                        assert(j<len);
+
+                        if(p_opts.p_round==0){
+                            return p_opts.p_func.symbol_hash(parsing_set[a.str_ptr+j])<p_opts.p_func.symbol_hash(parsing_set[b.str_ptr+j]);
+                        }else{
+                            return parsing_set[a.str_ptr+j]<parsing_set[b.str_ptr+j];
+                        }
+                    });
+                }
+                prev_pos = i;
+                prev_hash = r_order[i].hash;
+            }
+        }
+
+        hash_values_vector.resize(map.size());
+        for(size_t i=0;i<map.size();i++){
+            hash_values_vector[i] = r_order[i].hash;
+        }
+        std::string hash_values_file = ws.get_file("hash_values_round_"+std::to_string(p_opts.p_round));
+        store_pl_vector(hash_values_file, hash_values_vector);
+
         gram_buffer.create_lc_rules(r_order, parsing_set);
+        gram_buffer.par_functions.push_back(p_opts.p_func);
 
         int_array<size_t> ranks(map.size(), 0, sym_width(map.size()));
         size_t rank=0;
@@ -379,7 +453,7 @@ struct lms_parsing {
             for(auto pair : map){
                 new_sym_perm[pair.second] = ranks[i++];
             }
-            p_opts.new_sym_perm.swap(new_sym_perm);
+            p_opts.new_vbyte_sym_perm.swap(new_sym_perm);
         }else{
             for(auto pair : map){
                 pair.second = ranks[i++];

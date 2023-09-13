@@ -14,9 +14,10 @@
 #endif
 
 template<class parser_t, class map_type, class text_chunk_t>
-void par_round(std::string& input_file, std::string& output_file, parsing_opts& p_opts, lc_gram_buffer_t& gram_buffer,
-               tmp_workspace& ws){
+void par_round(std::string& input_file, std::string& output_file,
+               parsing_opts& p_opts, lc_gram_buffer_t& gram_buffer, tmp_workspace& ws){
 
+    p_opts.next_p_function();
     map_type map(4, 0.6, p_opts.n_threads);
     std::cout <<"    Creating the dictionary" << std::flush;
     auto start = std::chrono::steady_clock::now();
@@ -65,12 +66,12 @@ void par_round(std::string& input_file, std::string& output_file, parsing_opts& 
     p_opts.str_ptr->back() = file_size(output_file);
 
     if(p_opts.parse_compressible){
-        p_opts.sym_perm.swap(p_opts.new_sym_perm);
-        std::vector<uint32_t>().swap(p_opts.new_sym_perm);
+        p_opts.vbyte_sym_perm.swap(p_opts.new_vbyte_sym_perm);
+        std::vector<uint32_t>().swap(p_opts.new_vbyte_sym_perm);
         assert(off_t(p_opts.vbyte_size)==p_opts.str_ptr->back());
     }else{
-        std::vector<uint32_t>().swap(p_opts.sym_perm);
-        std::vector<uint32_t>().swap(p_opts.new_sym_perm);
+        std::vector<uint32_t>().swap(p_opts.vbyte_sym_perm);
+        std::vector<uint32_t>().swap(p_opts.new_vbyte_sym_perm);
     }
     end = std::chrono::steady_clock::now();
     report_time(start, end, 8);
@@ -111,6 +112,10 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     p_opts.n_threads = n_threads;
     p_opts.str_ptr = &txt_stats.str_ptrs;
     p_opts.sep_sym = txt_stats.sep_sym;
+    if(!pf_file.empty()){
+        load_pl_vector(pf_file, p_opts.p_functions);
+        std::cout<<"Using the parsing functions in \""<<pf_file<<"\" for the first "<<p_opts.p_functions.size()<<" parsing rounds "<<std::endl;
+    }
 
     p_opts.vbyte_threshold = 0.4;
     p_opts.vbyte_alphabet_threshold = 16777216;
@@ -133,9 +138,13 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     report_time(start, end, 2);
 
     size_t n_str = p_opts.str_ptr->size()-1;
+    hashing p_function;
+
     while(p_opts.tot_phrases!=n_str) {
+
         std::cout << "  Parsing round " << ++iter << std::endl;
         start = std::chrono::steady_clock::now();
+
         if (p_opts.p_alph_bytes == 1) {
             if(p_opts.parse_compressible){
                 par_round<lms_parsing, map_t, text_chunk<vbyte_decoder<uint8_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);

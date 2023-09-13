@@ -629,8 +629,6 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
 
     lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads);
 
-    //build_lc_grammar<sym_type>(i_file, pf_file, o_file, n_tries, n_threads, tmp_ws);
-
     lc_gram_t gram;
     load_from_file(o_file, gram);
 

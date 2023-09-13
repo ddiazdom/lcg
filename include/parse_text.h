@@ -65,8 +65,9 @@ struct parse_text {
                 tmp_ck_size = std::min(opts.chunk_size, rem_bytes);
                 text_chunks[chunk_id].bytes = tmp_ck_size;
                 text_chunks[chunk_id].buffer = (uint8_t *)malloc(tmp_ck_size);
-                text_chunks[chunk_id].sym_perm = &opts.sym_perm;
+                text_chunks[chunk_id].vbyte_sym_perm = &opts.vbyte_sym_perm;
                 text_chunks[chunk_id].sep_sym = opts.sep_sym;
+                text_chunks[chunk_id].perm_func = &opts.p_func;
                 memset(text_chunks[chunk_id].buffer, 0,  tmp_ck_size);
 
                 text_chunks[chunk_id].id = chunk_id;

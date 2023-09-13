@@ -40,8 +40,9 @@ struct create_dict_full_scan {
                 tmp_ck_size = std::min(opts.chunk_size, rem_bytes);
                 text_chunks[chunk_id].bytes = tmp_ck_size;
                 text_chunks[chunk_id].buffer = (uint8_t *)malloc(tmp_ck_size);
-                text_chunks[chunk_id].sym_perm = &opts.sym_perm;
+                text_chunks[chunk_id].vbyte_sym_perm = &opts.vbyte_sym_perm;
                 text_chunks[chunk_id].sep_sym = opts.sep_sym;
+                text_chunks[chunk_id].perm_func = &opts.p_func;
 
                 text_chunks[chunk_id].id = chunk_id;
                 text_chunks[chunk_id].template read_chunk_from_file<parser_t>(fd, rem_bytes, acc_bytes, chunk_str_ptr);

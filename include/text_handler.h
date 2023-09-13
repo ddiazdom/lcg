@@ -31,6 +31,7 @@ struct text_chunk {
 
     typedef decoder_type                 decoder_t;
     typedef typename decoder_t::sym_type sym_type;
+    static constexpr bool first_round = orig_text;
 
     size_t id{}; //chunk id
     off_t n_bytes_before{};//number of bytes in the file before this chunk
@@ -46,8 +47,8 @@ struct text_chunk {
     off_t *str_ptr = nullptr; //pointer to the leftmost string overlapping the buffer
     off_t n_str{}; //number of strings overlapping the buffer
 
-    std::vector<uint32_t>* sym_perm=nullptr;
-
+    hashing *perm_func = nullptr;
+    std::vector<uint32_t>* vbyte_sym_perm=nullptr;
     std::atomic_long scans{0};
 
     text_chunk() = default;
@@ -118,7 +119,7 @@ struct text_chunk {
     inline off_t read_forward(const uint8_t *ptr, sym_type &sym) const {
         off_t b = decoder_t::read_forward(ptr, sym);
         if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-            sym = (*sym_perm)[sym];
+            sym = (*vbyte_sym_perm)[sym];
         }
         return b;
     }
@@ -126,7 +127,7 @@ struct text_chunk {
     inline off_t read_backwards(uint8_t *&ptr, const uint8_t *& l_boundary, sym_type& sym) const {
         off_t b = decoder_t::read_backwards(ptr, l_boundary, sym);
         if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-            sym = (*sym_perm)[sym];
+            sym = (*vbyte_sym_perm)[sym];
         }
         return b;
     }
@@ -134,7 +135,7 @@ struct text_chunk {
     inline off_t mov_to_prev_diff_sym(uint8_t *&ptr, const uint8_t *l_boundary, sym_type &sym) const {
         off_t b = decoder_t::mov_to_prev_diff_sym(*&ptr, l_boundary, sym);
         if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-            sym = (*sym_perm)[sym];
+            sym = (*vbyte_sym_perm)[sym];
         }
         return b;
     }
@@ -142,7 +143,7 @@ struct text_chunk {
     inline off_t mov_to_next_diff_sym(uint8_t *& ptr, const uint8_t* r_boundary, sym_type& sym) {
         off_t b = decoder_t::mov_to_next_diff_sym(ptr, r_boundary, sym);
         if constexpr (std::is_same<decoder_t, vbyte_decoder<sym_type>>::value){
-            sym = (*sym_perm)[sym];
+            sym = (*vbyte_sym_perm)[sym];
         }
         return b;
     }
