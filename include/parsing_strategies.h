@@ -21,6 +21,7 @@ struct parsing_opts{
     size_t vbyte_alphabet_threshold{};// if the alphabet size is below this value, then we apply vbyte compression
 
     //this is the state of the parse
+    size_t sep_sym{};
     size_t n_sym;
     size_t max_sym;
     size_t tot_phrases; // number of phrases in T^{i} (i.e., the number of symbols in T^{i+1}

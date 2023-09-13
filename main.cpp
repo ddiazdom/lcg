@@ -1,5 +1,5 @@
 #include <iostream>
-#include "process_text.h"
+#include "grammar_algorithms.h"
 
 /*#include "old/cdt/include/file_streams.hpp"
 template<class sym_type>
@@ -28,28 +28,24 @@ int main (int argc, char** argv){
     size_t n_bytes=strtoull(argv[2], &pEnd, 10);
     size_t n_threads=strtoull(argv[3], &pEnd, 10);
 
-    //expand<uint16_t>(input_file);
-    //expand<uint32_t>(input_file);
-    //expand<uint64_t>(input_file);
-    //exit(0);
-
     std::string tmp_dir = "./";
-    std::string output_string = "resulting_parsing";
+    std::string output_gram = "output_gram.lcg";
     tmp_workspace tmp_ws(tmp_dir, true, "parse");
+    std::string pf_file;
 
     auto start = std::chrono::steady_clock::now();
     switch (n_bytes) {
         case 1:
-            process_text<uint8_t>(input_file, output_string, tmp_ws, n_threads);
+            gram_algo<uint8_t>(input_file, pf_file, output_gram, tmp_ws, n_threads);
             break;
         case 2:
-            process_text<uint16_t>(input_file, output_string, tmp_ws, n_threads);
+            gram_algo<uint16_t>(input_file, pf_file, output_gram, tmp_ws, n_threads);
             break;
         case 4:
-            process_text<uint32_t>(input_file, output_string, tmp_ws, n_threads);
+            gram_algo<uint32_t>(input_file, pf_file, output_gram, tmp_ws, n_threads);
             break;
         case 8:
-            process_text<uint64_t>(input_file, output_string, tmp_ws, n_threads);
+            gram_algo<uint64_t>(input_file, pf_file, output_gram, tmp_ws, n_threads);
             break;
         default:
             exit(1);

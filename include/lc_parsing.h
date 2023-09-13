@@ -2,8 +2,8 @@
 // Created by Diaz, Diego on 19.7.2023.
 //
 
-#ifndef TEXT_PARSER_PROCESS_TEXT_H
-#define TEXT_PARSER_PROCESS_TEXT_H
+#ifndef TEXT_PARSER_LC_PARSING_H
+#define TEXT_PARSER_LC_PARSING_H
 #include "parsing_strategies.h"
 #include "cds/utils.h"
 #include "cds/ts_string_map.h"
@@ -13,21 +13,21 @@
 #include <malloc.h>
 #endif
 
-template<class parser_t, class map_type>
+template<class parser_t, class map_type, class text_chunk_t>
 void par_round(std::string& input_file, std::string& output_file, parsing_opts& p_opts, lc_gram_buffer_t& gram_buffer,
                tmp_workspace& ws){
 
     map_type map(4, 0.6, p_opts.n_threads);
     std::cout <<"    Creating the dictionary" << std::flush;
     auto start = std::chrono::steady_clock::now();
-    p_opts.max_mt_sym_in_buff = create_dict_full_scan<parser_t, map_type>()(input_file, map, p_opts);
+    p_opts.max_mt_sym_in_buff = create_dict_full_scan<parser_t, map_type, text_chunk_t>()(input_file, map, p_opts);
     map.shrink_to_fit();
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 1);
 
     std::cout <<"    Assigning metasymbols" << std::flush;
     start = std::chrono::steady_clock::now();
-    parser_t::assign_met(map, p_opts, gram_buffer, ws);
+    parser_t::template assign_met<map_type, typename text_chunk_t::decoder_t>(map, p_opts, gram_buffer, ws);
     end = std::chrono::steady_clock::now();
     report_time(start, end, 3);
 
@@ -36,27 +36,27 @@ void par_round(std::string& input_file, std::string& output_file, parsing_opts& 
     start = std::chrono::steady_clock::now();
     if(p_opts.p_alph_bytes==1){
         if(p_opts.parse_compressible){
-            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint8_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint8_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }else{
-            p_size = parse_text<parser_t, map_type, plain_decoder<uint8_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, plain_decoder<uint8_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }
     }else if(p_opts.p_alph_bytes==2){
         if(p_opts.parse_compressible){
-            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint16_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint16_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }else{
-            p_size = parse_text<parser_t, map_type, plain_decoder<uint16_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, plain_decoder<uint16_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }
     } else if(p_opts.p_alph_bytes<=4){
         if(p_opts.parse_compressible){
-            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint32_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint32_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }else{
-            p_size = parse_text<parser_t, map_type, plain_decoder<uint32_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, plain_decoder<uint32_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }
     } else if(p_opts.p_alph_bytes<=8){
         if(p_opts.parse_compressible){
-            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint64_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, vbyte_decoder<uint64_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }else{
-            p_size = parse_text<parser_t, map_type, plain_decoder<uint64_t>>()(input_file, output_file, map, p_opts);
+            p_size = parse_text<parser_t, map_type, plain_decoder<uint64_t>, text_chunk_t>()(input_file, output_file, map, p_opts);
         }
     } else{
         std::cerr<<"Incorrect number of bytes for the parse : "<<p_opts.p_alph_bytes<<std::endl;
@@ -89,14 +89,13 @@ void par_round(std::string& input_file, std::string& output_file, parsing_opts& 
 
 
 template<class sym_type>
-void process_text(std::string& i_file, std::string& o_file, tmp_workspace& ws, size_t n_threads) {
-
-    //std::cout <<"Parallel parsing " << std::endl;
+void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gram_file, tmp_workspace& ws, size_t n_threads) {
 
     struct stat st{};
     if (stat(i_file.c_str(), &st) != 0) return;
 
     std::string tmp_i_file = ws.get_file("tmp_input");
+    std::string o_file = ws.get_file("tmp_out_file");
     text_stats txt_stats;
 
     using map_t = par_string_map<size_t>;
@@ -105,17 +104,13 @@ void process_text(std::string& i_file, std::string& o_file, tmp_workspace& ws, s
 
     auto chunk_size = off_t(next_power_of_two(size_t(float(st.st_size) * 0.0025)));
     size_t active_chunks = n_threads * 2;
-    //auto active_chunks = 1;
-    //auto chunk_size = 1024*1024*8;
-    //std::cout << "Approximate usage for the buffers " << (active_chunks * chunk_size) / (1024 * 1024) << " MiB "<< std::endl;
-    //auto chunk_size = 5912008;
-    //active_chunks =1;
-    //parsing_opts p_opts = {chunk_size, active_chunks, n_threads, false, 0.7};
+
     parsing_opts p_opts;
     p_opts.chunk_size = chunk_size;
     p_opts.active_chunks = active_chunks;
     p_opts.n_threads = n_threads;
     p_opts.str_ptr = &txt_stats.str_ptrs;
+    p_opts.sep_sym = txt_stats.sep_sym;
 
     p_opts.vbyte_threshold = 0.7;
     p_opts.vbyte_alphabet_threshold = 16777216;
@@ -127,14 +122,13 @@ void process_text(std::string& i_file, std::string& o_file, tmp_workspace& ws, s
     std::cout<<"Vbyte threshold          : "<<p_opts.vbyte_threshold<<std::endl;
     std::cout<<"Vbyte alphabet threshold : "<<p_opts.vbyte_alphabet_threshold<<" symbols "<<std::endl;
 
-
-    std::string gram_file = ws.get_file("gram_file");
+    std::string gram_buff_file = ws.get_file("gram_buff_file");
     lc_gram_buffer_t gram_buff(gram_file, txt_stats.alphabet, txt_stats.str_ptrs, txt_stats.longest_str, txt_stats.sep_sym);
 
     size_t iter =0;
     std::cout << "  Parsing round " << ++iter << std::endl;
     auto start = std::chrono::steady_clock::now();
-    par_round<lms_parsing<plain_decoder<sym_type>>, map_t>(i_file, tmp_i_file, p_opts, gram_buff, ws);
+    par_round<lms_parsing, map_t, text_chunk<plain_decoder<sym_type>, true>>(i_file, tmp_i_file, p_opts, gram_buff, ws);
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
@@ -144,27 +138,27 @@ void process_text(std::string& i_file, std::string& o_file, tmp_workspace& ws, s
         start = std::chrono::steady_clock::now();
         if (p_opts.p_alph_bytes == 1) {
             if(p_opts.parse_compressible){
-                par_round<lms_parsing<vbyte_decoder<uint8_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<vbyte_decoder<uint8_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }else{
-                par_round<lms_parsing<plain_decoder<uint8_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<plain_decoder<uint8_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }
         } else if (p_opts.p_alph_bytes == 2) {
             if(p_opts.parse_compressible){
-                par_round<lms_parsing<vbyte_decoder<uint16_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<vbyte_decoder<uint16_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }else{
-                par_round<lms_parsing<plain_decoder<uint16_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<plain_decoder<uint16_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }
         } else if (p_opts.p_alph_bytes <= 4){
             if(p_opts.parse_compressible){
-                par_round<lms_parsing<vbyte_decoder<uint32_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<vbyte_decoder<uint32_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }else{
-                par_round<lms_parsing<plain_decoder<uint32_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<plain_decoder<uint32_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }
         } else if(p_opts.p_alph_bytes<=8) {
             if(p_opts.parse_compressible){
-                par_round<lms_parsing<vbyte_decoder<uint64_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<vbyte_decoder<uint64_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }else{
-                par_round<lms_parsing<plain_decoder<uint64_t>>, map_t>(tmp_i_file, o_file, p_opts, gram_buff, ws);
+                par_round<lms_parsing, map_t, text_chunk<plain_decoder<uint64_t>>>(tmp_i_file, o_file, p_opts, gram_buff, ws);
             }
         } else{
             std::cerr<<" Incorrect number of bytes of the input text: "<<p_opts.p_alph_bytes<<std::endl;
@@ -176,6 +170,22 @@ void process_text(std::string& i_file, std::string& o_file, tmp_workspace& ws, s
         remove(tmp_i_file.c_str());
         rename(o_file.c_str(), tmp_i_file.c_str());
     }
-    //gram_buff.insert_comp_string<size_t>(tmp_i_file);
+
+    //TODO hand the case the compressed file is in vbyte (very unlikely, but not impossible)
+    if(p_opts.p_alph_bytes<=8){
+        gram_buff.insert_comp_string<uint8_t>(tmp_i_file);
+    }else if(p_opts.p_alph_bytes<=16){
+        gram_buff.insert_comp_string<uint16_t>(tmp_i_file);
+    }else if(p_opts.p_alph_bytes<=32){
+        gram_buff.insert_comp_string<uint32_t>(tmp_i_file);
+    } else {
+        gram_buff.insert_comp_string<uint64_t>(tmp_i_file);
+    }
+    gram_buff.rules_buffer.close();
+
+    lc_gram_t lc_gram(gram_buff);
+    lc_gram.breakdown();
+
+    store_to_file(gram_file, lc_gram);
 }
-#endif //TEXT_PARSER_PROCESS_TEXT_H
+#endif //TEXT_PARSER_LC_PARSING_H

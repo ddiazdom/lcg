@@ -25,13 +25,16 @@ struct text_stats{
     off_t longest_str{};
 };
 
-template<class decoder_t>
+template<class decoder_type,
+        bool orig_text=false>
 struct text_chunk {
 
+    typedef decoder_type                 decoder_t;
     typedef typename decoder_t::sym_type sym_type;
 
     size_t id{}; //chunk id
     off_t n_bytes_before{};//number of bytes in the file before this chunk
+    sym_type sep_sym{};//symbol in the buffer delimiting consecutive strings
 
     uint8_t *buffer = nullptr;// chunk's buffer
     off_t bytes{}; //number of bytes the buffer can hold
@@ -71,6 +74,29 @@ struct text_chunk {
         if (str < 0) return 0;
         if (str == n_str) return bytes;
         return str_ptr[str] - n_bytes_before;
+    }
+
+    inline off_t str_buff_end(off_t str) const {
+        str++;
+        if (str < 0) return 0;
+
+        off_t pos;
+        if (str == n_str){
+            pos = bytes;
+        }else{
+            pos = str_ptr[str] - n_bytes_before;
+        }
+
+        if constexpr (orig_text){
+            sym_type last_sym;
+            const uint8_t * l_boundary = &buffer[0];
+            uint8_t *ptr = &buffer[pos-1];
+            off_t ps = read_backwards(ptr, l_boundary, last_sym);
+            /*if(last_sym==sep_sym){
+                pos-=ps;
+            }*/
+        }
+        return pos;
     }
 
     inline off_t eff_buff_bytes() const {
@@ -260,7 +286,7 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
 
     size_t read_bytes, read_syms; //str_len, , longest_str=0;
     off_t pos=0, cont=0, str_len, longest_str=0;
-    uint8_t alph[256]={0};
+    std::vector<uint8_t> alph(std::numeric_limits<sym_type>::max()+1, 0);
 
     while(true){
         read_bytes = read(fd, (char *)buffer, buff_size);
@@ -287,7 +313,7 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
     }
     txt_stats.str_ptrs.push_back(pos*sym_bytes);
 
-    for(size_t i=0;i<256;i++){
+    for(size_t i=0;i<=std::numeric_limits<sym_type>::max();i++){
         if(alph[i]){
             txt_stats.alphabet.push_back(i);
         }

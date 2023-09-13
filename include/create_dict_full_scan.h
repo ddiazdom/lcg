@@ -8,10 +8,8 @@
 #include "text_handler.h"
 #include <unistd.h>
 
-template<class parser_t, class map_t>
+template<class parser_t, class map_t, class text_chunk_t>
 struct create_dict_full_scan {
-
-    typedef typename parser_t::text_chunk_t text_chunk_t;
 
     size_t operator()(std::string& input_file, map_t& map, parsing_opts& opts) {
 
@@ -43,6 +41,7 @@ struct create_dict_full_scan {
                 text_chunks[chunk_id].bytes = tmp_ck_size;
                 text_chunks[chunk_id].buffer = (uint8_t *)malloc(tmp_ck_size);
                 text_chunks[chunk_id].sym_perm = &opts.sym_perm;
+                text_chunks[chunk_id].sep_sym = opts.sep_sym;
 
                 text_chunks[chunk_id].id = chunk_id;
                 text_chunks[chunk_id].template read_chunk_from_file<parser_t>(fd, rem_bytes, acc_bytes, chunk_str_ptr);

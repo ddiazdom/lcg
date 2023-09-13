@@ -22,10 +22,10 @@ struct heap_node_compare{
 
 typedef ts_priority_queue<heap_node, std::vector<heap_node>, heap_node_compare> min_heap_type;
 
-template<class parser_t, class map_t, class out_encoder>
+template<class parser_t, class map_t, class out_encoder, class text_chunk_t>
 struct parse_text {
 
-    typedef typename parser_t::text_chunk_t text_chunk_t;
+    //typedef typename parser_t::text_chunk_t text_chunk_t;
     typedef typename out_encoder::sym_type out_sym_type;
 
     uint64_t operator()(std::string& input_file, std::string& output_file, map_t& map, parsing_opts& opts){
@@ -66,6 +66,7 @@ struct parse_text {
                 text_chunks[chunk_id].bytes = tmp_ck_size;
                 text_chunks[chunk_id].buffer = (uint8_t *)malloc(tmp_ck_size);
                 text_chunks[chunk_id].sym_perm = &opts.sym_perm;
+                text_chunks[chunk_id].sep_sym = opts.sep_sym;
                 memset(text_chunks[chunk_id].buffer, 0,  tmp_ck_size);
 
                 text_chunks[chunk_id].id = chunk_id;

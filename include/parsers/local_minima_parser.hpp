@@ -18,22 +18,25 @@
 #include <malloc.h>
 #endif
 
-template<class decoder_type>
 struct lms_parsing {
 
-    typedef decoder_type decoder_t;
-    typedef typename decoder_t::sym_type sym_type;
-    typedef text_chunk<decoder_t> text_chunk_t;
+    //typedef decoder_type decoder_t;
+    //typedef typename decoder_t::sym_type sym_type;
 
     //the scan is performed in the range [ps, end_ps-1] is the leftmost byte out of the range
     template<bool parse,
-             class encoder_t=decoder_t,
-             class map_type>
+             class encoder_t,
+             class map_type,
+             class text_chunk_t>
     static size_t scan(text_chunk_t& text_chunk, off_t ps, off_t end_ps, map_type& map) {
 
+        using sym_type = typename text_chunk_t::sym_type;
+        using decoder_t = typename text_chunk_t::decoder_t;
+
+        typename text_chunk_t::sym_type prev_sym, curr_sym, next_sym;
         off_t len, lb, rb;
-        typename decoder_t::sym_type prev_sym, curr_sym, next_sym;
         uint8_t *lb_ptr, *rb_ptr;
+
         size_t n_phrases=0;
 
         auto *ptr = &text_chunk.buffer[ps];
@@ -115,7 +118,11 @@ struct lms_parsing {
     //returns the rightmost byte of the rightmost symbol within text_chunk
     // that is a local minimium (i.e., a break). It also returns the number
     // of bytes of the break
+    template<class text_chunk_t>
     static off_t rm_break(text_chunk_t& text_chunk){
+
+        using sym_type = typename text_chunk_t::sym_type;
+        using decoder_t = typename text_chunk_t::decoder_t;
 
         off_t lb = text_chunk.rm_str();//start of the rightmost string in the chunk
         off_t ps = text_chunk.bytes-1;
@@ -159,36 +166,38 @@ struct lms_parsing {
         return -1;
     }
 
-    template<class map_type>
+    template<class map_type, class text_chunk_t>
     static size_t get_phrases(text_chunk_t& text_chunk, map_type& map){
 
         off_t ps, end_ps;
         ps = text_chunk.str_buff_start(-1);//leftmost byte of str
-        end_ps = text_chunk.str_buff_start(0);
+        end_ps = text_chunk.str_buff_end(-1);
         size_t n_mt_syms = 0;
 
         // ps > end_ps means the first symbol in the buffer is the start of str
         if (ps < end_ps){
             //scan the suffix of a string
-            n_mt_syms+=scan<false>(text_chunk, ps, end_ps, map);
+            n_mt_syms+=scan<false, typename text_chunk_t::decoder_t>(text_chunk, ps, end_ps, map);
         }
 
         for(off_t str=0;str<text_chunk.n_str;str++) {
             ps = text_chunk.str_buff_start(str);//leftmost byte of str
-            end_ps = text_chunk.str_buff_start(str + 1);
-            n_mt_syms+=scan<false>(text_chunk, ps, end_ps, map);
+            end_ps = text_chunk.str_buff_end(str);
+
+            n_mt_syms+=scan<false, typename text_chunk_t::decoder_t>(text_chunk, ps, end_ps, map);
         }
         return n_mt_syms;
     }
 
-    template<class map_type, class encoder_t>
+    template<class map_type, class encoder_t, class text_chunk_t>
     static size_t parse_text(text_chunk_t& text_chunk, map_type& map){
+
         off_t ps, end_ps;
         ps = text_chunk.str_buff_start(-1);//leftmost byte of str
-        end_ps = text_chunk.str_buff_start(0);
+        end_ps = text_chunk.str_buff_end(-1);
         size_t n_mt_syms=0;
 
-        // ps > end_ps means the first symbol in the buffer is the start of str
+        // ps >= end_ps means the first symbol in the buffer is the start of str
         if (ps < end_ps){
             //scan the suffix of a string
             n_mt_syms+=scan<true, encoder_t>(text_chunk, ps, end_ps, map);
@@ -196,7 +205,7 @@ struct lms_parsing {
 
         for(off_t str=0; str<text_chunk.n_str; str++) {
             ps = text_chunk.str_buff_start(str);//leftmost byte of str
-            end_ps = text_chunk.str_buff_start(str + 1);
+            end_ps = text_chunk.str_buff_end(str);
 
             //update the start of the string
             text_chunk.str_ptr[str] = text_chunk.acc_sec_bytes;
@@ -205,14 +214,18 @@ struct lms_parsing {
         return n_mt_syms;
     }
 
+    template<class text_chunk_t>
     static off_t overlap(const text_chunk_t& chunk, off_t ps){
         return ps+1;
     }
 
-    template<class map_t>
+    template<class map_t, class decoder_t>
     static void p_set_stats(map_t& map, parsing_opts& p_opts) {
+
+        using sym_type = typename decoder_t::sym_type;
+
         p_opts.n_sym = 0, p_opts.max_sym=0, p_opts.tot_phrases=0;
-        typename decoder_t::sym_type  sym=0;
+        sym_type  sym=0;
         off_t len, bytes;
         for(auto const& pair : map){
             len = pair.first.second;
@@ -237,12 +250,13 @@ struct lms_parsing {
         p_opts.p_alph_bytes = INT_CEIL(sym_width(map.size()), 8);
     }
 
-    template<class map_t>
+    template<class map_t, class decoder_t>
     static void p_set_stats_and_vbyte_codes(map_t& map, parsing_opts& p_opts){
 
+        using sym_type = typename decoder_t::sym_type;
         p_opts.n_sym = 0, p_opts.max_sym=0, p_opts.tot_phrases=0;
-        typename decoder_t::sym_type  sym=0;
 
+        sym_type  sym=0;
         off_t len, bytes;
         std::vector<std::pair<size_t, size_t>> freqs;
         size_t rank = 0;
@@ -301,8 +315,10 @@ struct lms_parsing {
         }
     }
 
-    template<class map_t>
+    template<class map_t, class decoder_t>
     static void assign_met(map_t &map, parsing_opts& p_opts, lc_gram_buffer_t& gram_buffer, tmp_workspace& ws){
+
+        using sym_type = typename decoder_t::sym_type;
 
         map.store_tables(ws.get_file("tmp_tables"));
         map.destroy_tables();
@@ -310,14 +326,14 @@ struct lms_parsing {
         //get statistics about the parse
         p_opts.parse_compressible = map.size()<=p_opts.vbyte_alphabet_threshold;
         if(p_opts.parse_compressible){
-            p_set_stats_and_vbyte_codes<map_t>(map, p_opts);
+            p_set_stats_and_vbyte_codes<map_t, decoder_t>(map, p_opts);
         }else{
             p_opts.vbyte_size=0;
             p_opts.vbyte_comp_ratio = 0;
-            p_set_stats(map, p_opts);
+            p_set_stats<map_t, decoder_t>(map, p_opts);
         }
 
-        typename decoder_t::sym_type  sym=0;
+        sym_type  sym=0;
         size_t len, bytes, k=0;
         int_array<size_t> parsing_set(p_opts.n_sym, sym_width(p_opts.max_sym));
         std::vector<rand_order> r_order(map.size());

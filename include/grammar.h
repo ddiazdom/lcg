@@ -13,6 +13,8 @@ struct lc_gram_buffer_t{
 
     size_t                             n{}; //n: number of symbols
     size_t                             r{}; //r: number of grammar symbols (nter + ter)
+    size_t                             prev_r{}; //r: number of grammar symbols (nter + ter)
+
     size_t                             c{}; //c: length of the right-hand of the start symbol
     size_t                             g{}; //g: sum of the rules' right-hand sides
     size_t                             max_tsym{}; //highest terminal symbol
@@ -43,6 +45,7 @@ struct lc_gram_buffer_t{
         terminals = alphabet;
         n = str_boundaries.back();
         max_tsym = terminals.back();
+        prev_r = 0;
         r = max_tsym + 1;
         g = r;
         long_str = long_str_;
@@ -64,14 +67,15 @@ struct lc_gram_buffer_t{
             first = true;
             len = str.str_len;
             for(size_t j=0;j<len;j++){
-                sym = r+parsing_set[str.str_ptr+j];
-                assert(sym>0);
+                sym = prev_r+parsing_set[str.str_ptr+j];
+                //assert(sym>0);
                 sym = (sym<<1UL) | first;
                 rules_buffer.push_back(sym);
                 first = false;
             }
             tot_syms+=len;
         }
+        prev_r = r;
         r += str_orders.size();
         g += tot_syms;
         lvl_rules.push_back(str_orders.size());
@@ -83,7 +87,7 @@ struct lc_gram_buffer_t{
 
         i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
         for(size_t i=0;i<ifs.size();i++){
-            size_t sym = r+ifs.read(i);
+            size_t sym = prev_r+ifs.read(i);
             sym = sym<<1UL | (i==0);
             rules_buffer.push_back(sym);
         }
@@ -139,7 +143,7 @@ struct lc_gram_t {
     int_array<size_t>                  rule_exp;// length of the nt expansions
     std::pair<size_t, size_t>          run_len_nt; //first rl rules and total number of rl rules
 
-    lc_gram_t(){};
+    lc_gram_t()= default;
 
     explicit lc_gram_t(lc_gram_buffer_t& gram_buff) {
 

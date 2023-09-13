@@ -6,7 +6,7 @@
 #define LCG_GRAMMAR_ALGORITHMS_H
 
 #include "grammar.h"
-#include "build_lc_grammar.hpp"
+#include "lc_parsing.h"
 
 void add_random_access_support(lc_gram_t& gram){
 
@@ -110,7 +110,8 @@ void merge_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
 
 }
 
-size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
+/*
+size_t get_new_rl_rules(lc_gram_t& gram, string_map_t& ht) {
 
     size_t prev_sym, curr_sym, run_len, tmp_sym;
     string_t pair(2, sym_width(gram.rules.size()));
@@ -205,7 +206,7 @@ size_t get_new_rl_rules(lc_gram_t& gram, phrase_map_t& ht) {
 void run_length_compress(lc_gram_t& gram) {
 
     assert(!gram.has_rl_rules);
-    phrase_map_t ht;
+    string_map_t ht;
     size_t new_size = get_new_rl_rules(gram, ht);
 
     int_array<size_t> new_rules(new_size, sym_width(gram.r+ht.size()));
@@ -342,7 +343,7 @@ void run_length_compress(lc_gram_t& gram) {
     if(gram.has_rand_access){
         add_random_access_support(gram);
     }
-}
+}*/
 
 
 void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
@@ -407,7 +408,7 @@ void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
             idx++;
         }
         if(gram.str_boundaries[str+1]==(i+1)){
-            idx++;
+            //idx++;
             str++;
         }
         decompression.clear();
@@ -636,30 +637,29 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
  *
  * @param i_file : input text file
  * @param n_threads : number of working threads
- * @param hbuff_size : buffer size for the hashing step
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_tries, size_t n_threads){
+void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads){
 
-    build_lc_grammar<sym_type>(i_file, pf_file, o_file, n_tries, n_threads, tmp_ws);
+    lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads);
+
+    //build_lc_grammar<sym_type>(i_file, pf_file, o_file, n_tries, n_threads, tmp_ws);
 
     lc_gram_t gram;
     load_from_file(o_file, gram);
 
-    std::cout<<"Simplifying the grammar "<<std::endl;
-    simplify_grammar(gram);
-
-    std::cout<<"Run-length compressing the grammar"<<std::endl;
-    run_length_compress(gram);
-
-    get_v_byte_size(gram);
-    add_random_access_support(gram);
-
-    gram.breakdown();
-
+    //std::cout<<"Simplifying the grammar "<<std::endl;
+    //simplify_grammar(gram);
+    //std::cout<<"Run-length compressing the grammar"<<std::endl;
+    //run_length_compress(gram);
+    //get_v_byte_size(gram);
+    //add_random_access_support(gram);
+    //gram.breakdown();
     //optional check
-    //check_plain_grammar(gram, i_file);
+    check_plain_grammar(gram, i_file);
     //
+
+    gram.stats();
 
     size_t written_bytes = store_to_file(o_file, gram);
     std::cout<<"The resulting grammar uses "<<float(written_bytes)/1000000<<" MBs and was stored in "<<o_file<<std::endl;

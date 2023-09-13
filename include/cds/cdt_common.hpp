@@ -49,10 +49,11 @@ void load_from_file(std::string const& file, data_type& dt){
 }
 
 template<class data_type>
-void store_to_file(std::string const& file, data_type& dt){
+size_t store_to_file(std::string const& file, data_type& dt){
     std::ofstream ofs(file, std::ios::binary);
-    dt.serialize(ofs);
+    size_t written_bytes = dt.serialize(ofs);
     ofs.close();
+    return written_bytes;
 }
 
 template<class vector_t>
