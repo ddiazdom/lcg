@@ -87,10 +87,12 @@ struct lc_gram_buffer_t{
 
         i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
         for(size_t i=0;i<ifs.size();i++){
+            str_boundaries[i] = i;
             size_t sym = prev_r+ifs.read(i);
             sym = sym<<1UL | (i==0);
             rules_buffer.push_back(sym);
         }
+        str_boundaries.back() = ifs.size();
         r++;
         g+=ifs.size();
         c=ifs.size();

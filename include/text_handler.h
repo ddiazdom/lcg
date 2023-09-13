@@ -88,13 +88,14 @@ struct text_chunk {
         }
 
         if constexpr (orig_text){
-            sym_type last_sym;
-            const uint8_t * l_boundary = &buffer[0];
-            uint8_t *ptr = &buffer[pos-1];
-            off_t ps = read_backwards(ptr, l_boundary, last_sym);
-            /*if(last_sym==sep_sym){
-                pos-=ps;
-            }*/
+            if(pos>0){
+                //this code is to remove the separator symbol during the first round of parsing
+                const uint8_t * l_boundary = buffer-1;
+                uint8_t *ptr = buffer+pos-1;
+                sym_type last_sym=0;
+                off_t ps = read_backwards(ptr, l_boundary, last_sym)+1;
+                if(last_sym==sep_sym) pos-=ps;
+            }
         }
         return pos;
     }

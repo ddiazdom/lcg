@@ -309,9 +309,7 @@ struct vbyte_decoder{
     inline static off_t backward(uint8_t * ptr, const uint8_t *& l_boundary, off_t n_pos) {
 
         if(ptr==l_boundary) return 0;
-
         uint8_t *tmp = ptr-1;
-        //std::cout<<(int)*(ptr-3)<<" "<<(int)*(ptr-2)<<" "<<(int)*(ptr-1)<<" "<<(int)*ptr<<std::endl;
         while(tmp!=l_boundary && n_pos>0){
             tmp--;
             while(tmp!=l_boundary && *tmp<128){

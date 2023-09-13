@@ -44,6 +44,42 @@ struct ttas_lock{
     }
 };
 
+template<class value_t>
+class proxy {
+private:
+    char * addr= nullptr;
+    uint8_t bytes = 0;
+
+public:
+    proxy()= default;
+
+    proxy(char * _addr, uint8_t _bytes) : addr(_addr), bytes(_bytes) {}
+
+    operator value_t() const {
+        value_t val = 0;
+        memcpy(&val, addr, bytes);
+        return val;
+    }
+
+    proxy& operator=(value_t value) {
+        memcpy(addr, &value, bytes);
+        return *this;
+    }
+
+    /*proxy& operator=(const proxy& other) {
+        auto val = (value_t)other;
+        memcpy(addr, &val, bytes);
+        return *this;
+    }*/
+
+    bool operator==(const proxy& x)const {
+        return value_type(*this) == value_type(x);
+    }
+
+    bool operator<(const proxy& x)const {
+        return value_type(*this) < value_type(x);
+    }
+};
 
 template<class map_type>
 class string_map_iterator{
@@ -61,46 +97,11 @@ class string_map_iterator{
 
 public:
 
-    class proxy {
-    private:
-        char * addr= nullptr;
-        uint8_t bytes = 0;
 
-    public:
-        proxy()= default;
-
-        proxy(char * _addr, uint8_t _bytes) : addr(_addr), bytes(_bytes) {}
-
-        operator value_t() const {
-            value_t val = 0;
-            memcpy(&val, addr, bytes);
-            return val;
-        }
-
-        proxy& operator=(value_t value) {
-            memcpy(addr, &value, bytes);
-            return *this;
-        }
-
-        /*proxy& operator=(const proxy& other) {
-            auto val = (value_t)other;
-            memcpy(addr, &val, bytes);
-            return *this;
-        }*/
-
-        bool operator==(const proxy& x)const {
-            return value_type(*this) == value_type(x);
-        }
-
-        bool operator<(const proxy& x)const {
-            return value_type(*this) < value_type(x);
-        }
-    };
-
-    typedef std::forward_iterator_tag                         iterator_category;
-    typedef std::pair<std::pair<const char *, size_t>, proxy> entry_type;
-    typedef entry_type                                        reference;
-    entry_type                                                entry;
+    typedef std::forward_iterator_tag                                  iterator_category;
+    typedef std::pair<std::pair<const char *, size_t>, proxy<value_t>> entry_type;
+    typedef entry_type                                                 reference;
+    entry_type                                                         entry;
 
     string_map_iterator(const map_type& map_, size_t entry_idx): map(map_),
                                                                  entry_idx(entry_idx),
@@ -135,7 +136,7 @@ public:
                 sm_buff+=key_len_bytes;
                 entry.first = {sm_buff, len};
                 sm_buff+=len;
-                entry.second = proxy(sm_buff, value_bytes);
+                entry.second = proxy<value_t>(sm_buff, value_bytes);
                 sm_buff+=value_bytes;
 
                 if(sm_buff==sm_buff_limit){
@@ -151,7 +152,7 @@ public:
                     }
                 }
             } else{
-                entry = {{nullptr, 0}, proxy(nullptr, 0)};
+                entry = {{nullptr, 0}, proxy<value_t>(nullptr, 0)};
             }
         }
     };
@@ -202,7 +203,7 @@ public:
             sm_buff+=key_len_bytes;
             entry.first = {sm_buff, len};
             sm_buff+=len;
-            entry.second = proxy(sm_buff, value_bytes);
+            entry.second = proxy<value_t>(sm_buff, value_bytes);
             sm_buff+=value_bytes;
 
             if(sm_buff==sm_buff_limit){
@@ -219,7 +220,7 @@ public:
             }
         } else {
             entry_idx = tot_entries;
-            entry = {{nullptr, 0}, proxy(nullptr, 0)};
+            entry = {{nullptr, 0}, proxy<value_t>(nullptr, 0)};
         }
         return *this;
     }
@@ -401,6 +402,58 @@ public:
             }
         }
         return inserted;
+    }
+
+    std::pair<proxy<val_type>, bool> insert(const uint8_t* key, size_t len, val_type val, size_t hash) {
+
+        bool inserted = false;
+        bool success = false;
+        char *val_ptr = nullptr;
+
+        size_t j=0;
+        size_t idx = hash & (m_table->size()-1);
+
+        while(!success) {
+            bucket_t &bucket = (*m_table)[idx];
+
+            if(bucket.key_offset==empty_entry) {
+
+                size_t key_bytes = value_bytes+key_len_bytes+len;
+                size_t offset = next_av_offset;
+                size_t min_bytes =  next_av_offset+key_bytes;
+
+                if(min_bytes>=buff_size){//the key does not fit the buffer, allocate a new buffer
+                    create_new_buffer(min_bytes);
+                }
+                next_av_offset += key_bytes;
+                n_elms++;
+                bucket.key_offset = offset;
+                char * addr = buffer+offset;
+                memcpy(addr, &len, key_len_bytes);
+                addr+=key_len_bytes;
+                memcpy(addr, key, len);
+                addr+=len;
+                memcpy(addr, &val, value_bytes);
+                val_ptr = addr;
+
+                //the key insertion exceeds the max. load factor (i.e., rehash)
+                if((float(n_elms)/float(m_table->size()))>=m_max_load_factor) {
+                    rehash(next_power_of_two(m_table->size()));
+                }
+                success = true;
+                inserted = true;
+
+            } else if(memcmp(&len, buffer+bucket.key_offset, key_len_bytes)==0 &&
+                      memcmp(key, buffer+bucket.key_offset+key_len_bytes, len)==0){
+                val_ptr = buffer+bucket.key_offset+key_len_bytes+len;
+                success = true;
+            } else {
+                j++;
+                idx = (hash + ((j*j + j)>>1UL)) & (m_table->size()-1);
+            }
+        }
+
+        return {{val_ptr, value_bytes}, inserted};
     }
 
     [[nodiscard]] inline char * get_buffer() const {
@@ -1065,6 +1118,20 @@ public:
             }
         } else{
             return sub_map_array[j]->value_add(key, len, new_val, hash);
+        }
+    }
+
+    inline std::pair<proxy<value_type>, bool> insert(const uint8_t * key, size_t len, size_t new_val){
+        size_t hash = XXH3_64bits(key, len);
+        size_t j = (hash ^ (hash >> sm_shift)) & sm_mod;
+        if constexpr (partition_key){
+            if(j==tr_id){
+                return sub_map_array[j]->insert(key, len, new_val, hash);
+            }else{
+                return {{nullptr, 0}, false};
+            }
+        } else{
+            return sub_map_array[j]->insert(key, len, new_val, hash);
         }
     }
 

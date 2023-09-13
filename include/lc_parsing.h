@@ -112,7 +112,7 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     p_opts.str_ptr = &txt_stats.str_ptrs;
     p_opts.sep_sym = txt_stats.sep_sym;
 
-    p_opts.vbyte_threshold = 0.7;
+    p_opts.vbyte_threshold = 0.4;
     p_opts.vbyte_alphabet_threshold = 16777216;
 
     std::cout<<"Parsing settings"<<std::endl;
@@ -171,21 +171,19 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
         rename(o_file.c_str(), tmp_i_file.c_str());
     }
 
-    //TODO hand the case the compressed file is in vbyte (very unlikely, but not impossible)
-    if(p_opts.p_alph_bytes<=8){
+    if(p_opts.p_alph_bytes<=1){
         gram_buff.insert_comp_string<uint8_t>(tmp_i_file);
-    }else if(p_opts.p_alph_bytes<=16){
+    }else if(p_opts.p_alph_bytes<=2){
         gram_buff.insert_comp_string<uint16_t>(tmp_i_file);
-    }else if(p_opts.p_alph_bytes<=32){
+    }else if(p_opts.p_alph_bytes<=4){
         gram_buff.insert_comp_string<uint32_t>(tmp_i_file);
-    } else {
+    } else if(p_opts.p_alph_bytes<=8){
         gram_buff.insert_comp_string<uint64_t>(tmp_i_file);
     }
     gram_buff.rules_buffer.close();
 
     lc_gram_t lc_gram(gram_buff);
     lc_gram.breakdown();
-
     store_to_file(gram_file, lc_gram);
 }
 #endif //TEXT_PARSER_LC_PARSING_H
