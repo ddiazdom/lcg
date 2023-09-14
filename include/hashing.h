@@ -32,10 +32,10 @@ struct hashing {
     uint32_t mersenne_primes_uint32[3] = {131071, 524287, 2147483647};
     uint64_t mersenne_primes_uint64[1] = {2305843009213693951UL};
 
-    unsigned __int128 mersenne_prime_uint128;
-    unsigned __int128 mp_ul_a;
-    unsigned __int128 mp_ul_b;
-    unsigned __int128 mp_ul_c;
+    unsigned __int128 mersenne_prime_uint128 = ultra_long_mersenne_number();
+    unsigned __int128 mp_ul_a=0;
+    unsigned __int128 mp_ul_b=0;
+    unsigned __int128 mp_ul_c=0;
 
     uint64_t powers[65] = {0ULL, 1ULL, 3ULL, 7ULL, 15ULL, 31ULL, 63ULL, 127ULL, 255ULL, 511ULL, 1023ULL, 2047ULL,
                            4095ULL, 8191ULL, 16383ULL, 32767ULL, 65535ULL, 131071ULL, 262143ULL, 524287ULL, 1048575ULL,
@@ -68,10 +68,7 @@ struct hashing {
         mp_ul_c=distrib2(gen2);
     }
 
-    hashing(): mersenne_prime_uint128(ultra_long_mersenne_number()),
-               mp_ul_a{0},
-               mp_ul_b{0},
-               mp_ul_c{0}{
+    hashing(){
         generate_random_numbers();
     }
 

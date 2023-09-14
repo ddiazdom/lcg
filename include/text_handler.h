@@ -287,7 +287,7 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
     lseek(fd, 0, SEEK_SET);
 
     size_t read_bytes, read_syms; //str_len, , longest_str=0;
-    off_t pos=0, cont=0, str_len, longest_str=0;
+    off_t pos=0, cont=0, str_len;
     std::vector<uint8_t> alph(std::numeric_limits<sym_type>::max()+1, 0);
 
     while(true){
@@ -303,7 +303,7 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
                 if(buffer[i]==txt_stats.sep_sym){
                     txt_stats.str_ptrs.push_back(pos*sym_bytes);
                     str_len = cont - pos;
-                    if(str_len>longest_str){
+                    if(str_len>txt_stats.longest_str){
                         txt_stats.longest_str=str_len;
                     }
                     pos = cont;
@@ -322,6 +322,8 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
     }
     txt_stats.alphabet.shrink_to_fit();
     txt_stats.max_sym = txt_stats.alphabet.back();
+    txt_stats.longest_str /=sizeof(sym_type);
+    txt_stats.longest_str--; //we are not considering the separator symbol
 
 #ifdef __linux__
     posix_fadvise(fd, 0, st.st_size, POSIX_FADV_DONTNEED);

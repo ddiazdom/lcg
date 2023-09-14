@@ -8,6 +8,7 @@
 #include "cds/int_array.h"
 #include "cds/file_streams.hpp"
 #include "hashing.h"
+#include "cds/utils.h"
 
 struct lc_gram_buffer_t{
 
@@ -129,6 +130,7 @@ struct lc_gram_t {
     size_t                             g{}; //g: sum of the rules' right-hand sides
     size_t                             s{}; //s: number of strings
     size_t                             samp_rate=4;
+    size_t                             longest_str{};
     size_t                             max_tsym{}; //highest terminal symbol
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
     bool                               is_simplified=false;
@@ -156,6 +158,7 @@ struct lc_gram_t {
         g = gram_buff.g;
         c = gram_buff.c;
         s = gram_buff.str_boundaries.size()-1;
+        longest_str = gram_buff.long_str;
 
         max_tsym = gram_buff.max_tsym;
         sep_tsym = gram_buff.sep_tsym;
@@ -219,6 +222,7 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, c);
         written_bytes +=serialize_elm(ofs, s);
         written_bytes +=serialize_elm(ofs, samp_rate);
+        written_bytes +=serialize_elm(ofs, longest_str);
         written_bytes +=serialize_elm(ofs, max_tsym);
         written_bytes +=serialize_elm(ofs, sep_tsym);
         written_bytes +=serialize_elm(ofs, is_simplified);
@@ -244,6 +248,7 @@ struct lc_gram_t {
         load_elm(ifs, c);
         load_elm(ifs, s);
         load_elm(ifs, samp_rate);
+        load_elm(ifs, longest_str);
         load_elm(ifs, max_tsym);
         load_elm(ifs, sep_tsym);
         load_elm(ifs, is_simplified);
@@ -328,61 +333,66 @@ struct lc_gram_t {
         return {str_boundaries[str], str_boundaries[str+1]-1};
     }
 
-    void stats() const {
+    void stats(size_t pad) const {
         size_t n_ter = n_terminals();
         size_t n_nter = n_nonterminals();
 
-        auto pt_mbs = float((r-n_ter)*sym_width(g))/8000000;//space of the pointers for the nonterminals
-        auto g_mbs = float(g*sym_width(r))/8000000; //space of the expansions
-        auto exp_mbs = 0;//float((g-n_ter)*sym_width(long_str))/8000000; //space of the grammar
-        auto pt_str_mbs = float((s+1)*sizeof(size_t))/1000000;  //space of the pointers to the strings
+        auto pt_bytes = INT_CEIL((r-n_ter)*sym_width(g), 8);//space of the pointers for the nonterminals
+        auto g_bytes = INT_CEIL(g*sym_width(r), 8); //space of the expansions
+        auto pt_str_bytes = (s+1)*sizeof(size_t);  //space of the pointers to the strings
 
-        float comp_ratio = (float(n)/1000000)/(pt_mbs+g_mbs+pt_str_mbs+exp_mbs);
-        std::cout<<"Grammar stats: "<<std::endl;
-        std::cout<<"  Number of compressed symbols: "<<n<<std::endl;
-        std::cout<<"  Number of compressed strings: "<<s<<" ("<<pt_str_mbs<<" MBs in pointers)"<<std::endl;
-        std::cout<<"  Separator symbol:             "<<(int)sep_tsym<<std::endl;
-        std::cout<<"  Number of terminals:          "<<n_ter<<std::endl;
-        std::cout<<"  Number of non-terminals:      "<<n_nter<<" ("<<pt_mbs<<" MBs in pointers)"<<std::endl;
-        std::cout<<"  Grammar size:                 "<<g<<" ("<<g_mbs<<" MBs)"<<std::endl;
-        std::cout<<"  Approx. compression ratio:    "<<comp_ratio<<std::endl;
-        std::cout<<"  Simplified:                   "<<(is_simplified ? "yes" : "no")<<std::endl;
-        std::cout<<"  Run-len rules:                "<<(has_rl_rules ? "yes" : "no")<<std::endl;
-        std::cout<<"  Random access support:        "<<(has_rand_access? "yes" : "no")<<std::endl;
-        /*if(has_rand_access){
-            std::cout<<"  Random access space:          "<<exp_mbs<<" MBs"<<std::endl;
-        }*/
+        float comp_ratio = float(n)/float(pt_bytes+g_bytes+pt_str_bytes);
+
+        std::string pad_string(pad,' ');
+
+        std::cout<<pad_string<<"Number of compressed symbols: "<<n<<std::endl;
+        std::cout<<pad_string<<"Number of compressed strings: "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
+        std::cout<<pad_string<<"Separator symbol:             "<<(int)sep_tsym<<std::endl;
+        std::cout<<pad_string<<"Longest string:               "<<longest_str<<std::endl;
+        std::cout<<pad_string<<"Number of terminals:          "<<n_ter<<std::endl;
+        std::cout<<pad_string<<"Number of non-terminals:      "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
+        std::cout<<pad_string<<"Grammar size:                 "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;
+        std::cout<<pad_string<<"Approx. compression ratio:    "<<comp_ratio<<std::endl;
+        std::cout<<pad_string<<"Simplified:                   "<<(is_simplified ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Run-len rules:                "<<(has_rl_rules ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Random access support:        "<<(has_rand_access? "yes" : "no")<<std::endl;
     }
 
-    void breakdown(){
+    void breakdown(size_t pad){
         assert(g==rules.size());
         assert(r-(max_tsym+1)==(rl_ptr.size()-1));
-        assert(s=str_boundaries.size()-1);
-        stats();
-        std::cout<<"  Grammar breakdown:            "<<std::endl;
+        assert(s==str_boundaries.size()-1);
+        stats(pad);
+
+        std::string pad_string(pad,' ');
+
         size_t tot_sym, n_rules;
+        std::cout<<pad_string<<"Grammar rules per level"<<std::endl;
         for(size_t i=0;i<lvl_rules.size()-1; i++){
             n_rules = lvl_rules[i+1]-lvl_rules[i];//number of rules in the level
             if(n_rules>0){
                 auto res1 = nt2phrase(lvl_rules[i]);
                 auto res2 = nt2phrase(lvl_rules[i + 1] - 1);
                 tot_sym = res2.second-res1.first+1;
-                std::cout << "    Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
+                std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
             }
         }
         if(has_rl_rules){
-            std::cout << "    Number of run-length rules: " << run_len_nt.second <<std::endl;
+            std::cout <<pad_string<<"Number of run-length rules: " << run_len_nt.second <<std::endl;
         }
-        std::cout << "    Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
+        std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
     }
 
-    void set_samp_rate(size_t samp_rate){
-
+    void set_samp_rate(size_t new_samp_rate){
+        samp_rate = new_samp_rate;
+        if(has_rand_access){
+        }
     }
 
+    //TODO implement this
+    /*
     void access(size_t str_id, size_t start, size_t end, std::string& output){
-
-    }
+    }*/
 };
 
 #endif //LCG_GRAMMAR_H

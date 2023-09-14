@@ -46,8 +46,22 @@ std::string random_string(size_t length){
     return random_string;
 }
 
-std::string append_to_path(std::string& orig_path, std::string const& suffix){
-    return std::filesystem::path(orig_path) / suffix;
+std::string report_space(off_t bytes){
+    if(bytes<1000){
+        return std::to_string(bytes)+" bytes";
+    }else if(bytes<1000000){
+        float b = float(bytes)/1000;
+        return to_string_with_precision(b, 2)+" KBs";
+    } else if(bytes < 1000000000L){
+        float b = float(bytes)/1000000;
+        return to_string_with_precision(b, 2)+" MBs";
+    } else if(bytes < 1000000000000L){
+        double b = double(bytes)/1000000000L;
+        return to_string_with_precision(b, 2)+" GBs";
+    } else {
+        double b = double(bytes)/1000000000000L;
+        return to_string_with_precision(b, 2)+" TBs";
+    }
 }
 
 void report_mem_peak(){

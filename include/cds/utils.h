@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cassert>
+#include <sstream>
 
 #ifdef __APPLE__
 #include <unistd.h>
@@ -95,7 +96,17 @@ struct tmp_workspace{
     }
 };
 
+
 str_collection collection_stats(std::string& input_file);
+
+//from https://stackoverflow.com/questions/16605967/set-precision-of-stdto-string-when-converting-floating-point-values
+template <typename T>
+std::string to_string_with_precision(const T a_value, const int n = 6) {
+    std::ostringstream out;
+    out.precision(n);
+    out << std::fixed << a_value;
+    return std::move(out).str();
+}
 
 template<class time_t>
 void report_time(time_t start, time_t end, size_t padding){
@@ -107,15 +118,17 @@ void report_time(time_t start, time_t end, size_t padding){
 
     for(size_t i=0;i<padding;i++) std::cout<<" ";
     if(h.count()>0){
-        std::cout<<"Elapsed time (hh:mm:ss.ms): "<<h.count()<<":"<<m.count()<<":"<<s.count()<<"."<<ms.count()<<std::endl;
+        std::cout<<"Elapsed time (hh:mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<h.count()<<":"<<m.count()<<":"<<s.count()<<"."<<ms.count()<<std::endl;
     }else if(m.count()>0){
-        std::cout<<"Elapsed time (mm:ss.ms): "<<size_t(m.count())<<":"<<s.count()<<"."<<ms.count()<<std::endl;
+        std::cout<<"Elapsed time (mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(m.count())<<":"<<s.count()<<"."<<ms.count()<<std::endl;
     }else if(s.count()>0){
-        std::cout<<"Elapsed time (ss.ms): "<<size_t(s.count())<<"."<<ms.count()<<std::endl;
+        std::cout<<"Elapsed time (ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(s.count())<<"."<<ms.count()<<std::endl;
     }else{
         std::cout<<"Elapsed time (ms): "<<ms.count()<<std::endl;
     }
 }
+
+std::string report_space(off_t bytes);
 
 void report_mem_peak();
 

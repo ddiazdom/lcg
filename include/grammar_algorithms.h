@@ -13,20 +13,15 @@ void add_random_access_support(lc_gram_t& gram){
 
     std::vector<size_t> exp(gram.g, 0);
 
-
     size_t pos=0, tmp_sym, len, exp_size;
-    //size_t start_sym = gram.start_symbol();
-    size_t first_sym = gram.max_tsym+1;
     size_t last_sym = gram.first_rl_sym();
     size_t rank;
 
     for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
-
         auto range = gram.nt2phrase(sym);
         exp_size = 0;
 
         for(size_t i=range.first;i<=range.second;i++){
-
             tmp_sym = gram.rules[i];
             len = 1;
             if(gram.is_rl_sym(tmp_sym)) {
@@ -45,7 +40,7 @@ void add_random_access_support(lc_gram_t& gram){
         }
     }
 
-    first_sym = gram.first_rl_sym();
+    size_t first_sym = gram.first_rl_sym();
     last_sym = gram.last_rl_sym();
     for(size_t sym=first_sym;sym<=last_sym;sym++) {
         auto range = gram.nt2phrase(sym);
@@ -83,7 +78,6 @@ void add_random_access_support(lc_gram_t& gram){
             exp[pos++]=exp_size;
         }
         if(exp_size>longest_exp) longest_exp = exp_size;
-        //std::cout<<str<<" : "<<exp_size<<std::endl;
     }
     int_array<size_t> new_exp(pos, sym_width(longest_exp));
 
@@ -436,7 +430,6 @@ void get_v_byte_size(lc_gram_t& gram){
         size_t n_bytes = INT_CEIL(sym_width(new_sym), 8);
         size_t n_bits = n_bytes + sym_width(new_sym);
         n_bytes = INT_CEIL(n_bits, 8);
-        //std::cout<<sorted_freq.first<<" "<<n_bytes<<std::endl;
         tot_bytes+=n_bytes*sorted_freq.second;
         new_sym++;
     }
@@ -502,16 +495,12 @@ void simplify_grammar(lc_gram_t& gram) {
 
     std::stack<size_t> stack;
     size_t start_sym = gram.start_symbol();
-    for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++){
+    for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
 
         if(!rem_syms.first[sym]) {
 
             auto range = gram.nt2phrase(sym);
             new_rl_ptrs.push_back(new_rules.size());
-
-            //TODO testing
-            //std::cout<<sym<<" "<<sym-offsets[sym]<<" "<<sym-offsets[sym]-(sigma-1)<<" "<<(int)rem_syms.first[sym]<<" "<<new_rl_ptrs[sym-offsets[sym]-(sigma-1)]<<" "<<std::endl;
-            //
 
             if(gram.is_rl_sym(sym)){
                 new_rules.push_back(gram.rules[range.first]-offsets[gram.rules[range.first]]);
@@ -545,7 +534,6 @@ void simplify_grammar(lc_gram_t& gram) {
     //deal with the compressed strings
     auto range = gram.nt2phrase(start_sym);
     size_t str=0;
-    //std::cout<<start_sym<<" "<<start_sym-offsets[start_sym]<<" "<<new_rules.size()<<std::endl;
     new_rl_ptrs.push_back(new_rules.size());
     for(size_t j=range.first;j<=range.second;j++){
         gram.str_boundaries[str++] = new_rules.size();
@@ -608,7 +596,7 @@ void print_metadata(std::string& gram_file){
     lc_gram_t gram;
     std::ifstream ifs(gram_file, std::ios::binary);
     gram.load_metadata(ifs);
-    gram.stats();
+    gram.stats(2);
 }
 
 void get_par_functions(std::string& gram_file, std::string& output_file){
@@ -627,30 +615,40 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
  * @param n_threads : number of working threads
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads){
+void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, size_t chunk_size){
 
-    lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads);
-
+    std::cout<<"Building a locally-consistent grammar"<<std::endl;
+    auto start = std::chrono::steady_clock::now();
+    lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     lc_gram_t gram;
     load_from_file(o_file, gram);
+    auto end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 
     std::cout<<"Run-length compressing the grammar"<<std::endl;
+    start = std::chrono::steady_clock::now();
     run_length_compress(gram);
+    end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 
-    std::cout<<"Simplifying the grammar "<<std::endl;
+    std::cout<<"Simplifying the grammar"<<std::endl;
+    start = std::chrono::steady_clock::now();
     simplify_grammar(gram);
+    end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 
     //get_v_byte_size(gram);
+    //std::cout<<"Adding random access support"<<std::endl;
+    //start = std::chrono::steady_clock::now();
     //add_random_access_support(gram);
-    //gram.breakdown();
+    //end = std::chrono::steady_clock::now();
 
     //optional check
     //check_plain_grammar(gram, i_file);
     //
-
-    gram.stats();
-
+    std::cout<<"Stats for the final grammar:"<<std::endl;
+    gram.breakdown(2);
     size_t written_bytes = store_to_file(o_file, gram);
-    std::cout<<"The resulting grammar uses "<<float(written_bytes)/1000000<<" MBs and was stored in "<<o_file<<std::endl;
+    std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
 }
 #endif //LCG_GRAMMAR_ALGORITHMS_H

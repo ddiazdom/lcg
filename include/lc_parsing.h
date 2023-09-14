@@ -90,28 +90,20 @@ void par_round(std::string& input_file, std::string& output_file,
 
 
 template<class sym_type>
-void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gram_file, tmp_workspace& ws, size_t n_threads) {
+void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gram_file, tmp_workspace& ws, size_t n_threads, size_t active_chunks, size_t chunk_size) {
 
     struct stat st{};
     if (stat(i_file.c_str(), &st) != 0) return;
 
     std::string tmp_i_file = ws.get_file("tmp_input");
     std::string o_file = ws.get_file("tmp_out_file");
-    text_stats txt_stats;
 
     using map_t = par_string_map<size_t>;
 
-    compute_text_stats<sym_type>(i_file, txt_stats);
-
-    auto chunk_size = off_t(next_power_of_two(size_t(float(st.st_size) * 0.0025)));
-    size_t active_chunks = n_threads * 2;
-
     parsing_opts p_opts;
-    p_opts.chunk_size = chunk_size;
-    p_opts.active_chunks = active_chunks;
+    p_opts.active_chunks = active_chunks!=0? active_chunks : n_threads*2;
+    p_opts.chunk_size = chunk_size!=0 ? (off_t)chunk_size : off_t(next_power_of_two(size_t(float(st.st_size) * 0.0025)));
     p_opts.n_threads = n_threads;
-    p_opts.str_ptr = &txt_stats.str_ptrs;
-    p_opts.sep_sym = txt_stats.sep_sym;
     if(!pf_file.empty()){
         load_pl_vector(pf_file, p_opts.p_functions);
         std::cout<<"Using the parsing functions in \""<<pf_file<<"\" for the first "<<p_opts.p_functions.size()<<" parsing rounds "<<std::endl;
@@ -120,14 +112,30 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     p_opts.vbyte_threshold = 0.4;
     p_opts.vbyte_alphabet_threshold = 16777216;
 
-    std::cout<<"Parsing settings"<<std::endl;
-    std::cout<<"Parser threads           : "<<p_opts.n_threads<<std::endl;
-    std::cout<<"Chunk_size               : "<<p_opts.chunk_size<<" bytes "<<std::endl;
-    std::cout<<"Active chunks            : "<<p_opts.active_chunks<<std::endl;
-    std::cout<<"Vbyte threshold          : "<<p_opts.vbyte_threshold<<std::endl;
-    std::cout<<"Vbyte alphabet threshold : "<<p_opts.vbyte_alphabet_threshold<<" symbols "<<std::endl;
+    std::cout<<"  Settings"<<std::endl;
+    std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
+    std::cout<<"    Active text chunks in RAM : "<<p_opts.active_chunks<<std::endl;
+    std::cout<<"    Chunk size                : "<<report_space(p_opts.chunk_size)<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.active_chunks))<<std::endl;
+    std::cout<<"    Vbyte encoding thresholds"<<std::endl;
+    std::cout<<"      min. comp. ratio        : "<<p_opts.vbyte_threshold<<std::endl;
+    std::cout<<"      max. alphabet size      : "<<p_opts.vbyte_alphabet_threshold<<" symbols "<<std::endl;
 
-    std::string gram_buff_file = ws.get_file("gram_buff_file");
+    std::cout<<"  Reading the input file before computing the grammar"<<std::endl;
+    text_stats txt_stats;
+    compute_text_stats<sym_type>(i_file, txt_stats);
+    p_opts.str_ptr = &txt_stats.str_ptrs;
+    p_opts.sep_sym = txt_stats.sep_sym;
+
+    std::cout<<"    Stats"<<std::endl;
+    std::cout<<"      Number of symbols: "<<txt_stats.str_ptrs.back()/sizeof(sym_type)<<std::endl;
+    std::cout<<"      Alphabet size:     "<<txt_stats.alphabet.size()<<std::endl;
+    std::cout<<"      Smallest symbol:   "<<(int)txt_stats.alphabet[0]<<std::endl;
+    std::cout<<"      Greatest symbol:   "<<(int)txt_stats.alphabet.back()<<std::endl;
+    std::cout<<"      Sep. symbol:       "<<txt_stats.sep_sym<<std::endl;
+    std::cout<<"      Number of strings: "<<txt_stats.str_ptrs.size()-1<<std::endl;
+    std::cout<<"      Longest string:    "<<txt_stats.longest_str/sizeof(sym_type)<<std::endl;
+
     lc_gram_buffer_t gram_buff(gram_file, txt_stats.alphabet, txt_stats.str_ptrs, txt_stats.longest_str, txt_stats.sep_sym);
 
     size_t iter =0;
@@ -138,7 +146,6 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     report_time(start, end, 2);
 
     size_t n_str = p_opts.str_ptr->size()-1;
-    hashing p_function;
 
     while(p_opts.tot_phrases!=n_str) {
 
@@ -174,7 +181,7 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
             exit(1);
         }
         end = std::chrono::steady_clock::now();
-        report_time(start, end, 2);
+        report_time(start, end, 4);
 
         remove(tmp_i_file.c_str());
         rename(o_file.c_str(), tmp_i_file.c_str());
@@ -192,7 +199,9 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     gram_buff.rules_buffer.close();
 
     lc_gram_t lc_gram(gram_buff);
-    lc_gram.breakdown();
+
+    std::cout<<"  Breakdown of the resulting locally-consistent grammar:"<<std::endl;
+    lc_gram.breakdown(4);
     store_to_file(gram_file, lc_gram);
 }
 #endif //TEXT_PARSER_LC_PARSING_H
