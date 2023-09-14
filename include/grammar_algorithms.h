@@ -102,9 +102,11 @@ void add_random_access_support(lc_gram_t& gram){
     gram.has_rand_access = true;
 }
 
+//TODO implement this
+/*
 void merge_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
 
-}
+}*/
 
 size_t get_new_rl_rules(lc_gram_t& gram, par_string_map<size_t>& ht) {
 

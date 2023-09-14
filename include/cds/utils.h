@@ -13,6 +13,7 @@
 #include <fstream>
 #include <cassert>
 #include <sstream>
+#include <iomanip>
 
 #ifdef __APPLE__
 #include <unistd.h>
