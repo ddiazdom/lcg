@@ -257,7 +257,7 @@ struct lms_parsing {
     }
 
     template<class text_chunk_t>
-    static off_t overlap(const text_chunk_t& chunk, off_t ps){
+    static off_t overlap(__attribute__((unused)) const text_chunk_t& chunk, off_t ps){
         return ps+1;
     }
 
