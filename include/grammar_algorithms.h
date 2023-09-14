@@ -7,16 +7,18 @@
 
 #include "grammar.h"
 #include "lc_parsing.h"
+#include <stack>
 
 void add_random_access_support(lc_gram_t& gram){
 
     std::vector<size_t> exp(gram.g, 0);
 
-    size_t start_sym = gram.start_symbol(), pos=0, sym, tmp_sym, len, exp_size;
 
+    size_t pos=0, tmp_sym, len, exp_size;
+    //size_t start_sym = gram.start_symbol();
     size_t first_sym = gram.max_tsym+1;
     size_t last_sym = gram.first_rl_sym();
-    size_t rank=0;
+    size_t rank;
 
     for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
 
