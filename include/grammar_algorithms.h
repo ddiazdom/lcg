@@ -641,6 +641,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     //get_v_byte_size(gram);
     //add_random_access_support(gram);
     //gram.breakdown();
+
     //optional check
     //check_plain_grammar(gram, i_file);
     //

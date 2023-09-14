@@ -11,8 +11,7 @@ set(SOURCE_FILES main.cpp
 
 # Add executable target with source files listed in SOURCE_FILES variable
 add_executable(parallel_hasher_test ${SOURCE_FILES})
-target_compile_options(parallel_hasher_test PRIVATE -Wall -Wextra -Wpedantic
-        -O3
+target_compile_options(parallel_hasher_test PRIVATE -Wall -Wextra -Wpedantic -O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

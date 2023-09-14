@@ -34,6 +34,8 @@ struct lms_parsing {
         using decoder_t = typename text_chunk_t::decoder_t;
 
         typename text_chunk_t::sym_type prev_sym, curr_sym, next_sym;
+        uint64_t prev_hash, curr_hash, next_hash;
+
         off_t len, lb, rb;
         uint8_t *lb_ptr, *rb_ptr;
 
@@ -65,6 +67,11 @@ struct lms_parsing {
             ps += text_chunk.mov_to_next_diff_sym(ptr, r_boundary, curr_sym);
         }
 
+        if constexpr (text_chunk_t::first_round){
+            prev_hash = text_chunk.perm_func->symbol_hash(prev_sym);
+            curr_hash = text_chunk.perm_func->symbol_hash(curr_sym);
+        }
+
         rb = ps;
         rb_ptr = ptr;
 
@@ -78,7 +85,8 @@ struct lms_parsing {
             }
 
             if constexpr (text_chunk_t::first_round){
-                local_minimum = text_chunk.perm_func->local_minimum(prev_sym, curr_sym, next_sym);
+                next_hash = text_chunk.perm_func->symbol_hash(next_sym);
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
             }else{
                 local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
             }
@@ -100,8 +108,14 @@ struct lms_parsing {
                 lb_ptr = rb_ptr;
             }
 
-            prev_sym = curr_sym;
-            curr_sym = next_sym;
+            if constexpr (text_chunk_t::first_round){
+                prev_hash = curr_hash;
+                curr_hash = next_hash;
+            } else{
+                prev_sym = curr_sym;
+                curr_sym = next_sym;
+            }
+
             rb = ps;
             rb_ptr = ptr;
         }
@@ -147,6 +161,7 @@ struct lms_parsing {
         if(ptr==l_boundary) return -1;
 
         sym_type right_sym, curr_sym, left_sym;
+        uint64_t right_hash, curr_hash, left_hash;
 
         if constexpr (std::is_same<decoder_t, plain_decoder<sym_type>>::value){
             ps -= decoder_t::read_backwards(ptr, l_boundary, right_sym);//read the rightmost symbol from right to left
@@ -154,6 +169,11 @@ struct lms_parsing {
         }else{
             ps -= text_chunk.read_backwards(ptr, l_boundary, right_sym);//read the rightmost symbol from right to left
             ps -= text_chunk.mov_to_prev_diff_sym(ptr, l_boundary, curr_sym);
+        }
+
+        if constexpr (text_chunk_t::first_round){
+            curr_hash = text_chunk.perm_func->symbol_hash(curr_sym);
+            right_hash = text_chunk.perm_func->symbol_hash(right_sym);
         }
 
         bool local_minimum;
@@ -167,7 +187,8 @@ struct lms_parsing {
             }
 
             if constexpr (text_chunk_t::first_round){
-                local_minimum = text_chunk.perm_func->local_minimum(left_sym, curr_sym, right_sym);
+                left_hash = text_chunk.perm_func->symbol_hash(left_sym);
+                local_minimum = left_hash>curr_hash && curr_hash<right_hash;
             }else{
                 local_minimum = left_sym>curr_sym && curr_sym<right_sym;
             }
@@ -176,8 +197,13 @@ struct lms_parsing {
                 return ps+decoder_t::forward(ptr, 1)-1;
             }
 
-            right_sym = curr_sym;
-            curr_sym = left_sym;
+            if constexpr (text_chunk_t::first_round){
+                right_hash = curr_hash;
+                curr_hash = left_hash;
+            }else{
+                right_sym = curr_sym;
+                curr_sym = left_sym;
+            }
         }
         return -1;
     }
