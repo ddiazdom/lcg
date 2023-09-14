@@ -11,52 +11,53 @@
 
 void add_random_access_support(lc_gram_t& gram){
 
-    std::vector<size_t> exp(gram.g, 0);
+    int_array<size_t> exp(gram.n_nonterminals(), sym_width(gram.longest_str));
 
-    size_t pos=0, tmp_sym, len, exp_size;
+    size_t tmp_sym, len, exp_size;
     size_t last_sym = gram.first_rl_sym();
-    size_t rank;
 
+    //get the expansion length of each nonterminal in the grammar
     for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
         auto range = gram.nt2phrase(sym);
         exp_size = 0;
-
         for(size_t i=range.first;i<=range.second;i++){
-            tmp_sym = gram.rules[i];
+            tmp_sym = gram.rules.read(i);
+
             len = 1;
             if(gram.is_rl_sym(tmp_sym)) {
                 auto range2 = gram.nt2phrase(tmp_sym);
-                len = gram.rules[range2.second];
-                tmp_sym = gram.rules[range2.first];
+                tmp_sym = gram.rules.read(range2.first);
+                len = gram.rules.read(range2.second);
             }
 
             if(gram.is_terminal(tmp_sym)){
                 exp_size+=len;
             } else{
-                rank = tmp_sym - gram.max_tsym;
-                exp_size += exp[gram.rl_ptr[rank]-gram.max_tsym-2]*len;
+                exp_size += exp.read(tmp_sym-gram.max_tsym)*len;
             }
-            exp[pos++]=exp_size;
         }
+        exp.write(sym-gram.max_tsym, exp_size);
     }
 
-    size_t first_sym = gram.first_rl_sym();
     last_sym = gram.last_rl_sym();
-    for(size_t sym=first_sym;sym<=last_sym;sym++) {
+    for(size_t sym=gram.first_rl_sym();sym<=last_sym; sym++) {
         auto range = gram.nt2phrase(sym);
-        tmp_sym = gram.rules[range.first];
-        len = gram.rules[range.second];
+        tmp_sym = gram.rules.read(range.first);
+        len = gram.rules.read(range.second);
         if(gram.is_terminal(tmp_sym)){
-            exp[pos++] = 1;
-            exp[pos++] = len;
+            exp_size = len;
         }else{
-            rank = tmp_sym - gram.max_tsym;
-            exp[pos++] = exp[gram.rl_ptr[rank]-gram.max_tsym-2];
-            exp[pos++] = exp[pos-1]*len;
+            exp_size = exp.read(tmp_sym-gram.max_tsym)*len;
         }
+        exp.write(sym-gram.max_tsym, exp_size);
     }
+    gram.rule_exp.swap(exp);
+    size_t n_samples = INT_CEIL(gram.g-gram.max_tsym, gram.samp_rate);
+    int_array<size_t> samp_exp(n_samples, sym_width(gram.max_tsym));
 
-    size_t longest_exp=0;
+    samp_exp.resize(n_samples);
+
+    /*size_t longest_exp=0;
     for(size_t str=0;str<gram.n_strings();str++){
         auto range = gram.str2phrase(str);
         exp_size = 0;
@@ -98,7 +99,8 @@ void add_random_access_support(lc_gram_t& gram){
         }
     }
     new_exp.resize(new_exp.size());
-    new_exp.swap(gram.rule_exp);
+    new_exp.swap(gram.rule_exp);*/
+    gram.sampled_exp.swap(samp_exp);
     gram.has_rand_access = true;
 }
 
@@ -169,7 +171,6 @@ size_t get_new_rl_rules(lc_gram_t& gram, par_string_map<size_t>& ht) {
                     auto res = ht.insert((uint8_t *)&pair, sizeof(size_t)*2, 0);
                     if(res.second){
                         tmp_sym = new_id++;
-                        //ht.insert_value_at(res.first, tmp_sym);
                         res.first = tmp_sym;
 
                     }
@@ -189,13 +190,11 @@ size_t get_new_rl_rules(lc_gram_t& gram, par_string_map<size_t>& ht) {
             auto res = ht.insert((uint8_t *)&pair, sizeof(size_t)*2, 0);
             if(res.second){
                 tmp_sym = new_id++;
-                //ht.insert_value_at(res.first, tmp_sym);
                 res.first = tmp_sym;
             }
         }
         new_size++;
     }
-
     return new_size+(ht.size()*2);
 }
 
@@ -640,10 +639,11 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     report_time(start, end, 2);
 
     //get_v_byte_size(gram);
-    //std::cout<<"Adding random access support"<<std::endl;
-    //start = std::chrono::steady_clock::now();
-    //add_random_access_support(gram);
-    //end = std::chrono::steady_clock::now();
+    std::cout<<"Adding random access support"<<std::endl;
+    start = std::chrono::steady_clock::now();
+    add_random_access_support(gram);
+    end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 
     //optional check
     //check_plain_grammar(gram, i_file);

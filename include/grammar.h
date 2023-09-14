@@ -100,26 +100,6 @@ struct lc_gram_buffer_t{
         ifs.close();
         assert(g==rules_buffer.size());
     }
-
-    //void save_to_file(std::string& output_file);
-    //void load_from_file(std::string &g_file);
-
-    /*[[nodiscard]] bool is_terminal(const size_t& id) const {
-        return sym_map.find(id) != sym_map.end();
-    }
-
-    [[nodiscard]] inline bool is_rl(size_t symbol) const{
-        if(rl_rules.second==0) return false;
-        return symbol>=rl_rules.first && symbol < (rl_rules.first + rl_rules.second);
-    }
-
-    [[nodiscard]] inline long long int parsing_level(size_t symbol) const{
-        if(symbol <= max_tsym) return 0;
-        for(long long int i=0;i<int(n_p_rounds);i++){
-            if(lvl_rules[i]<=symbol && symbol<lvl_rules[i+1]) return i+1;
-        }
-        return -1;
-    }*/
 };
 
 struct lc_gram_t {
@@ -129,23 +109,25 @@ struct lc_gram_t {
     size_t                             c{}; //c: length of the right-hand of the start symbol
     size_t                             g{}; //g: sum of the rules' right-hand sides
     size_t                             s{}; //s: number of strings
-    size_t                             samp_rate=4;
-    size_t                             longest_str{};
+    size_t                             longest_str{}; //length of the longest string encoded in the grammar
     size_t                             max_tsym{}; //highest terminal symbol
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
     bool                               is_simplified=false;
     bool                               has_rl_rules=false;
     bool                               has_rand_access=false;
 
-    std::vector<uint8_t>               terminals;
-    std::vector<hashing>               par_functions;
-    std::vector<size_t>                str_boundaries;//
-    std::vector<size_t>                lvl_rules; // number of rules generated in every round of locally-consistent parsing
+    std::vector<uint8_t>               terminals; //set of terminals
+    std::vector<hashing>               par_functions; //list of hash functions from which the grammar was constructed
+    std::vector<size_t>                str_boundaries; // start position of every string in the compressed string
+    std::vector<size_t>                lvl_rules; //number of rules generated in every round of locally-consistent parsing
 
-    int_array<size_t>                  rules;
-    int_array<size_t>                  rl_ptr;
+    int_array<size_t>                  rules; //concatenated set of grammar rules
+    int_array<size_t>                  rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
     int_array<size_t>                  rule_exp;// length of the nt expansions
-    std::pair<size_t, size_t>          run_len_nt; //first rl rules and total number of rl rules
+    int_array<size_t>                  sampled_exp;// sampled nt expansions in "rules"
+    size_t                             samp_rate=4; //sampling rate to sample nt expansions in "rules"
+
+    std::pair<size_t, size_t>          run_len_nt; //first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
 
@@ -238,6 +220,7 @@ struct lc_gram_t {
         written_bytes +=rules.serialize(ofs);
         written_bytes +=rl_ptr.serialize(ofs);
         written_bytes +=rule_exp.serialize(ofs);
+        written_bytes +=sampled_exp.serialize(ofs);
         return written_bytes;
     }
 
@@ -312,8 +295,14 @@ struct lc_gram_t {
         }
     }
 
-    [[nodiscard]] inline size_t parsing_level() const {
-        return 0;
+    [[nodiscard]] inline off_t parsing_level(size_t symbol) const {
+        if(symbol <= max_tsym) return 0;
+        for(off_t i=0;i<(off_t)lvl_rules.size();i++){
+            if(lvl_rules[i]<=symbol && symbol<lvl_rules[i+1]){
+                return i+1;
+            }
+        }
+        return -1;
     }
 
     [[nodiscard]] inline size_t pos2symbol(size_t idx) const{
@@ -355,7 +344,14 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Approx. compression ratio:    "<<comp_ratio<<std::endl;
         std::cout<<pad_string<<"Simplified:                   "<<(is_simplified ? "yes" : "no")<<std::endl;
         std::cout<<pad_string<<"Run-len rules:                "<<(has_rl_rules ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Random access support:        "<<(has_rand_access? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Random access support:        "<<(has_rand_access? "yes" : "no");
+        if(has_rand_access){
+            auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
+            std::cout<<" ("<<report_space((off_t)ras_bytes)<<" in data)"<<std::endl;
+            std::cout<<pad_string<<"  sampling rate for the expansions: 1/"<<samp_rate<<std::endl;
+        }else{
+            std::cout<<""<<std::endl;
+        }
     }
 
     void breakdown(size_t pad){

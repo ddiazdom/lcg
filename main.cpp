@@ -119,8 +119,6 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")-> check(CLI::ExistingDirectory)->default_val("/tmp");
     comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");
     comp->add_option("-p,--parsing-functions", args.p_file, "File with the hash functions (PF format) to parse the text")->check(CLI::ExistingFile);
-    //n_tries->excludes(det_flag);
-    //n_tries->excludes(pf_cmd);
 
     CLI::App* par_func = app.add_subcommand("par", "extract parsing functions from a grammar");
     par_func->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
