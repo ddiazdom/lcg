@@ -32,10 +32,10 @@ struct hashing {
     uint32_t mersenne_primes_uint32[3] = {131071, 524287, 2147483647};
     uint64_t mersenne_primes_uint64[1] = {2305843009213693951UL};
 
-    unsigned __int128 mersenne_prime_uint128 = ultra_long_mersenne_number();
-    unsigned __int128 mp_ul_a=0;
-    unsigned __int128 mp_ul_b=0;
-    unsigned __int128 mp_ul_c=0;
+    unsigned __int128 mersenne_prime_uint128;
+    unsigned __int128 mp_ul_a;
+    unsigned __int128 mp_ul_b;
+    unsigned __int128 mp_ul_c;
 
     uint64_t powers[65] = {0ULL, 1ULL, 3ULL, 7ULL, 15ULL, 31ULL, 63ULL, 127ULL, 255ULL, 511ULL, 1023ULL, 2047ULL,
                            4095ULL, 8191ULL, 16383ULL, 32767ULL, 65535ULL, 131071ULL, 262143ULL, 524287ULL, 1048575ULL,
@@ -68,7 +68,10 @@ struct hashing {
         mp_ul_c=distrib2(gen2);
     }
 
-    hashing(){
+    hashing(): mersenne_prime_uint128(ultra_long_mersenne_number()),
+               mp_ul_a{0},
+               mp_ul_b{0},
+               mp_ul_c{0}{
         generate_random_numbers();
     }
 
@@ -100,13 +103,6 @@ struct hashing {
 
     [[nodiscard]] inline uint64_t symbol_hash(uint64_t x, uint64_t l=64) const {
         return (a1[0]*x) >> (64-l);
-    }
-
-    [[nodiscard]] inline bool local_minimum(uint64_t x, uint64_t y, uint64_t z, uint64_t shift=64) const {
-        uint64_t px = (a1[0]*x) >> (64-shift);
-        uint64_t py = (a1[0]*y) >> (64-shift);
-        uint64_t pz = (a1[0]*z) >> (64-shift);
-        return px > py && py< pz;
     }
 
     //the resulting hash will be l-bits long
