@@ -348,7 +348,7 @@ struct lc_gram_t {
         if(has_rand_access){
             auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
             std::cout<<" ("<<report_space((off_t)ras_bytes)<<" in data)"<<std::endl;
-            std::cout<<pad_string<<"  sampling rate for the expansions: 1/"<<samp_rate<<std::endl;
+            std::cout<<pad_string<<"  Samp. rate for non.ter exps: 1/"<<samp_rate<<std::endl;
         }else{
             std::cout<<""<<std::endl;
         }

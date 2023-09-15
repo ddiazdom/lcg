@@ -192,7 +192,9 @@ int main(int argc, char** argv) {
     } else if(app.got_subcommand("meta")){
         print_metadata(args.input_file);
     } else if(app.got_subcommand("access")){
-
+        lc_gram_t gram;
+        load_from_file(args.input_file, gram);
+        estimate_alt_encodings(gram);
     }
     return 0;
 }

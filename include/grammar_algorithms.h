@@ -399,7 +399,7 @@ void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
     std::cout<<"Grammar is correct!!"<<std::endl;
 }
 
-void get_v_byte_size(lc_gram_t& gram){
+void estimate_alt_encodings(lc_gram_t& gram){
     std::vector<size_t> freqs(gram.r, 0);
     auto res1 = gram.nt2phrase(gram.first_rl_sym());
     auto res2 = gram.nt2phrase(gram.last_rl_sym());
@@ -416,6 +416,34 @@ void get_v_byte_size(lc_gram_t& gram){
         freqs[gram.rules[i]]++;
     }
 
+    size_t curr_bytes = INT_CEIL(gram.rules.size()*gram.rules.width(), 8);
+    std::cout<<"Current grammar space: "<<report_space((off_t)curr_bytes)<<std::endl;
+
+    size_t tot_bits=0, n_bits;
+    size_t new_sym=1;
+    uint8_t code_len;
+    uint8_t header_len = sym_width(sym_width(gram.r));
+    for(auto & freq : freqs){
+        code_len = sym_width(new_sym);
+        n_bits = code_len + header_len;
+        tot_bits+=n_bits*freq;
+        new_sym++;
+    }
+
+    size_t tot_bytes = INT_CEIL(tot_bits, 8);
+    std::cout<<"Delta codes without permutation: "<<report_space((off_t)tot_bytes)<<std::endl;
+
+    tot_bytes=0;
+    new_sym=1;
+    for(auto & freq : freqs){
+        size_t n_bytes = INT_CEIL(sym_width(new_sym), 8);
+        n_bits = n_bytes + sym_width(new_sym);
+        n_bytes = INT_CEIL(n_bits, 8);
+        tot_bytes+=n_bytes*freq;
+        new_sym++;
+    }
+    std::cout<<"Vbytes without permutation: "<<report_space((off_t)tot_bytes)<<std::endl;
+
     std::vector<std::pair<size_t, size_t>> sorted_freqs(gram.r);
     for(size_t i=0;i<freqs.size();i++){
         sorted_freqs[i] = {i, freqs[i]};
@@ -425,16 +453,16 @@ void get_v_byte_size(lc_gram_t& gram){
         return a.second>b.second;
     });
 
-    size_t tot_bytes=0;
-    size_t new_sym=1;
+    tot_bytes=0;
+    new_sym=1;
     for(auto & sorted_freq : sorted_freqs){
         size_t n_bytes = INT_CEIL(sym_width(new_sym), 8);
-        size_t n_bits = n_bytes + sym_width(new_sym);
+        n_bits = n_bytes + sym_width(new_sym);
         n_bytes = INT_CEIL(n_bits, 8);
         tot_bytes+=n_bytes*sorted_freq.second;
         new_sym++;
     }
-    std::cout<<"new: "<<tot_bytes<<" versus old: "<<INT_CEIL(gram.rules.size()*gram.rules.width(), 8)<<std::endl;
+    std::cout<<"Vbytes with permutation: "<<report_space((off_t)tot_bytes)<<std::endl;
 }
 
 std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const lc_gram_t& gram) {
@@ -638,7 +666,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
-    //get_v_byte_size(gram);
+    estimate_alt_encodings(gram);
     std::cout<<"Adding random access support"<<std::endl;
     start = std::chrono::steady_clock::now();
     add_random_access_support(gram);
