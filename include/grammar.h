@@ -389,6 +389,39 @@ struct lc_gram_t {
     /*
     void access(size_t str_id, size_t start, size_t end, std::string& output){
     }*/
+
+    size_t in_memory_decompression(size_t sym, std::string& dc_string){
+
+        std::stack<size_t> stack;
+        stack.push(sym);
+        size_t exp_len = 0;
+
+        while(!stack.empty()) {
+
+            sym = stack.top();
+            stack.pop();
+
+            if(is_terminal(sym)){
+                dc_string.push_back((char)sym);
+                exp_len++;
+            }else{
+                auto range = nt2phrase(sym);
+
+                if(is_rl_sym(sym)){
+                    assert(range.second-range.first+1==2);
+                    size_t len = pos2symbol(range.second);
+                    for(size_t j=0;j<len;j++){
+                        stack.emplace(pos2symbol(range.first));
+                    }
+                }else{
+                    for(size_t j=range.second+1; j-->range.first;){
+                        stack.emplace(pos2symbol(j));
+                    }
+                }
+            }
+        }
+        return exp_len;
+    }
 };
 
 #endif //LCG_GRAMMAR_H

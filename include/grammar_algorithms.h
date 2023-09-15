@@ -9,6 +9,106 @@
 #include "lc_parsing.h"
 #include <stack>
 
+struct collage_data{
+    size_t nt{};
+    size_t lcp{};
+    size_t rule_size{};
+    long ref_nt =-1;
+    std::string dc_string;
+};
+
+void make_collage_system(lc_gram_t& gram){
+
+    size_t glob_size = 0, new_glob_size=0;
+    size_t n_suffix_rules = 0;
+    for(size_t i=0;i<gram.lvl_rules.size()-1; i++){
+        size_t lvl_rules = gram.lvl_rules[i+1]-gram.lvl_rules[i];//number of rules in the level
+
+        if(lvl_rules>0){
+            std::vector<collage_data> dc_rules;
+            dc_rules.resize(lvl_rules);
+
+            size_t first_nt = gram.lvl_rules[i];
+            size_t last_nt = gram.lvl_rules[i + 1] - 1;
+
+            for(size_t nt=first_nt, j=0;nt<=last_nt;nt++,j++){
+                dc_rules[j].nt = nt;
+                size_t exp_size = gram.in_memory_decompression(nt, dc_rules[j].dc_string);
+                assert(exp_size==gram.rule_exp[nt-gram.max_tsym]);
+                auto res = gram.nt2phrase(nt);
+                dc_rules[j].rule_size = res.second-res.first+1;
+            }
+
+            std::sort(dc_rules.begin(), dc_rules.end(), [&](auto const& a, auto const& b) -> bool{
+                size_t len = std::min(a.dc_string.size(), b.dc_string.size());
+                for(size_t k=0;k<len;k++){
+                    if(a.dc_string[k]!=b.dc_string[k]){
+                        return a.dc_string[k]<b.dc_string[k];
+                    }
+                }
+                return a.dc_string.size()<b.dc_string.size();
+            });
+
+            for(size_t k=1;k<lvl_rules;k++){
+                size_t u = 0;
+                while(u<dc_rules[k-1].dc_string.size() &&
+                      dc_rules[k].dc_string[u]==dc_rules[k-1].dc_string[u]){
+                    u++;
+                }
+                dc_rules[k].lcp = u;
+            }
+
+            size_t new_lvl_size=0;
+            for(size_t k=0;k<lvl_rules-1;k++){
+
+                size_t len = dc_rules[k].dc_string.size();
+                if(dc_rules[k+1].lcp<len){
+                    new_lvl_size+=dc_rules[k].rule_size;
+                    continue;
+                }
+
+                size_t prev_len = len;
+                size_t ptr_rl = k+1;
+                while(ptr_rl<lvl_rules && dc_rules[ptr_rl].lcp>=prev_len){
+                    prev_len = dc_rules[ptr_rl].lcp;
+                    ptr_rl++;
+                }
+                dc_rules[k].ref_nt = (long)ptr_rl-1;
+
+                if(dc_rules[k].rule_size>2){
+                    new_lvl_size+=2;
+                }else{
+                    new_lvl_size+=dc_rules[k].rule_size;
+                }
+            }
+
+            /*std::cout<<"New level"<<std::endl;
+            size_t k =0;
+            for(auto const& rule : dc_rules){
+                for(auto const & sym : rule.dc_string){
+                    std::cout<<(int)sym<<" ";
+                }
+                if(rule.ref_nt<0){
+                    std::cout<<" | idx:"<<k++<<" : ref_nt:"<<rule.ref_nt<<" lcp:"<<rule.lcp<<std::endl;
+                }else{
+                    n_suffix_rules++;
+                    std::cout<<""<<std::endl;
+                }
+            }*/
+
+            //exit(0);
+            auto res1 = gram.nt2phrase(gram.lvl_rules[i]);
+            auto res2 = gram.nt2phrase(gram.lvl_rules[i + 1] - 1);
+            size_t tot_sym = res2.second-res1.first+1;
+            //std::cout<<tot_sym<<" "<<new_lvl_size<<std::endl;
+            glob_size += tot_sym;
+            new_glob_size += new_lvl_size;
+            //std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
+        }
+    }
+    std::cout<<glob_size<<" "<<new_glob_size<<" "<<n_suffix_rules<<std::endl;
+}
+
 void add_random_access_support(lc_gram_t& gram){
 
     int_array<size_t> exp(gram.n_nonterminals(), sym_width(gram.longest_str));
@@ -673,6 +773,12 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
+    std::cout<<"Transforming the grammar into a college system"<<std::endl;
+    start = std::chrono::steady_clock::now();
+    make_collage_system(gram);
+    end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
+
     //optional check
     //check_plain_grammar(gram, i_file);
     //
@@ -680,5 +786,6 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     gram.breakdown(2);
     size_t written_bytes = store_to_file(o_file, gram);
     std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
+
 }
 #endif //LCG_GRAMMAR_ALGORITHMS_H
