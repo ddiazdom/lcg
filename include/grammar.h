@@ -29,9 +29,8 @@ struct lc_gram_buffer_t{
 
     o_file_stream<size_t>              rules_buffer;
     std::vector<off_t>&                str_boundaries;//
-    std::vector<size_t>                lvl_rules; // number of rules generated in every parsing round
-    std::vector<size_t>                lvl_size; // number of rules generated in every parsing round
-
+    std::vector<size_t>                lvl_rules;     // number of rules generated in every parsing round
+    std::vector<size_t>                lvl_size;      // number of rules generated in every parsing round
 
 
     lc_gram_buffer_t(std::string& rules_f,
@@ -115,6 +114,7 @@ struct lc_gram_t {
     bool                               is_simplified=false;
     bool                               has_rl_rules=false;
     bool                               has_rand_access=false;
+    bool                               has_cg_rules=false;
 
     std::vector<uint8_t>               terminals; //set of terminals
     std::vector<hashing>               par_functions; //list of hash functions from which the grammar was constructed
@@ -334,17 +334,18 @@ struct lc_gram_t {
 
         std::string pad_string(pad,' ');
 
-        std::cout<<pad_string<<"Number of compressed symbols: "<<n<<std::endl;
-        std::cout<<pad_string<<"Number of compressed strings: "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
-        std::cout<<pad_string<<"Separator symbol:             "<<(int)sep_tsym<<std::endl;
-        std::cout<<pad_string<<"Longest string:               "<<longest_str<<std::endl;
-        std::cout<<pad_string<<"Number of terminals:          "<<n_ter<<std::endl;
-        std::cout<<pad_string<<"Number of non-terminals:      "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
-        std::cout<<pad_string<<"Grammar size:                 "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;
-        std::cout<<pad_string<<"Approx. compression ratio:    "<<comp_ratio<<std::endl;
-        std::cout<<pad_string<<"Simplified:                   "<<(is_simplified ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Run-len rules:                "<<(has_rl_rules ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Random access support:        "<<(has_rand_access? "yes" : "no");
+        std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<std::endl;
+        std::cout<<pad_string<<"Number of compressed strings:   "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
+        std::cout<<pad_string<<"Separator symbol:               "<<(int)sep_tsym<<std::endl;
+        std::cout<<pad_string<<"Longest string:                 "<<longest_str<<std::endl;
+        std::cout<<pad_string<<"Number of terminals:            "<<n_ter<<std::endl;
+        std::cout<<pad_string<<"Number of non-terminals:        "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
+        std::cout<<pad_string<<"Grammar size:                   "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;
+        std::cout<<pad_string<<"Length of the comp. collection: "<<c<<std::endl;
+        std::cout<<pad_string<<"Approx. compression ratio:      "<<comp_ratio<<std::endl;
+        std::cout<<pad_string<<"Simplified:                     "<<(is_simplified ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Run-len rules:                  "<<(has_rl_rules ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Random access support:          "<<(has_rand_access? "yes" : "no");
         if(has_rand_access){
             auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
             std::cout<<" ("<<report_space((off_t)ras_bytes)<<" in data)"<<std::endl;
@@ -390,7 +391,13 @@ struct lc_gram_t {
     void access(size_t str_id, size_t start, size_t end, std::string& output){
     }*/
 
-    size_t in_memory_decompression(size_t sym, std::string& dc_string){
+    inline bool is_cs_nt(size_t sym) const {
+        auto res = nt2phrase(sym);
+        size_t fsym = rules[res.first];
+        return parsing_level(fsym)== parsing_level(sym);
+    }
+
+    size_t in_memory_decompression(size_t sym, std::string& dc_string) const {
 
         std::stack<size_t> stack;
         stack.push(sym);
