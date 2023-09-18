@@ -66,10 +66,9 @@ struct arguments{
     std::string output_file;
 
     std::string tmp_dir;
-    size_t n_threads{};
-    size_t n_chunks{};
+    size_t n_threads=1;
+    size_t n_chunks=1;
     size_t chunk_size{};
-    size_t n_tries=1;
     bool ver=false;
     bool det=false;
     uint8_t alph_bytes=1;
@@ -114,7 +113,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->check(CLI::Range(1, 8))->default_val(1)->check(ValidCellWidth);
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
-    comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
+    comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(1);
     comp->add_option("-C,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
     comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")-> check(CLI::ExistingDirectory)->default_val("/tmp");
     comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");

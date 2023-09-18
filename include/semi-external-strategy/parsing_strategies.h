@@ -6,7 +6,7 @@
 #define SIMPLE_EXAMPLE_PARSING_STRATEGIES_H
 
 #include <sys/types.h>
-#include <cds/int_array.h>
+#include "cds/int_array.h"
 #include <vector>
 #include "hashing.h"
 
@@ -47,9 +47,9 @@ struct parsing_opts{
     }
 };
 
-#include "parsers/local_minima_parser.hpp"
-#include "create_dict.h"
-#include "create_dict_full_scan.h"
-#include "parse_text.h"
+#include "semi-external-strategy/local_minima_parser.hpp"
+#include "semi-external-strategy/create_dict.h"
+#include "semi-external-strategy/create_dict_full_scan.h"
+#include "semi-external-strategy/parse_text.h"
 
 #endif //SIMPLE_EXAMPLE_PARSING_STRATEGIES_H

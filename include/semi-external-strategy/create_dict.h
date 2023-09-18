@@ -5,7 +5,7 @@
 #ifndef SIMPLE_EXAMPLE_CREATE_DICTIONARY_H
 #define SIMPLE_EXAMPLE_CREATE_DICTIONARY_H
 
-#include "parsers/local_minima_parser.hpp"
+#include "local_minima_parser.hpp"
 #include "text_handler.h"
 #include "cds/ts_queue.h"
 #include <unistd.h>

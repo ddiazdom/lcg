@@ -10,6 +10,7 @@
 #include <cassert>
 #include <cstring>
 #include <fstream>
+#include "cdt_common.hpp"
 #include "../external/xxHash-dev/xxhash.h"
 
 thread_local size_t tr_id;
