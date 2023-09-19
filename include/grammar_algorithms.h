@@ -855,12 +855,12 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
 template<class sym_type>
 void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size){
 
-    std::vector<hashing> hpf;
+    std::vector<hashing> hpf(36);
 
     lzstrat::parsing_opts p_opts;
-    p_opts.n_chunks = n_chunks;
     p_opts.n_threads = n_threads;
-    p_opts.chunk_size = std::min<off_t>(1020*1024*1024, file_size(i_file));
+    p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
+    p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
     p_opts.page_cache_limit = 1024*1024*1024;
     p_opts.sep_sym = 10;
 
