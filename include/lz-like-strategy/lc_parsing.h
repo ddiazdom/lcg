@@ -32,27 +32,36 @@ namespace lzstrat {
                     sym_type * text, std::vector<uint64_t>& hash_values_vector){
 
         std::vector<uint64_t> tmp_phrase;
-        sym_type * data;
-        size_t len;
+        size_t source, end;
         std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
 
-        for(size_t i=0;i<perm.size();i++){
+        for(size_t i=0;i<phrase_set.size();i++){
 
             perm[i].first = i;
 
-            data = (sym_type *)&text[phrase_set[i].source];
-            len = phrase_set[i].len/sizeof(sym_type);
+            source = phrase_set[i].source/sizeof(sym_type);
+            end = source + (phrase_set[i].len/sizeof(sym_type));
 
-            for(size_t j=0;j<len;j++){
+            //TODO testing
+            /*if(phrase_set[i].source<1000){
+                std::cout<<phrase_set[i].len<<" "<<phrase_set[i].source<<" -> ";
+                for(size_t j=source;j<end;j++){
+                    std::cout<<text[j]<<" ";
+                }
+                std::cout<<""<<std::endl;
+            }*/
+            //std::cout<<source<<" "<<end<<" "<<i<<" "<<perm.size()<<std::endl;
+            //
+
+            for(size_t j=source;j<end;j++){
                 if constexpr (p_round){
-                    tmp_phrase.push_back(pf.symbol_hash(data[j]));
+                    tmp_phrase.push_back(pf.symbol_hash(text[j]));
                 }else{
-                    tmp_phrase.push_back(hash_values_vector[data[j]]);
+                    assert(text[j]>0);
+                    tmp_phrase.push_back(hash_values_vector[text[j]-1]);
                 }
             }
-
-            const auto * addr = (char *)tmp_phrase.data();
-            perm[i].second = pf.string_hash(addr, tmp_phrase.size()*sizeof(uint64_t), 64);
+            perm[i].second = pf.string_hash((char *)tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), 64);
             tmp_phrase.clear();
         }
         std::vector<uint64_t>().swap(tmp_phrase);
@@ -74,11 +83,11 @@ namespace lzstrat {
                     std::sort(perm.begin()+prev_pos, perm.begin()+i, [&](auto a, auto b) -> bool{
 
                         lz_map::phrase_t phrase_a = phrase_set[a.first];
-                        auto data_a = (sym_type *)&text[phrase_a.source];
+                        auto data_a = (sym_type *)&text[phrase_a.source/sizeof(sym_type)];
                         off_t len_a = phrase_a.len/sizeof(sym_type);
 
                         lz_map::phrase_t phrase_b = phrase_set[b.first];
-                        auto data_b = (sym_type *)&text[phrase_b.source];
+                        auto data_b = (sym_type *)&text[phrase_b.source/sizeof(sym_type)];
                         off_t len_b = phrase_b.len/sizeof(sym_type);
 
                         size_t len = std::min(len_a, len_b);
@@ -105,7 +114,7 @@ namespace lzstrat {
         hash_values_vector.shrink_to_fit();
 
         mt_perm.resize(perm.size());
-        for(size_t i=0, rank=1;i<perm.size();i++, rank++){
+        for(size_t i=0, rank=0;i<perm.size();i++, rank++){
             mt_perm[perm[i].first] = rank;
         }
     }
@@ -136,7 +145,9 @@ namespace lzstrat {
 
             if(curr_sym==sep_sym){
                 n_strings++;
-                mt_sym = map.insert(txt_pos-2, sym_bytes, inserted);
+                mt_sym = map.insert((txt_pos-2)*sym_bytes, sym_bytes, inserted);
+                //assert(text[txt_pos-2]!=0);
+
                 parse[parse_pos++] = mt_sym+1;
                 parse[parse_pos++] = 0;
                 continue;
@@ -149,6 +160,8 @@ namespace lzstrat {
 
                 if(prev_sym>curr_sym && curr_sym<next_sym){
                     phrase_len = rb-lb;
+                    //assert(text[lb+phrase_len-1]>0);
+                    //assert(text[lb]>0);
                     mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                     parse[parse_pos++] = mt_sym+1;
                     lb = rb;
@@ -162,6 +175,8 @@ namespace lzstrat {
             }
 
             phrase_len = txt_pos-1-lb;
+            //assert(text[lb+phrase_len-1]>0);
+            //assert(text[lb]>0);
             mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
             parse[parse_pos++] = mt_sym+1;
             parse[parse_pos++] = 0;
@@ -170,14 +185,26 @@ namespace lzstrat {
             n_strings++;
         }
 
-        map.shrink_to_fit();
-        map.destroy_table();
+        //map.shrink_to_fit();
+        //map.destroy_table();
 
         std::vector<uint32_t> perm;
+
+        /*size_t j = 0;
+        while(true){
+            std::cout<<text[j]<<" ";
+            if((p_round && text[j]==10) || text[j]==0){
+                break;
+            }
+            j++;
+        }
+        std::cout<<""<<std::endl;*/
+
         create_met<sym_type, p_round>(perm, hf, map.phrase_set, text, prev_hash_values);
 
         for(off_t i=0;i<parse_pos;i++){
-            parse[i] = perm[parse[i]];
+            if(parse[i]==0) continue;
+            parse[i] = perm[parse[i]-1]+1;
         }
 
         return parse_pos;
@@ -192,7 +219,7 @@ namespace lzstrat {
         off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, pf[0], prev_hash_values);
         sep_sym = 0;
         off_t size_limit = n_strings*2;
-        std::cout<<"psize: "<<parse_size<<", size_limit: "<<size_limit<<". text_size: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<std::endl;
+        //std::cout<<"psize: "<<parse_size<<", size_limit: "<<size_limit<<". text_size: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<std::endl;
         size_t i=1;
 
         auto * new_parse = (text_chunk::size_type *)chunk.text;
@@ -201,7 +228,7 @@ namespace lzstrat {
             assert(parse_size>=size_limit);
             parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, pf[i++], prev_hash_values);
             std::swap(chunk.parse, new_parse);
-            std::cout<<"psize: "<<parse_size<<", size_limit: "<<size_limit<<". text_size: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<std::endl;
+            //std::cout<<"psize: "<<parse_size<<", size_limit: "<<size_limit<<". text_size: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<std::endl;
         }
     }
 
@@ -213,7 +240,7 @@ namespace lzstrat {
         std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
         std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
         std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
-        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<std::endl;
+        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
 
         ts_queue<size_t> chunks_to_read;
         ts_queue<size_t> chunks_to_reuse;
@@ -275,7 +302,6 @@ namespace lzstrat {
             size_t proc_syms=0;
             size_t buff_idx;
 
-            std::cout<<"\n"<<std::flush;
             while (rem_bytes > 0) {
                 chunks_to_reuse.pop(buff_idx);
 

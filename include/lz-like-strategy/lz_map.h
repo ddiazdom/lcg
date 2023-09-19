@@ -85,6 +85,12 @@ public:
             if(m_table[idx]==null_source) {
 
                 m_table[idx] = phrases.size();
+
+                /*if(!phrases.empty() && source<=phrases.back().source){
+                    std::cout<<"something is incorrect"<<std::endl;
+                }
+                assert(phrases.empty() || source>phrases.back().source);*/
+
                 phrases.emplace_back(source, len);
 
                 //the key insertion exceeds the max. load factor (i.e., rehash)
