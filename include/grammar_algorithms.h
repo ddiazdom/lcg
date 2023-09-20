@@ -855,7 +855,9 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
 template<class sym_type>
 void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size){
 
-    std::vector<hashing> hpf(36);
+    std::vector<hashing> hpf;
+    //store_pl_vector("hash_functions", hpf);
+    load_pl_vector("hash_functions", hpf);
 
     lzstrat::parsing_opts p_opts;
     p_opts.n_threads = n_threads;

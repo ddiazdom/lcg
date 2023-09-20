@@ -40,6 +40,7 @@ namespace lzstrat {
        }
    };
 
+   template<class sym_type>
    void read_chunk_from_file(int fd, off_t& rem_text_bytes, off_t& read_text_bytes, text_chunk& chunk){
 
        off_t chunk_bytes = chunk.text_bytes<rem_text_bytes ? chunk.text_bytes : rem_text_bytes;
@@ -50,29 +51,52 @@ namespace lzstrat {
        off_t fd_buff_bytes = 8388608;// 8MB buffer
 
        chunk.text = (uint8_t *) chunk.buffer;
-       uint8_t * data = chunk.text;
-
-       while(chunk_bytes>0) {
-           fd_buff_bytes = fd_buff_bytes<chunk_bytes ? fd_buff_bytes : chunk_bytes;
-           read_bytes = read(fd, data, fd_buff_bytes);
-           assert(read_bytes>0);
-
-           data+=read_bytes;
-           chunk_bytes-=read_bytes;
-           acc_bytes+=read_bytes;
-       }
-       assert(chunk.text_bytes==acc_bytes);
+       sym_type * data = chunk.text;
        chunk.n_bytes_before = read_text_bytes;
+       off_t limit = chunk.text_bytes>>1;
+       off_t i;
 
-       //go to the rightmost separators symbol
-       off_t i = chunk.text_bytes-1;
-       while(i>0 && chunk.text[i]!=chunk.sep_sym) i--;
+       while(true){
+
+           while(chunk_bytes>0) {
+               fd_buff_bytes = fd_buff_bytes<chunk_bytes ? fd_buff_bytes : chunk_bytes;
+               read_bytes = read(fd, data, fd_buff_bytes);
+               assert(read_bytes>0);
+
+               data+=read_bytes;
+               chunk_bytes-=read_bytes;
+               acc_bytes+=read_bytes;
+           }
+           assert(chunk.text_bytes==acc_bytes);
+
+           //go to the rightmost separators symbol
+           i = chunk.text_bytes-1;
+           while(i>limit && chunk.text[i]!=chunk.sep_sym){
+               i--;
+           }
+           if(i>limit) break;
+
+           off_t tmp_ck_size = INT_CEIL(((chunk.text_bytes*125)/100), sizeof(sym_type))*sizeof(sym_type);
+           tmp_ck_size = std::min(tmp_ck_size, rem_text_bytes);
+           chunk_bytes = tmp_ck_size-chunk.text_bytes;
+           chunk.text_bytes =  tmp_ck_size;
+
+           //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
+           // where ``text_len'' is the number of input symbols that fits the buffer
+           off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
+
+           chunk.buffer_bytes = off_t(tmp_ck_size + parse_bytes);
+           chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
+           chunk.text = (sym_type *)chunk.buffer;
+           data = &chunk.text[chunk.text_bytes-chunk_bytes];
+       }
 
        off_t eff_bytes = i+1;
        chunk.text_bytes = eff_bytes;
 
        off_t offset = acc_bytes-eff_bytes;
        rem_text_bytes-= eff_bytes;
+
        read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
    }
 };
