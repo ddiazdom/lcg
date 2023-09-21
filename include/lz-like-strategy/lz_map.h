@@ -85,12 +85,6 @@ public:
             if(m_table[idx]==null_source) {
 
                 m_table[idx] = phrases.size();
-
-                /*if(!phrases.empty() && source<=phrases.back().source){
-                    std::cout<<"something is incorrect"<<std::endl;
-                }
-                assert(phrases.empty() || source>phrases.back().source);*/
-
                 phrases.emplace_back(source, len);
 
                 //the key insertion exceeds the max. load factor (i.e., rehash)
@@ -99,13 +93,14 @@ public:
                 }
                 inserted = true;
                 return phrases.size()-1;
-
             } else{
                 phrase_t & phrase = phrases[m_table[idx]];
-
                 if(len == phrase.len &&
                    memcmp(&data[source], &data[phrase.source], len)==0){
                     inserted = false;
+                    //the reference is always the rightmost occurrence
+                    // in the text's scan
+                    phrase.source = source;
                     return m_table[idx];
                 }
                 j++;

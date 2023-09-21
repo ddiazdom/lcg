@@ -27,7 +27,7 @@ namespace lzstrat {
 
        size_type * parse = nullptr;
        off_t parse_size{}; //number of bytes the buffer can hold
-
+       off_t g_size{};
 
        [[nodiscard]] off_t eff_bytes() const{
            return e_bytes;
@@ -50,10 +50,11 @@ namespace lzstrat {
        off_t read_bytes;
        off_t fd_buff_bytes = 8388608;// 8MB buffer
 
-       chunk.text = (uint8_t *) chunk.buffer;
+       chunk.text = (sym_type *) chunk.buffer;
        sym_type * data = chunk.text;
        chunk.n_bytes_before = read_text_bytes;
-       off_t limit = chunk.text_bytes>>1;
+       //off_t limit = chunk.text_bytes>>1;
+       off_t limit = 0;
        off_t i;
 
        while(true){
@@ -76,7 +77,7 @@ namespace lzstrat {
            }
            if(i>limit) break;
 
-           off_t tmp_ck_size = INT_CEIL(((chunk.text_bytes*125)/100), sizeof(sym_type))*sizeof(sym_type);
+           off_t tmp_ck_size = INT_CEIL(((chunk.text_bytes*125)/100), sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
            tmp_ck_size = std::min(tmp_ck_size, rem_text_bytes);
            chunk_bytes = tmp_ck_size-chunk.text_bytes;
            chunk.text_bytes =  tmp_ck_size;
@@ -84,6 +85,7 @@ namespace lzstrat {
            //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
            // where ``text_len'' is the number of input symbols that fits the buffer
            off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
+
 
            chunk.buffer_bytes = off_t(tmp_ck_size + parse_bytes);
            chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
