@@ -29,10 +29,10 @@ namespace lzstrat {
     template<class sym_type, bool p_round>
     off_t create_meta_sym(std::vector<uint32_t>& mt_perm, hashing& pf,
                          const lz_map::phrase_list_t & phrase_set,
-                         sym_type * text, std::vector<uint64_t>& hash_values_vector){
+                         sym_type * text, off_t txt_size, std::vector<uint64_t>& hash_values_vector){
 
-        std::vector<uint64_t> tmp_phrase;
         size_t source, end;
+        std::vector<uint64_t> tmp_phrase;
         std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
 
         for(size_t i=0;i<phrase_set.size();i++){
@@ -58,11 +58,13 @@ namespace lzstrat {
                 if constexpr (p_round){
                     tmp_phrase.push_back(pf.symbol_hash(text[j]));
                 }else{
+                    assert((text[j]-1)<hash_values_vector.size());
                     tmp_phrase.push_back(hash_values_vector[text[j]-1]);
                 }
             }
             perm[i].second = pf.string_hash((char *)tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), 64);
             tmp_phrase.clear();
+
         }
         std::vector<uint64_t>().swap(tmp_phrase);
 
@@ -71,10 +73,24 @@ namespace lzstrat {
             return a.second<b.second;
         });
 
+        //TODO testing
+        /*for(auto const & pair : perm){
+            off_t s = phrase_set[pair.first].source/sizeof(sym_type);
+            off_t len = phrase_set[pair.first].len/sizeof(sym_type);
+            std::vector<uint64_t> tmp;
+            tmp.reserve(len);
+            for (off_t u = s, l=0; l < len; u++, l++) {
+                tmp.push_back(hash_values_vector[text[u]-1]);
+            }
+            uint64_t test_hash = pf.string_hash((char *)tmp.data(), tmp.size()*sizeof(uint64_t), 64);
+            assert(pair.second==test_hash);
+        }*/
+        //
+
         size_t prev_hash = perm[0].second;
         off_t prev_pos=0, tot_phrases=off_t(perm.size());
         off_t n_cols =0;
-        for(off_t i=0; i<tot_phrases; i++){
+        for(off_t i=1; i<tot_phrases; i++){
 
             if(prev_hash!=perm[i].second){
                 if((i-prev_pos)>1){
@@ -82,15 +98,20 @@ namespace lzstrat {
                     //std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     n_cols +=(i-prev_pos);
                     //TODO testing
-                    /*for(off_t k=prev_pos;k<i;k++) {
-                        std::cout << phrase_set[perm[k].first].len << " " << phrase_set[perm[k].first].source << " -> ";
+                    for(off_t k=prev_pos;k<i;k++) {
+                        std::cout<<"sorted pos: "<<k<<" orig pos: "<<perm[k].first<<" len "<<phrase_set[perm[k].first].len/sizeof(sym_type)<< " source " << phrase_set[perm[k].first].source/sizeof(sym_type)<< " -> ";
                         off_t s = phrase_set[perm[k].first].source/sizeof(sym_type);
                         off_t len = phrase_set[perm[k].first].len/sizeof(sym_type);
-                        for (off_t u = s, l=0; l < std::min<off_t>(len, 20); u++, l++) {
-                            std::cout << (int)text[u] << " ";
+                        std::vector<uint64_t> tmp;
+                        assert(s<txt_size);
+                        tmp.reserve(len);
+                        for (off_t u = s, l=0; l < len; u++, l++) {
+                            //std::cout << (int)text[u] << " ";
+                            tmp.push_back(hash_values_vector[text[u]-1]);
                         }
-                        std::cout << " | hash value: "<<perm[k].second<< std::endl;
-                    }*/
+                        uint64_t test_hash = pf.string_hash((char *)tmp.data(), tmp.size()*sizeof(uint64_t), 64);
+                        std::cout <<" | hash value: "<<perm[k].second<<" "<<test_hash<<std::endl;
+                    }
                     //
 
                     //sort the range [prev_pos..i-1]
@@ -122,13 +143,14 @@ namespace lzstrat {
         }
 
         hash_values_vector.resize(perm.size());
-        for(size_t i=0;i<perm.size();i++){
+        for(size_t i=0;i<hash_values_vector.size();i++){
             hash_values_vector[i] = perm[i].second;
         }
         hash_values_vector.shrink_to_fit();
 
         mt_perm.resize(perm.size());
-        for(size_t i=0, rank=0;i<perm.size();i++, rank++){
+        for(size_t i=0, rank=0;i<mt_perm.size();i++, rank++){
+            assert(perm[i].first<mt_perm.size());
             mt_perm[perm[i].first] = rank;
         }
 
@@ -212,16 +234,10 @@ namespace lzstrat {
         map.destroy_table();
 
         std::vector<uint32_t> perm;
-        off_t n_cols = create_meta_sym<sym_type, p_round>(perm, hf, map.phrase_set, text, prev_hash_values);
-
-        //TODO testing
-        if(n_cols!=0){
-            std::cout<<"Some of the phrases collide: "<<n_cols<<std::endl;
-        }
-        //
-
+        create_meta_sym<sym_type, p_round>(perm, hf, map.phrase_set, text, txt_size, prev_hash_values);
         for(off_t i=0;i<parse_pos;i++){
             if(parse[i]==0) continue;
+            assert(parse[i]<=perm.size());
             parse[i] = perm[parse[i]-1]+1;
         }
 
@@ -232,24 +248,66 @@ namespace lzstrat {
     void compress_text_chunk(text_chunk& chunk, tmp_workspace& tmp_ws, std::vector<hashing>& pf){
 
         std::vector<uint64_t> prev_hash_values;
-        off_t n_strings=0, n_strings_tmp;
+        off_t n_strings=0;
         size_t p_round=0;
         chunk.g_size = 0;
         size_t sep_sym = chunk.sep_sym;
+
+        //TODO
+        /*{
+            / * std::string tmp_file = "chunk_"+std::to_string(chunk.id)+"_"+std::to_string(p_round);
+            std::ifstream ifs(tmp_file, std::ios::in | std::ios::binary);
+            auto *test = (sym_type *)malloc(chunk.text_bytes);
+            ifs.read((char *)test, chunk.text_bytes);
+            if(memcmp(test, chunk.text, chunk.text_bytes)!=0){
+                std::cout<<"algo esta mal en chunk "<<chunk.id<<" and round "<<p_round<<" cb:"<<chunk.text_bytes<<" "<<file_size(tmp_file)<<std::endl;
+            }
+            assert(memcmp(test, chunk.text, chunk.text_bytes)==0);
+            free(test);* /
+            //std::ofstream ofs(tmp_file, std::ios::out | std::ios::binary);
+            //ofs.write((char *)chunk.text, chunk.text_bytes);
+            //ofs.close();
+        }*/
+        //
+
         off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, pf[p_round++], prev_hash_values, chunk.g_size);
-        //std::cout<<"psize: "<<parse_size<<", tsize: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<" "<<chunk.id<<std::endl;
+        //std::cout<<"psize: "<<parse_size<<", tsize: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<" "<<chunk.id<<" buff_bytes: "<<chunk.buffer_bytes<<" asdasdas "<<(char *)chunk.parse-(char *)chunk.text<<std::endl;
 
         sep_sym = 0;
         off_t size_limit = n_strings*2;
         auto * new_parse = (text_chunk::size_type *)chunk.text;
-        n_strings_tmp = n_strings;
+        //n_strings_tmp = n_strings;
 
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
-            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, pf[p_round++], prev_hash_values, chunk.g_size);
-            assert(n_strings==n_strings_tmp);
 
-            //std::cout<<"psize: "<<parse_size<<", tsize: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<" "<<chunk.id<<std::endl;
+            /*j{//TODO checking the problem
+                std::string tmp_file = "chunk_"+std::to_string(chunk.id)+"_"+std::to_string(p_round);
+                std::ifstream ifs(tmp_file, std::ios::in | std::ios::binary);
+                auto *test = (text_chunk::size_type *)malloc(parse_size*sizeof(uint32_t));
+                ifs.read((char *)test, parse_size*sizeof(uint32_t));
+
+                if(memcmp(test, chunk.parse, parse_size*sizeof(uint32_t))!=0){
+                    size_t j=0;
+                    while(test[j]==chunk.parse[j]) j++;
+                    std::cout<<"algo esta mal en chunk "<<chunk.id<<" and round "<<p_round<<" "<<parse_size<<" --->"<<file_size(tmp_file)/4<<" posicion: "<<j<<" "<<test[j]<<"!="<<chunk.parse[j]<<std::endl;
+                }
+                assert(memcmp(test, chunk.parse, parse_size*sizeof(uint32_t))==0);
+                free(test);
+
+                std::vector<uint64_t> correct_hash_val(prev_hash_values.size());
+                ifs.read((char *)correct_hash_val.data(), correct_hash_val.size()*sizeof(uint64_t));
+                assert(memcmp(correct_hash_val.data(), prev_hash_values.data(), prev_hash_values.size()*sizeof(uint64_t))==0);
+                ifs.close();*/
+
+                /*std::ofstream ofs(tmp_file, std::ios::out | std::ios::binary);
+                ofs.write((char *)chunk.parse, parse_size*sizeof(uint32_t));
+                ofs.write((char *)prev_hash_values.data(), prev_hash_values.size()*sizeof(uint64_t));
+                ofs.close();
+            }*/
+
+            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, pf[p_round++], prev_hash_values, chunk.g_size);
+            //std::cout<<"psize: "<<parse_size<<", tsize: "<<chunk.text_bytes/sizeof(sym_type)<<", n_strings: "<<n_strings<<" "<<new_parse-chunk.parse<<std::endl;
 
             std::swap(chunk.parse, new_parse);
         }
