@@ -853,11 +853,8 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
  * @param n_threads : number of working threads
  */
 template<class sym_type>
-void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size){
+void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, bool se_p_rounds){
 
-    std::vector<hashing> hpf;
-    //store_pl_vector("hash_functions", hpf);
-    load_pl_vector("hash_functions", hpf);
 
     lzstrat::parsing_opts p_opts;
     p_opts.n_threads = n_threads;
@@ -868,19 +865,25 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
-    lzstrat::lc_parsing_algo<sym_type>(i_file, hpf, o_file, tmp_ws, p_opts);
+    if(se_p_rounds){
+        lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
+    }else{
+        std::vector<hashing> hpf;
+        //store_pl_vector("hash_functions", hpf);
+        load_pl_vector("hash_functions", hpf);
+        lzstrat::lc_parsing_algo<sym_type>(i_file, hpf, o_file, tmp_ws, p_opts);
+    }
 
-    //lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
-    /*lc_gram_t gram;
+    lc_gram_t gram;
     load_from_file(o_file, gram);
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
-    / *std::cout<<"Transforming the grammar into a college system"<<std::endl;
+    /*std::cout<<"Transforming the grammar into a college system"<<std::endl;
     start = std::chrono::steady_clock::now();
     make_collage_system(gram);
     end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);* /
+    report_time(start, end, 2);*/
 
     std::cout<<"Run-length compressing the grammar"<<std::endl;
     start = std::chrono::steady_clock::now();
@@ -903,12 +906,11 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
 
 
     //optional check
-    //check_plain_grammar(gram, i_file);
+    check_plain_grammar(gram, i_file);
     //
     std::cout<<"Stats for the final grammar:"<<std::endl;
     gram.breakdown(2);
     size_t written_bytes = store_to_file(o_file, gram);
     std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
-     */
 }
 #endif //LCG_GRAMMAR_ALGORITHMS_H

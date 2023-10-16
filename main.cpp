@@ -20,6 +20,7 @@ struct arguments{
     std::string coord_file;
     std::string rand_acc;
     std::string version= "v1.0.1 alpha";
+    bool se_par_rounds = false;
 };
 
 struct CellWidthValidator : public CLI::Validator {
@@ -53,13 +54,18 @@ static void parse_app(CLI::App& app, struct arguments& args){
     CLI::App* comp = app.add_subcommand("comp", "compress text");
     comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
-    comp->add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->check(CLI::Range(1, 8))->default_val(1)->check(ValidCellWidth);
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
+
+    //grammar options
+    comp->add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->check(CLI::Range(1, 4))->default_val(1)->check(ValidCellWidth);
+    comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");
+    comp->add_option("-p,--parsing-functions", args.p_file, "File with the hash functions (PF format) to parse the text")->check(CLI::ExistingFile);
+    comp->add_flag("-b,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
+
+    //other options
     comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
     comp->add_option("-C,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
     comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
-    comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");
-    comp->add_option("-p,--parsing-functions", args.p_file, "File with the hash functions (PF format) to parse the text")->check(CLI::ExistingFile);
 
     CLI::App* par_func = app.add_subcommand("par", "extract parsing functions from a grammar");
     par_func->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
@@ -89,7 +95,7 @@ void run_int(std::string input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
     std::vector<hashing> phf;
-    gram_algo<uint8_t>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size);
+    gram_algo<uint8_t>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size, args.se_par_rounds);
 }
 
 int main(int argc, char** argv) {

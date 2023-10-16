@@ -29,7 +29,7 @@ namespace lzstrat {
        off_t parse_size{}; //number of bytes the buffer can hold
        off_t g_size{};
 
-       [[nodiscard]] off_t eff_bytes() const{
+       [[nodiscard]] off_t eff_buff_bytes() const{
            return e_bytes;
        }
 
