@@ -17,6 +17,8 @@ namespace lzstrat {
         off_t chunk_size{};
         off_t page_cache_limit{};
         size_t sep_sym{};
+        std::vector<hashing> p_functions;
+        parsing_opts():p_functions(32){};
     };
 
     struct heap_node_compare{
@@ -32,8 +34,8 @@ namespace lzstrat {
                          sym_type * text, off_t txt_size, std::vector<uint64_t>& hash_values_vector){
 
         size_t source, end;
-        std::vector<uint64_t> tmp_phrase;
         std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
+        std::vector<uint64_t> tmp_phrase;
 
         for(size_t i=0;i<phrase_set.size();i++){
 
@@ -42,31 +44,21 @@ namespace lzstrat {
             source = phrase_set[i].source/sizeof(sym_type);
             end = source + (phrase_set[i].len/sizeof(sym_type));
 
-            //TODO testing
-            /*if(phrase_set[i].source<1000){
-                std::cout<<phrase_set[i].len<<" "<<phrase_set[i].source<<" -> ";
-                for(size_t j=source;j<end;j++){
-                    std::cout<<text[j]<<" ";
-                }
-                std::cout<<""<<std::endl;
-            }*/
-            //std::cout<<source<<" "<<end<<" "<<i<<" "<<perm.size()<<std::endl;
-            //
-
             for(size_t j=source;j<end;j++){
                 assert(text[j]>0);
                 if constexpr (p_round){
-                    tmp_phrase.push_back(pf.symbol_hash(text[j]));
+                    //tmp_phrase.push_back(pf.symbol_hash(text[j]));
+                    uint64_t fp_sym = XXH3_64bits(&text[j], sizeof(sym_type));
+                    tmp_phrase.push_back(fp_sym);
                 }else{
                     assert((text[j]-1)<hash_values_vector.size());
                     tmp_phrase.push_back(hash_values_vector[text[j]-1]);
                 }
             }
-            perm[i].second = pf.string_hash((char *)tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), 64);
+            //perm[i].second = pf.string_hash((char *)tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), 64);
+            perm[i].second = XXH3_64bits(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t));
             tmp_phrase.clear();
-
         }
-        std::vector<uint64_t>().swap(tmp_phrase);
 
         //sort the phrases according their hash values
         std::sort(perm.begin(), perm.end(), [&](auto a, auto b) -> bool{
@@ -95,22 +87,28 @@ namespace lzstrat {
             if(prev_hash!=perm[i].second){
                 if((i-prev_pos)>1){
 
-                    //std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     n_cols +=(i-prev_pos);
+
                     //TODO testing
+                    std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     for(off_t k=prev_pos;k<i;k++) {
                         std::cout<<"sorted pos: "<<k<<" orig pos: "<<perm[k].first<<" len "<<phrase_set[perm[k].first].len/sizeof(sym_type)<< " source " << phrase_set[perm[k].first].source/sizeof(sym_type)<< " -> ";
                         off_t s = phrase_set[perm[k].first].source/sizeof(sym_type);
                         off_t len = phrase_set[perm[k].first].len/sizeof(sym_type);
-                        std::vector<uint64_t> tmp;
                         assert(s<txt_size);
-                        tmp.reserve(len);
+
+                        tmp_phrase.clear();
                         for (off_t u = s, l=0; l < len; u++, l++) {
-                            //std::cout << (int)text[u] << " ";
-                            tmp.push_back(hash_values_vector[text[u]-1]);
+                            uint64_t fp;
+                            if constexpr (p_round){
+                                fp = XXH3_64bits(&text[u], sizeof(sym_type));
+                            }else{
+                                fp = hash_values_vector[text[u]-1];
+                            }
+                            tmp_phrase.push_back(fp);
                         }
-                        uint64_t test_hash = pf.string_hash((char *)tmp.data(), tmp.size()*sizeof(uint64_t), 64);
-                        std::cout <<" | hash value: "<<perm[k].second<<" "<<test_hash<<std::endl;
+                        uint64_t test_hash = XXH3_64bits(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t));
+                        assert(perm[k].second==test_hash);
                     }
                     //
 
@@ -141,7 +139,6 @@ namespace lzstrat {
                 prev_hash = perm[i].second;
             }
         }
-
         hash_values_vector.resize(perm.size());
         for(size_t i=0;i<hash_values_vector.size();i++){
             hash_values_vector[i] = perm[i].second;
@@ -240,7 +237,6 @@ namespace lzstrat {
             assert(parse[i]<=perm.size());
             parse[i] = perm[parse[i]-1]+1;
         }
-
         return parse_pos;
     }
 
@@ -314,14 +310,28 @@ namespace lzstrat {
     }
 
     template<class sym_type>
-    void lc_parsing_algo(std::string& i_file, std::vector<hashing>& phf, std::string& o_file,
-                         tmp_workspace& tmp_ws, parsing_opts& p_opts) {
+    void lc_parsing_algo(std::string& i_file, std::string& p_file, std::string& o_file,
+                         tmp_workspace& tmp_ws, size_t n_threads, size_t n_chunks, size_t chunk_size) {
+
+        parsing_opts p_opts;
+        p_opts.n_threads = n_threads;
+        p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
+        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
+        p_opts.page_cache_limit = 1024*1024*1024;
+        p_opts.sep_sym = 10;
 
         std::cout<<"  Settings"<<std::endl;
         std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
         std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
         std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
         std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
+
+        if(!p_file.empty()){
+            load_pl_vector(p_file, p_opts.p_functions);
+            std::cout<<"Using the parsing functions in \""<<p_file<<"\" for the first "<<p_opts.p_functions.size()<<" parsing rounds "<<std::endl;
+        }
+
+        //store_pl_vector("fixed_hash_functions", p_opts.p_functions);
 
         ts_queue<size_t> chunks_to_read;
         ts_queue<size_t> chunks_to_reuse;
@@ -337,6 +347,7 @@ namespace lzstrat {
             int fd = open(i_file.c_str(), O_RDONLY);
 
 #ifdef __linux__
+            off_t page_cache_bytes = 0;
             posix_fadvise(fd, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
 #endif
             off_t rem_bytes = st.st_size, acc_bytes = 0;
@@ -348,7 +359,7 @@ namespace lzstrat {
 
                 tmp_ck_size = std::min(tmp_ck_size, rem_bytes);
 
-                text_chunks[chunk_id].phf = &phf;
+                text_chunks[chunk_id].phf = &p_opts.p_functions;
                 text_chunks[chunk_id].text_bytes = tmp_ck_size;
                 text_chunks[chunk_id].sep_sym = (text_chunk::size_type) p_opts.sep_sym;
 
@@ -367,16 +378,16 @@ namespace lzstrat {
                 text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
                 chunks_to_read.push(chunk_id);
-                chunk_id++;
 
 #ifdef __linux__
                 page_cache_bytes+=text_chunks[chunk_id].eff_buff_bytes();
-                if(page_cache_bytes>page_cache_limit){
+                if(page_cache_bytes>p_opts.page_cache_limit){
                     std::cout<<"removing from page cache "<<page_cache_bytes<<" "<<acc_bytes<<std::endl;
                     posix_fadvise(fd, acc_bytes-page_cache_bytes, page_cache_bytes, POSIX_FADV_DONTNEED);
                     page_cache_bytes=0;
                 }
 #endif
+                chunk_id++;
             }
 
             size_t proc_syms=0;
@@ -386,7 +397,7 @@ namespace lzstrat {
                 chunks_to_reuse.pop(buff_idx);
 
                 proc_syms+=text_chunks[buff_idx].text_bytes;
-                std::cout<<text_chunks[buff_idx].id<<" -> "<<text_chunks[buff_idx].g_size<<", tb: "<<text_chunks[buff_idx].text_bytes<<" bbef: "<<text_chunks[buff_idx].n_bytes_before<<" bi: "<<buff_idx<<" "<<text_chunks[buff_idx].buffer_bytes<<std::endl;
+                //std::cout<<"chunk_id: "<<text_chunks[buff_idx].id<<" grammar_size: "<<text_chunks[buff_idx].g_size<<", text_bytes: "<<text_chunks[buff_idx].text_bytes<<" bytes_before_chunk: "<<text_chunks[buff_idx].n_bytes_before<<" buff_index: "<<buff_idx<<std::endl;
 
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
 
@@ -401,8 +412,8 @@ namespace lzstrat {
 
                 chunks_to_read.push(buff_idx);
 #ifdef __linux__
-                page_cache_bytes+=text_chunks[chunk_id].eff_buff_bytes();
-                if(page_cache_bytes>page_cache_limit){
+                page_cache_bytes+=text_chunks[buff_idx].eff_buff_bytes();
+                if(page_cache_bytes>p_opts.page_cache_limit){
                     std::cout<<"removing from page cache "<<page_cache_bytes<<" "<<acc_bytes<<std::endl;
                     posix_fadvise(fd, acc_bytes-page_cache_bytes, page_cache_bytes, POSIX_FADV_DONTNEED);
                     page_cache_bytes=0;
@@ -418,7 +429,7 @@ namespace lzstrat {
             while (!chunks_to_reuse.empty()) {
                 chunks_to_reuse.pop(buff_idx);
                 proc_syms+=text_chunks[buff_idx].text_bytes;
-                std::cout<<text_chunks[buff_idx].id<<" -> "<<text_chunks[buff_idx].g_size<<", tb: "<<text_chunks[buff_idx].text_bytes<<" bbef: "<<text_chunks[buff_idx].n_bytes_before<<" bi: "<<buff_idx<<std::endl;
+                //std::cout<<"chunk_id: "<<text_chunks[buff_idx].id<<" grammar_size: "<<text_chunks[buff_idx].g_size<<", text_bytes: "<<text_chunks[buff_idx].text_bytes<<" bytes_before_chunk: "<<text_chunks[buff_idx].n_bytes_before<<" buff_index: "<<buff_idx<<std::endl;
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
             }
             chunks_to_reuse.done();
@@ -442,7 +453,7 @@ namespace lzstrat {
                     break;
                 }
 
-                compress_text_chunk<sym_type>(text_chunks[buff_id], tmp_ws, phf);
+                compress_text_chunk<sym_type>(text_chunks[buff_id], tmp_ws, p_opts.p_functions);
                 memset(text_chunks[buff_id].buffer, 0, text_chunks[buff_id].buffer_bytes);
                 chunks_to_reuse.push(buff_id);
                 //chunks_to_merge.push(text_chunks[buff_id].id);
@@ -497,7 +508,7 @@ namespace lzstrat {
         for (auto &thread: threads) {
             thread.join();
         }
-    };
+    }
 }
 
 #endif //LCG_LZ_LIKE_LC_PARSING_H

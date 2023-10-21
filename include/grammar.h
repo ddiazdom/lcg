@@ -4,6 +4,8 @@
 
 #ifndef LCG_GRAMMAR_H
 #define LCG_GRAMMAR_H
+#include <stack>
+
 #include "cds/cdt_common.hpp"
 #include "cds/int_array.h"
 #include "cds/file_streams.hpp"

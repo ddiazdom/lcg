@@ -95,11 +95,12 @@ namespace lzstrat {
 
        off_t eff_bytes = i+1;
        chunk.text_bytes = eff_bytes;
+       chunk.e_bytes = eff_bytes;
 
        off_t offset = acc_bytes-eff_bytes;
        rem_text_bytes-= eff_bytes;
 
        read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
    }
-};
+}
 #endif //LCG_TEXT_HANDLER_H

@@ -12,11 +12,14 @@ struct arguments{
     size_t n_chunks{};
     off_t chunk_size{};
     bool ver=false;
-    bool det=false;
+    bool det=false;//deterministic (i.e., always the same grammar)
+
     uint8_t alph_bytes=1;
+
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
     std::vector<std::string> position_list;
+
     std::string coord_file;
     std::string rand_acc;
     std::string version= "v1.0.1 alpha";
@@ -94,7 +97,6 @@ template<class sym_type>
 void run_int(std::string input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
-    std::vector<hashing> phf;
     gram_algo<uint8_t>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size, args.se_par_rounds);
 }
 

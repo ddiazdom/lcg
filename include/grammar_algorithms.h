@@ -856,22 +856,13 @@ template<class sym_type>
 void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, bool se_p_rounds){
 
 
-    lzstrat::parsing_opts p_opts;
-    p_opts.n_threads = n_threads;
-    p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
-    p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
-    p_opts.page_cache_limit = 1024*1024*1024;
-    p_opts.sep_sym = 10;
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
     if(se_p_rounds){
         lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }else{
-        std::vector<hashing> hpf;
-        //store_pl_vector("hash_functions", hpf);
-        load_pl_vector("hash_functions", hpf);
-        lzstrat::lc_parsing_algo<sym_type>(i_file, hpf, o_file, tmp_ws, p_opts);
+        lzstrat::lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }
 
     lc_gram_t gram;
