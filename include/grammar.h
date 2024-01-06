@@ -393,7 +393,7 @@ struct lc_gram_t {
     void access(size_t str_id, size_t start, size_t end, std::string& output){
     }*/
 
-    inline bool is_cs_nt(size_t sym) const {
+    [[nodiscard]] inline bool is_cs_nt(size_t sym) const {
         auto res = nt2phrase(sym);
         size_t fsym = rules[res.first];
         return parsing_level(fsym)== parsing_level(sym);
@@ -430,6 +430,20 @@ struct lc_gram_t {
             }
         }
         return exp_len;
+    }
+
+    [[nodiscard]] size_t exp_size(size_t sym) const {
+        if(is_terminal(sym)) return 1;
+        auto range = nt2phrase(sym);
+
+        size_t pos = range.second/samp_rate;
+        size_t exp = sampled_exp.read(pos);
+        size_t last_sampled = pos*samp_rate;
+
+        for(size_t i=last_sampled;i<=range.second;i++){
+            exp += exp_size(rules.read(i));
+        }
+        return exp;
     }
 };
 

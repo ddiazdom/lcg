@@ -5,7 +5,7 @@
 #ifndef LCG_TEXT_HANDLER_H
 #define LCG_TEXT_HANDLER_H
 
-#include "hashing.h"
+#include "partial_gram.h"
 
 namespace lzstrat {
 
@@ -16,7 +16,6 @@ namespace lzstrat {
        size_t id{}; //chunk id
        off_t n_bytes_before{};//number of bytes in the file before this chunk
        size_type sep_sym{};//symbol in the buffer delimiting consecutive strings
-       std::vector<hashing> *phf = nullptr;
 
        size_type *buffer = nullptr;// chunk's buffer
        off_t buffer_bytes{};
@@ -26,8 +25,9 @@ namespace lzstrat {
        off_t text_bytes{}; //number of bytes the buffer can hold
 
        size_type * parse = nullptr;
-       off_t parse_size{}; //number of bytes the buffer can hold
-       off_t g_size{};
+
+       //todo make it compatible with uint16_t
+       partial_gram<uint8_t> p_gram;
 
        [[nodiscard]] off_t eff_buff_bytes() const{
            return e_bytes;

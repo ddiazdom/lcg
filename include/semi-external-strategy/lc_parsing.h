@@ -114,6 +114,7 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
 
     std::cout<<"  Settings"<<std::endl;
     std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
+    std::cout<<"    Parsing mode              : long strings"<<std::endl;
     std::cout<<"    Active text chunks in RAM : "<<p_opts.active_chunks<<std::endl;
     std::cout<<"    Chunk size                : "<<report_space(p_opts.chunk_size)<<std::endl;
     std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.active_chunks))<<std::endl;

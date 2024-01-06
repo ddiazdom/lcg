@@ -169,6 +169,9 @@ public:
 
     void shrink_to_fit(){
         phrases.shrink_to_fit();
+#ifdef __linux__
+        malloc_trim(0);
+#endif
     }
 
     size_t mem_usage(){

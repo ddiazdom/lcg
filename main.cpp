@@ -63,7 +63,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->check(CLI::Range(1, 4))->default_val(1)->check(ValidCellWidth);
     comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");
     comp->add_option("-p,--parsing-functions", args.p_file, "File with the hash functions (PF format) to parse the text")->check(CLI::ExistingFile);
-    comp->add_flag("-b,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
+    comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
 
     //other options
     comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
@@ -126,8 +126,6 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "Alphabet type:    byte" << std::endl;
         }
-
-        //args.n_chunks = args.n_chunks==0 ? args.n_threads*2 : args.n_chunks;
 
         if (args.alph_bytes == 1) {
             run_int<uint8_t>(input_collection, args);

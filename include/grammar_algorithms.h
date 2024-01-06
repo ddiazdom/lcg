@@ -229,11 +229,11 @@ void add_random_access_support(lc_gram_t& gram){
 
     //get the expansion length of each nonterminal in the grammar
     for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
+
         auto range = gram.nt2phrase(sym);
         exp_size = 0;
         for(size_t i=range.first;i<=range.second;i++){
             tmp_sym = gram.rules.read(i);
-
             len = 1;
             if(gram.is_rl_sym(tmp_sym)) {
                 auto range2 = gram.nt2phrase(tmp_sym);
@@ -242,7 +242,7 @@ void add_random_access_support(lc_gram_t& gram){
             }
 
             if(gram.is_terminal(tmp_sym)){
-                exp_size+=len;
+                exp_size += len;
             } else{
                 exp_size += exp.read(tmp_sym-gram.max_tsym)*len;
             }
@@ -262,55 +262,50 @@ void add_random_access_support(lc_gram_t& gram){
         }
         exp.write(sym-gram.max_tsym, exp_size);
     }
-    gram.rule_exp.swap(exp);
-    size_t n_samples = INT_CEIL(gram.g-gram.max_tsym, gram.samp_rate);
-    int_array<size_t> samp_exp(n_samples, sym_width(gram.max_tsym));
 
+    size_t n_samples = INT_CEIL(gram.g-gram.max_tsym, gram.samp_rate);
+    int_array<size_t> samp_exp(n_samples, sym_width(gram.longest_str));
     samp_exp.resize(n_samples);
 
-    /*size_t longest_exp=0;
-    for(size_t str=0;str<gram.n_strings();str++){
-        auto range = gram.str2phrase(str);
-        exp_size = 0;
-        for(size_t i=range.first;i<=range.second;i++){
-            tmp_sym = gram.rules[i];
-            len = 1;
-            if(gram.is_rl_sym(tmp_sym)) {
-                auto range2 = gram.nt2phrase(tmp_sym);
-                len = gram.rules[range2.second];
-                tmp_sym = gram.rules[range2.first];
-            }
-
-            if(gram.is_terminal(tmp_sym)){
-                exp_size+=len;
-            } else{
-                rank = tmp_sym - gram.max_tsym;
-                exp_size += exp[gram.rl_ptr[rank]-gram.max_tsym-2]*len;
-            }
-            exp[pos++]=exp_size;
-        }
-        if(exp_size>longest_exp) longest_exp = exp_size;
-    }
-    int_array<size_t> new_exp(pos, sym_width(longest_exp));
-
     //store the sampled elements
-    size_t samp_rate = gram.samp_rate;
-    first_sym = gram.max_tsym+1;
+    size_t first_sym = gram.max_tsym+1, exp_acc;
     last_sym = gram.last_rl_sym();
     for(size_t sym = first_sym; sym<=last_sym; sym++){
         auto range = gram.nt2phrase(sym);
-        for(size_t i=range.first+samp_rate-1;i<=range.second;i+=samp_rate){
-            new_exp.push_back(exp[i]);
+        exp_acc = 0;
+        for(size_t i=range.first, j=1;i<range.second;i++,j++){
+            if(j%gram.samp_rate==0){
+                samp_exp.push_back(exp_acc);
+            }
+            tmp_sym = gram.rules.read(i);
+            if(gram.is_terminal(tmp_sym)){
+                exp_acc+=1;
+            }else{
+                exp_acc+=exp.read(tmp_sym-gram.max_tsym);
+            }
         }
     }
+
     for(size_t str=0;str<gram.n_strings();str++){
         auto range = gram.str2phrase(str);
-        for(size_t i=range.first+samp_rate-1;i<=range.second;i+=samp_rate){
-            new_exp.push_back(exp[i]);
+        exp_acc = 0;
+        for(size_t i=range.first, j=1;i<range.second;i++,j++){
+            if(j%gram.samp_rate==0){
+                samp_exp.push_back(exp_acc);
+            }
+            tmp_sym = gram.rules.read(i);
+            if(gram.is_terminal(tmp_sym)){
+                exp_acc+=1;
+            }else{
+                exp_acc+=exp.read(tmp_sym-gram.max_tsym);
+            }
         }
     }
-    new_exp.resize(new_exp.size());
-    new_exp.swap(gram.rule_exp);*/
+
+    exp.resize(exp.size());
+    samp_exp.resize(samp_exp.size());
+
+    gram.rule_exp.swap(exp);
     gram.sampled_exp.swap(samp_exp);
     gram.has_rand_access = true;
 }
@@ -855,8 +850,6 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
 template<class sym_type>
 void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, bool se_p_rounds){
 
-
-
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
     if(se_p_rounds){
@@ -895,10 +888,10 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
-
     //optional check
-    check_plain_grammar(gram, i_file);
+    //check_plain_grammar(gram, i_file);
     //
+
     std::cout<<"Stats for the final grammar:"<<std::endl;
     gram.breakdown(2);
     size_t written_bytes = store_to_file(o_file, gram);
