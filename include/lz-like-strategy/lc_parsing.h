@@ -309,7 +309,7 @@ namespace lzstrat {
 
 #ifdef __linux__
             off_t r_page_cache_bytes = 0, w_page_cache_bytes = 0;
-            posix_fadvise(r_fd, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
+            posix_fadvise(fd_r, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
 #endif
 
             off_t rem_bytes = st.st_size, r_acc_bytes = 0;
@@ -340,10 +340,10 @@ namespace lzstrat {
 
                 chunks_to_read.push(chunk_id);
 #ifdef __linux__
-                r_page_cache_bytes+=text_chunks[chunk_id].eff_buff_bytes();
+                r_page_cache_bytes+=text_chunks[chunk_id].e_bytes;
                 if(r_page_cache_bytes>p_opts.page_cache_limit){
                     std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<r_acc_bytes<<std::endl;
-                    posix_fadvise(fd_r, acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+                    posix_fadvise(fd_r, r_acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
                     r_page_cache_bytes=0;
                 }
 #endif
@@ -367,8 +367,8 @@ namespace lzstrat {
                         size_t g_bytes = text_chunks[node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
-                        w_page_cache_bytes += text_chunks[node.buff_idx].gram_bytes();
-                        if(w_page_cache_bytes>opts.page_cache_limit){
+                        w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
+                        if(w_page_cache_bytes>p_opts.page_cache_limit){
                             std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
                             posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
                             w_page_cache_bytes=0;
@@ -397,10 +397,10 @@ namespace lzstrat {
 
                 chunks_to_read.push(node.buff_idx);
 #ifdef __linux__
-                r_page_cache_bytes+=text_chunks[node.buff_idx].eff_buff_bytes();
+                r_page_cache_bytes+=text_chunks[node.buff_idx].e_bytes;
                 if(r_page_cache_bytes>p_opts.page_cache_limit){
                     std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<r_acc_bytes<<std::endl;
-                    posix_fadvise(fd_r, acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+                    posix_fadvise(fd_r, r_acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
                     r_page_cache_bytes=0;
                 }
 #endif
@@ -427,8 +427,8 @@ namespace lzstrat {
                         size_t g_bytes = text_chunks[node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
-                        w_page_cache_bytes += text_chunks[node.buff_idx].gram_bytes();
-                        if(w_page_cache_bytes>opts.page_cache_limit){
+                        w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
+                        if(w_page_cache_bytes>p_opts.page_cache_limit){
                             std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
                             posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
                             w_page_cache_bytes=0;
