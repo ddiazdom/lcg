@@ -380,6 +380,40 @@ struct lc_gram_t {
             std::cout <<pad_string<<"Number of run-length rules: " << run_len_nt.second <<std::endl;
         }
         std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
+
+        //TODO remove
+        /*std::vector<size_t> freqs(r+1);
+        for(size_t i=0;i<rules.size();i++){
+            freqs[rules[i]]++;
+        }
+        std::vector<std::pair<size_t, size_t>> sorted_nts(freqs.size());
+        for(size_t i=0;i<freqs.size();i++){
+            if(freqs[i]!=0){
+                sorted_nts[i].first = i;
+                sorted_nts[i].second = freqs[i];
+            }
+        }
+        std::sort(sorted_nts.begin(), sorted_nts.end(), [](auto& a, auto& b){
+            return a.second>b.second;
+        });
+
+        size_t n_bytes=0, k=0;
+        for(auto & sorted_nt : sorted_nts){
+            size_t fr = sorted_nt.second;
+            if(k<= (1<<7)-1) {
+                n_bytes+=1*fr;
+            }else if(k<=((1<<14)+(1<<7)-1)){
+                n_bytes+=2*fr;
+            } else if(k<=(((1<<21) + (1<<14) + (1<<7) ))-1){
+                n_bytes+=3*fr;
+            } else if(k <=(((1<<28) + (1<<21) + (1<<14) + (1<<7))-1)){
+                n_bytes+=4*fr;
+            }else{
+                std::cout<<"error"<<std::endl;
+            }
+            k++;
+        }
+        std::cout<<"Number of bits for the grammar "<<rules.size()*rules.width()<<" versus vbytes: "<<(n_bytes*8)<<" bits"<<std::endl;*/
     }
 
     void set_samp_rate(size_t new_samp_rate){
