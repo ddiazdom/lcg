@@ -257,44 +257,10 @@ namespace lzstrat {
         chunk.p_gram.add_compressed_string(chunk.text, parse_size);
     }
 
+
+
     template<class sym_type>
-    void lc_parsing_algo(std::string& i_file, std::string& p_file, std::string& o_file,
-                         tmp_workspace& tmp_ws, size_t n_threads,
-                         size_t n_chunks, size_t chunk_size) {
-
-        parsing_opts p_opts;
-        p_opts.n_threads = n_threads;
-        p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
-        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
-        p_opts.page_cache_limit = 1024*1024*1024;
-        p_opts.sep_sym = 10;
-
-        std::string seed_source;
-        if(!p_file.empty()) {
-            load_pl_vector(p_file, p_opts.p_seeds);
-            assert(!p_opts.p_seeds.empty());
-            seed_source = p_file;
-        } else {
-            std::random_device rd;  // Will be used to obtain a seed for the random number engine
-            std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-            std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
-            p_opts.p_seeds.resize(32);
-            for(size_t i=0;i<32;i++){
-                p_opts.p_seeds[i] = distrib(gen);
-            }
-            //TODO create the seeds
-            //store_pl_vector("fixed_hash_functions", p_opts.p_functions);
-            seed_source = "randomly chosen";
-        }
-
-        std::cout<<"  Settings"<<std::endl;
-        std::cout<<"    Parsing seeds             : "<<seed_source<<std::endl;
-        std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
-        std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
-        std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
-        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
-
-
+    void build_grammars(parsing_opts& p_opts, std::string& i_file, tmp_workspace& tmp_ws){
         ts_queue<size_t> chunks_to_read;
         min_heap_type chunks_to_merge;
 
@@ -303,7 +269,7 @@ namespace lzstrat {
         struct stat st{};
         if (stat(i_file.c_str(), &st) != 0) return;
 
-        auto read_worker = [&]() -> void {
+        auto text_read_worker = [&]() -> void {
 
             int fd_r = open(i_file.c_str(), O_RDONLY);
 
@@ -352,7 +318,7 @@ namespace lzstrat {
 
             //data to write
             std::string concat_grams = tmp_ws.get_file("concatenated_grams");
-            heap_node node{};
+            heap_node h_node{};
             size_t next_chunk=0;
             int fd_w = open(concat_grams.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             off_t w_acc_bytes=0;
@@ -362,10 +328,10 @@ namespace lzstrat {
             while (rem_bytes > 0) {
 
                 while(true) {
-                    chunks_to_merge.pop(node);
-                    if(node.chunk_id==next_chunk){
-                        size_t g_bytes = text_chunks[node.buff_idx].p_gram.serialize_to_fd(fd_w);
-                        std::cout<<report_space(text_chunks[node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
+                    chunks_to_merge.pop(h_node);
+                    if(h_node.chunk_id==next_chunk){
+                        size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
+                        std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
                         w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
                         if(w_page_cache_bytes>p_opts.page_cache_limit){
@@ -374,28 +340,29 @@ namespace lzstrat {
                             w_page_cache_bytes=0;
                         }
 #endif
-                        text_chunks[node.buff_idx].p_gram.reset_grammar();
+                        text_chunks[h_node.buff_idx].p_gram.reset_grammar();
                         next_chunk++;
                         break;
                     }else{
-                        chunks_to_merge.push(node);
+                        chunks_to_merge.push(h_node);
                     }
                 }
 
-                proc_syms+=text_chunks[node.buff_idx].text_bytes;
+                proc_syms+=text_chunks[h_node.buff_idx].text_bytes;
 
-                std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
+                //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
+                std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::endl;
 
-                text_chunks[node.buff_idx].text_bytes = tmp_ck_size;
-                text_chunks[node.buff_idx].id = chunk_id++;
+                text_chunks[h_node.buff_idx].text_bytes = tmp_ck_size;
+                text_chunks[h_node.buff_idx].id = chunk_id++;
 
-                read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[node.buff_idx]);
+                read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[h_node.buff_idx]);
 
                 //next aligned position
-                size_t parse_start =  INT_CEIL(text_chunks[node.buff_idx].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
-                text_chunks[node.buff_idx].parse = (text_chunk::size_type *) &text_chunks[node.buff_idx].text[parse_start/sizeof(sym_type)];
+                size_t parse_start =  INT_CEIL(text_chunks[h_node.buff_idx].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
+                text_chunks[h_node.buff_idx].parse = (text_chunk::size_type *) &text_chunks[h_node.buff_idx].text[parse_start/sizeof(sym_type)];
 
-                chunks_to_read.push(node.buff_idx);
+                chunks_to_read.push(h_node.buff_idx);
 #ifdef __linux__
                 r_page_cache_bytes+=text_chunks[node.buff_idx].e_bytes;
                 if(r_page_cache_bytes>p_opts.page_cache_limit){
@@ -420,12 +387,12 @@ namespace lzstrat {
             //store the remaining grammars in the temporary file
             while(next_chunk<chunk_id) {
                 while(true){
-                    chunks_to_merge.pop(node);
+                    chunks_to_merge.pop(h_node);
 
-                    if(node.chunk_id==next_chunk) {
+                    if(h_node.chunk_id==next_chunk) {
                         //TODO store grammar to disk
-                        size_t g_bytes = text_chunks[node.buff_idx].p_gram.serialize_to_fd(fd_w);
-                        std::cout<<report_space(text_chunks[node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
+                        size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
+                        std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
                         w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
                         if(w_page_cache_bytes>p_opts.page_cache_limit){
@@ -437,14 +404,14 @@ namespace lzstrat {
                         next_chunk++;
                         break;
                     } else {
-                        chunks_to_merge.push(node);
+                        chunks_to_merge.push(h_node);
                     }
                 }
-                proc_syms+=text_chunks[node.buff_idx].text_bytes;
-                std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
+                proc_syms+=text_chunks[h_node.buff_idx].text_bytes;
+                //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
+                std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
             }
             chunks_to_merge.done();
-            std::cout<<""<<std::endl;
 
 #ifdef __linux__
             if(w_page_cache_bytes>0){
@@ -456,7 +423,6 @@ namespace lzstrat {
         };
 
         auto parser_worker = [&]() {
-
             size_t buff_id;
             bool res;
 
@@ -478,7 +444,7 @@ namespace lzstrat {
         };
 
         std::vector<std::thread> threads;
-        threads.emplace_back(read_worker);
+        threads.emplace_back(text_read_worker);
 
         for (size_t i = 0; i < p_opts.n_threads; i++) {
             threads.emplace_back(parser_worker);
@@ -487,6 +453,76 @@ namespace lzstrat {
         for (auto &thread: threads) {
             thread.join();
         }
+    }
+
+    template<class sym_type>
+    void merge_grammars(parsing_opts& p_opts, std::string& o_file, tmp_workspace& tmp_ws){
+
+        auto gram_read_worker = [&](){
+            std::string grams_file = tmp_ws.get_file("concatenated_grams");
+            std::vector<partial_gram<sym_type>> partial_grams(p_opts.n_chunks);
+            int fd_r = open(grams_file.c_str(), O_RDONLY);
+            size_t rem_bytes = file_size(grams_file);
+            size_t read_bytes;
+            size_t i=0;
+            while(i<p_opts.n_chunks && rem_bytes>0){
+                read_bytes = partial_grams[i].load_from_fs(fd_r);
+                std::cout<<"We read "<<report_space(off_t(read_bytes))<<std::endl;
+                //partial_grams[i].print_stats();
+                //std::cout<<""<<std::endl;
+                rem_bytes-=read_bytes;
+                i++;
+            }
+            merge_two_grammars<partial_gram<sym_type>>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+        };
+
+        std::vector<std::thread> threads;
+        threads.emplace_back(gram_read_worker);
+        for (auto &thread: threads) {
+            thread.join();
+        }
+    }
+
+    template<class sym_type>
+    void lc_parsing_algo(std::string& i_file, std::string& p_file, std::string& o_file,
+                         tmp_workspace& tmp_ws, size_t n_threads,
+                         size_t n_chunks, size_t chunk_size) {
+
+        parsing_opts p_opts;
+        p_opts.n_threads = n_threads;
+        p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
+        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
+        p_opts.page_cache_limit = 1024*1024*1024;
+        p_opts.sep_sym = 10;
+
+        std::string seed_source;
+        if(!p_file.empty()) {
+            load_pl_vector(p_file, p_opts.p_seeds);
+            assert(!p_opts.p_seeds.empty());
+            seed_source = p_file;
+        } else {
+            std::random_device rd;  // Will be used to obtain a seed for the random number engine
+            //std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
+            std::mt19937 gen(5489U); // Standard mersenne_twister_engine seeded with rd()
+            std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
+            p_opts.p_seeds.resize(32);
+            for(size_t i=0;i<32;i++){
+                p_opts.p_seeds[i] = distrib(gen);
+            }
+            //TODO create the seeds
+            //store_pl_vector("fixed_hash_functions", p_opts.p_functions);
+            seed_source = "randomly chosen";
+        }
+
+        std::cout<<"  Settings"<<std::endl;
+        std::cout<<"    Parsing seeds             : "<<seed_source<<std::endl;
+        std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
+        std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
+        std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
+        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
+
+        build_grammars<sym_type>(p_opts, i_file, tmp_ws);
+        merge_grammars<sym_type>(p_opts, o_file, tmp_ws);
     }
 }
 

@@ -5,6 +5,7 @@
 #ifndef LCG_GRAMMAR_H
 #define LCG_GRAMMAR_H
 #include <stack>
+#include <queue>
 
 #include "cds/cdt_common.hpp"
 #include "cds/int_array.h"
@@ -103,6 +104,7 @@ struct lc_gram_buffer_t{
     }
 };
 
+template<bool is_cg=false, bool is_rl=false>
 struct lc_gram_t {
 
     size_t                             n{}; //n: number of symbols in the original text
@@ -112,11 +114,15 @@ struct lc_gram_t {
     size_t                             s{}; //s: number of strings
     size_t                             longest_str{}; //length of the longest string encoded in the grammar
     size_t                             max_tsym{}; //highest terminal symbol
+    size_t                             min_nter{}; //smallest nonterminal symbol
+    size_t                             cg_mark{};
+    size_t                             n_cg_rules{};
+
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
     bool                               is_simplified=false;
-    bool                               has_rl_rules=false;
+    const static bool                  has_rl_rules=is_rl;
+    const static bool                  has_cg_rules=is_cg;
     bool                               has_rand_access=false;
-    bool                               has_cg_rules=false;
 
     std::vector<uint8_t>               terminals; //set of terminals
     std::vector<hashing>               par_functions; //list of hash functions from which the grammar was constructed
@@ -125,11 +131,12 @@ struct lc_gram_t {
 
     int_array<size_t>                  rules; //concatenated set of grammar rules
     int_array<size_t>                  rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
+
     int_array<size_t>                  rule_exp;// length of the nt expansions
     int_array<size_t>                  sampled_exp;// sampled nt expansions in "rules"
     size_t                             samp_rate=4; //sampling rate to sample nt expansions in "rules"
 
-    std::pair<size_t, size_t>          run_len_nt; //first run-length rule and total number of run-length rules
+    std::pair<size_t, size_t>          run_len_nt{0,0}; //first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
 
@@ -208,9 +215,13 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, samp_rate);
         written_bytes +=serialize_elm(ofs, longest_str);
         written_bytes +=serialize_elm(ofs, max_tsym);
+        written_bytes +=serialize_elm(ofs, min_nter);
         written_bytes +=serialize_elm(ofs, sep_tsym);
         written_bytes +=serialize_elm(ofs, is_simplified);
         written_bytes +=serialize_elm(ofs, has_rl_rules);
+        written_bytes +=serialize_elm(ofs, has_cg_rules);
+        written_bytes +=serialize_elm(ofs, cg_mark);
+        written_bytes +=serialize_elm(ofs, n_cg_rules);
         written_bytes +=serialize_elm(ofs, has_rand_access);
         written_bytes +=serialize_elm(ofs, run_len_nt.first);
         written_bytes +=serialize_elm(ofs, run_len_nt.second);
@@ -221,8 +232,9 @@ struct lc_gram_t {
         written_bytes +=serialize_plain_vector(ofs, str_boundaries);
         written_bytes +=rules.serialize(ofs);
         written_bytes +=rl_ptr.serialize(ofs);
-        written_bytes +=rule_exp.serialize(ofs);
-        written_bytes +=sampled_exp.serialize(ofs);
+
+        //written_bytes +=rule_exp.serialize(ofs);
+        //written_bytes +=sampled_exp.serialize(ofs);
         return written_bytes;
     }
 
@@ -235,9 +247,16 @@ struct lc_gram_t {
         load_elm(ifs, samp_rate);
         load_elm(ifs, longest_str);
         load_elm(ifs, max_tsym);
+        load_elm(ifs, min_nter);
         load_elm(ifs, sep_tsym);
         load_elm(ifs, is_simplified);
-        load_elm(ifs, has_rl_rules);
+        bool tmp;
+        load_elm(ifs, tmp);
+        assert(has_rl_rules==is_rl);
+        load_elm(ifs, tmp);
+        assert(has_cg_rules==is_cg);
+        load_elm(ifs, cg_mark);
+        load_elm(ifs, n_cg_rules);
         load_elm(ifs, has_rand_access);
         load_elm(ifs, run_len_nt.first);
         load_elm(ifs, run_len_nt.second);
@@ -251,7 +270,7 @@ struct lc_gram_t {
         load_plain_vector(ifs, str_boundaries);
         rules.load(ifs);
         rl_ptr.load(ifs);
-        rule_exp.load(ifs);
+        //rule_exp.load(ifs);
     }
 
     [[nodiscard]] inline std::pair<size_t, size_t> nt2phrase(size_t sym) const {
@@ -266,6 +285,11 @@ struct lc_gram_t {
 
     [[nodiscard]] inline bool is_rl_sym(size_t symbol) const{
         return run_len_nt.first<=symbol && symbol<(run_len_nt.first+run_len_nt.second);
+    }
+
+    [[nodiscard]] inline bool is_cg_nt(size_t sym) const{
+        auto res = nt2phrase(sym);
+        return rules[res.first]>=cg_mark;
     }
 
     [[nodiscard]] inline size_t first_rl_sym() const{
@@ -347,6 +371,7 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Approx. compression ratio:      "<<comp_ratio<<std::endl;
         std::cout<<pad_string<<"Simplified:                     "<<(is_simplified ? "yes" : "no")<<std::endl;
         std::cout<<pad_string<<"Run-len rules:                  "<<(has_rl_rules ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Collage rules:                  "<<(has_cg_rules ? "yes" : "no")<<std::endl;
         std::cout<<pad_string<<"Random access support:          "<<(has_rand_access? "yes" : "no");
         if(has_rand_access){
             auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
@@ -376,44 +401,16 @@ struct lc_gram_t {
                 std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
             }
         }
+
+        if(has_cg_rules){
+            std::cout <<pad_string<<"Number of collage rules: " << n_cg_rules <<std::endl;
+        }
+
         if(has_rl_rules){
             std::cout <<pad_string<<"Number of run-length rules: " << run_len_nt.second <<std::endl;
         }
+
         std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
-
-        //TODO remove
-        /*std::vector<size_t> freqs(r+1);
-        for(size_t i=0;i<rules.size();i++){
-            freqs[rules[i]]++;
-        }
-        std::vector<std::pair<size_t, size_t>> sorted_nts(freqs.size());
-        for(size_t i=0;i<freqs.size();i++){
-            if(freqs[i]!=0){
-                sorted_nts[i].first = i;
-                sorted_nts[i].second = freqs[i];
-            }
-        }
-        std::sort(sorted_nts.begin(), sorted_nts.end(), [](auto& a, auto& b){
-            return a.second>b.second;
-        });
-
-        size_t n_bytes=0, k=0;
-        for(auto & sorted_nt : sorted_nts){
-            size_t fr = sorted_nt.second;
-            if(k<= (1<<7)-1) {
-                n_bytes+=1*fr;
-            }else if(k<=((1<<14)+(1<<7)-1)){
-                n_bytes+=2*fr;
-            } else if(k<=(((1<<21) + (1<<14) + (1<<7) ))-1){
-                n_bytes+=3*fr;
-            } else if(k <=(((1<<28) + (1<<21) + (1<<14) + (1<<7))-1)){
-                n_bytes+=4*fr;
-            }else{
-                std::cout<<"error"<<std::endl;
-            }
-            k++;
-        }
-        std::cout<<"Number of bits for the grammar "<<rules.size()*rules.width()<<" versus vbytes: "<<(n_bytes*8)<<" bits"<<std::endl;*/
     }
 
     void set_samp_rate(size_t new_samp_rate){
@@ -422,15 +419,252 @@ struct lc_gram_t {
         }
     }
 
-    //TODO implement this
-    /*
-    void access(size_t str_id, size_t start, size_t end, std::string& output){
-    }*/
+    void get_prefix(size_t sym, size_t len, std::vector<size_t>& dc_string){
 
-    [[nodiscard]] inline bool is_cs_nt(size_t sym) const {
-        auto res = nt2phrase(sym);
-        size_t fsym = rules[res.first];
-        return parsing_level(fsym)== parsing_level(sym);
+    }
+
+    void get_suffix(size_t sym, size_t len, std::vector<size_t>& dc_string){
+
+    }
+
+    [[nodiscard]] uint8_t access_pos(size_t sym, size_t idx) const {
+
+        std::stack<size_t> stack;
+        stack.push(sym);
+        size_t offset, u;
+        assert(idx<rule_exp[sym]);
+
+        while(!stack.empty()){
+
+            sym = stack.top();
+            stack.pop();
+
+            auto range = nt2phrase(sym);
+            u=0, offset=0;
+            while(offset+rule_exp[rules[range.first+u]]<=idx){
+                offset += rule_exp[rules[range.first+u]];
+                u++;
+            }
+            idx -=offset;
+
+            sym = rules[range.first+u];
+
+            if(sym>max_tsym){
+                stack.push(sym);
+            }
+        }
+        return (uint8_t) sym;
+    }
+
+    //returns longest common prefix between exp(sym_a)[idx..] and exp(sym_b)[idx..]
+    [[nodiscard]] long longest_com_pref(size_t sym_a, size_t sym_b, size_t idx) const {
+
+        if(rule_exp[sym_a]<=idx || rule_exp[sym_b]<=idx){
+            return -1;
+        }
+
+        std::stack<size_t> stack_a;
+        stack_a.push(sym_a);
+        size_t idx_a=idx, u, offset;
+        while(idx_a>0){
+            sym_a = stack_a.top();
+            stack_a.pop();
+
+            auto range = nt2phrase(sym_a);
+            u=0, offset=0;
+            while(offset+rule_exp[rules[range.first+u]]<=idx_a){
+                offset += rule_exp[rules[range.first+u]];
+                u++;
+            }
+            idx_a -=offset;
+
+            size_t first = range.first+u;
+            for(size_t j = range.second;j>=first;j--){
+                stack_a.push(rules[j]);
+            }
+        }
+
+        std::stack<size_t> stack_b;
+        stack_b.push(sym_b);
+        size_t idx_b=idx;
+        while(idx_b>0){
+            sym_b = stack_b.top();
+            stack_b.pop();
+
+            auto range = nt2phrase(sym_b);
+            u=0, offset=0;
+            while(offset+rule_exp[rules[range.first+u]]<=idx_b){
+                offset += rule_exp[rules[range.first+u]];
+                u++;
+            }
+            idx_b -=offset;
+
+            size_t first = range.first+u;
+            for(size_t j = range.second;j>=first;j--){
+                stack_b.push(rules[j]);
+            }
+        }
+
+        size_t p_level_a, p_level_b;
+        long n_eq=0;
+
+        while(!stack_a.empty() && !stack_b.empty()){
+
+            sym_a = stack_a.top();
+            sym_b = stack_b.top();
+            p_level_a = parsing_level(stack_a.top());
+            p_level_b = parsing_level(stack_b.top());
+
+            if(sym_a==sym_b){
+                n_eq += sym_a<=max_tsym;
+                stack_a.pop();
+                stack_b.pop();
+            }else {
+
+                if(sym_a<=max_tsym && sym_b<=max_tsym){
+                    break;
+                }
+
+                if(p_level_b<=p_level_a){
+                    stack_a.pop();
+                    auto range= nt2phrase(sym_a);
+                    for(size_t j=range.second; j>=range.first;j--){
+                        stack_a.push(rules[j]);
+                    }
+                }
+
+                if(p_level_a<=p_level_b){
+                    stack_b.pop();
+                    auto range= nt2phrase(sym_b);
+                    for(size_t j=range.second; j>=range.first;j--){
+                        stack_b.push(rules[j]);
+                    }
+                }
+            }
+        }
+        return n_eq;
+    }
+
+    //returns true if exp(sym_a)[idx..] <_{lex} exp(sym_b)[idx..], or false otherwise
+    [[nodiscard]] bool substring_lex_comp(size_t sym_a, size_t sym_b, size_t idx) const {
+
+        if(rule_exp[sym_a]<=idx || rule_exp[sym_b]<=idx){
+            return rule_exp[sym_a]<rule_exp[sym_b];
+        }
+
+        std::stack<size_t> stack_a;
+        stack_a.push(sym_a);
+        size_t idx_a=idx, u, offset;
+        while(idx_a>0){
+            sym_a = stack_a.top();
+            stack_a.pop();
+
+            auto range = nt2phrase(sym_a);
+            u=0, offset=0;
+            while(offset+rule_exp[rules[range.first+u]]<=idx_a){
+                offset += rule_exp[rules[range.first+u]];
+                u++;
+            }
+            idx_a -=offset;
+
+            size_t first = range.first+u;
+            for(size_t j = range.second;j>=first;j--){
+                stack_a.push(rules[j]);
+            }
+        }
+
+        std::stack<size_t> stack_b;
+        stack_b.push(sym_b);
+        size_t idx_b=idx;
+        while(idx_b>0){
+            sym_b = stack_b.top();
+            stack_b.pop();
+
+            auto range = nt2phrase(sym_b);
+            u=0, offset=0;
+            while(offset+rule_exp[rules[range.first+u]]<=idx_b){
+                offset += rule_exp[rules[range.first+u]];
+                u++;
+            }
+            idx_b -=offset;
+
+            size_t first = range.first+u;
+            for(size_t j = range.second;j>=first;j--){
+                stack_b.push(rules[j]);
+            }
+        }
+
+        //std::cout<<"We will compare "<<stack_a.top()<<" "<<stack_b.top()<<std::endl;
+        size_t p_level_a, p_level_b;
+
+        while(!stack_a.empty() && !stack_b.empty()){
+
+            sym_a = stack_a.top();
+            sym_b = stack_b.top();
+            p_level_a = parsing_level(stack_a.top());
+            p_level_b = parsing_level(stack_b.top());
+
+            if(sym_a==sym_b){
+                stack_a.pop();
+                stack_b.pop();
+            }else {
+
+                if(sym_a<=max_tsym && sym_b<=max_tsym){
+                    //std::cout<<"They differ in "<<sym_a<<" "<<sym_b<<std::endl;
+                    return sym_a<sym_b;
+                }
+
+                if(p_level_b<=p_level_a){
+                    stack_a.pop();
+                    auto range= nt2phrase(sym_a);
+                    for(size_t j=range.second; j>=range.first;j--){
+                        stack_a.push(rules[j]);
+                    }
+                }
+
+                if(p_level_a<=p_level_b){
+                    stack_b.pop();
+                    auto range= nt2phrase(sym_b);
+                    for(size_t j=range.second; j>=range.first;j--){
+                        stack_b.push(rules[j]);
+                    }
+                }
+            }
+        }
+        return rule_exp[sym_a]<rule_exp[sym_b];
+    }
+
+    void print_parse_tree(size_t sym) const {
+
+        std::queue<std::tuple<size_t, bool, bool>> queue;
+        std::tuple<size_t, bool, bool> dc_sym;
+        queue.emplace(sym, true, true);
+
+        while(!queue.empty()) {
+
+            dc_sym = queue.front();
+            queue.pop();
+
+            sym = std::get<0>(dc_sym);
+            bool is_last_sib = std::get<1>(dc_sym);
+            bool is_left_branch = std::get<2>(dc_sym);
+            std::cout<<sym<<" ";
+
+            if(is_last_sib){
+                std::cout<<"| ";
+            }
+
+            if(is_left_branch){
+                std::cout<<" "<<std::endl;
+            }
+
+            if(!is_terminal(sym)){
+                auto range = nt2phrase(sym);
+                for(size_t j=range.first; j<=range.second;j++){
+                    queue.emplace(pos2symbol(j), j==range.second, (j==range.second && is_left_branch));
+                }
+            }
+        }
     }
 
     size_t in_memory_decompression(size_t sym, std::string& dc_string) const {
@@ -450,16 +684,31 @@ struct lc_gram_t {
             }else{
                 auto range = nt2phrase(sym);
 
-                if(is_rl_sym(sym)){
-                    assert(range.second-range.first+1==2);
-                    size_t len = pos2symbol(range.second);
-                    for(size_t j=0;j<len;j++){
-                        stack.emplace(pos2symbol(range.first));
+                if constexpr (is_rl) {
+                    if(is_rl_sym(sym)) {
+                        assert(range.second - range.first + 1 == 2);
+                        size_t len = pos2symbol(range.second);
+                        for (size_t j = 0; j < len; j++) {
+                            stack.emplace(pos2symbol(range.first));
+                        }
+                        continue;
                     }
-                }else{
-                    for(size_t j=range.second+1; j-->range.first;){
-                        stack.emplace(pos2symbol(j));
+                }
+
+                /*if constexpr (is_cg) {
+                    if(rules[range.first]>=cg_mark){
+                        assert(range.second-range.first+1==3);
+                        if(rules[range.first] == cg_mark){
+                            get_prefix(rules[range.first+1], rules[range.first+2], dc_string);
+                        }else{
+                            get_suffix(rules[range.first+1], rules[range.first+2], dc_string);
+                        }
+                        continue;
                     }
+                }*/
+
+                for(size_t j=range.second+1; j-->range.first;){
+                    stack.emplace(pos2symbol(j));
                 }
             }
         }

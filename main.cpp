@@ -94,10 +94,10 @@ static void parse_app(CLI::App& app, struct arguments& args){
 }
 
 template<class sym_type>
-void run_int(std::string input_file, arguments& args) {
+void run_int(std::string& input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
-    gram_algo<uint8_t>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size, args.se_par_rounds);
+    gram_algo<uint8_t, lc_gram_t<true, false>>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size, args.se_par_rounds);
 }
 
 int main(int argc, char** argv) {

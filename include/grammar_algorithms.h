@@ -5,225 +5,206 @@
 #ifndef LCG_GRAMMAR_ALGORITHMS_H
 #define LCG_GRAMMAR_ALGORITHMS_H
 
-#include "cds/ts_string_map.h"
-#include "grammar.h"
-
 #include "semi-external-strategy/lc_parsing.h"
 #include "lz-like-strategy/lc_parsing.h"
+#include "grammar.h"
+#include "build_collage_system.h"
 
-#include <unordered_map>
-#include <stack>
+template<class gram_t>
+void make_gram_fix_free(gram_t& gram){
 
-struct collage_data{
-    size_t nt{};
-    size_t lcp{};
-    size_t rule_size{};
-    long ref_nt =-1;
-    std::string dc_string;
-};
 
-size_t get_cs_left_rules(std::vector<collage_data>& dc_rules) {
+    for(size_t i=0;i<gram.lvl_rules.size()-1; i++) {
 
-    std::sort(dc_rules.begin(), dc_rules.end(), [&](auto const& a, auto const& b) -> bool{
-        size_t len = std::min(a.dc_string.size(), b.dc_string.size());
-        for(size_t k=0;k<len;k++){
-            if(a.dc_string[k]!=b.dc_string[k]){
-                return a.dc_string[k]<b.dc_string[k];
-            }
-        }
-        return a.dc_string.size()<b.dc_string.size();
-    });
+        size_t n_lvl_rules = gram.lvl_rules[i+1]-gram.lvl_rules[i];//number of rules in the level
 
-    size_t nt_compressed=0;
-    for(size_t k=1;k<dc_rules.size();k++){
-        size_t u = 0;
-        while(u<dc_rules[k-1].dc_string.size() &&
-              dc_rules[k].dc_string[u]==dc_rules[k-1].dc_string[u]){
-            u++;
-        }
-        dc_rules[k].lcp = u;
-    }
-
-    for(size_t k=0;k<dc_rules.size()-1;k++) {
-        size_t len = dc_rules[k].dc_string.size();
-        if(dc_rules[k+1].lcp<len) continue;
-
-        size_t prev_len = len;
-        size_t ptr_rl = k+1;
-        while(ptr_rl<dc_rules.size() && dc_rules[ptr_rl].lcp>=prev_len){
-            prev_len = dc_rules[ptr_rl].lcp;
-            ptr_rl++;
-        }
-
-        if(dc_rules[k].ref_nt<0 && dc_rules[k].rule_size>1){
-            dc_rules[k].ref_nt = (long)ptr_rl-1;
-            //auto res =std::mismatch(dc_rules[k].dc_string.begin(), dc_rules[k].dc_string.end(), dc_rules[ptr_rl-1].dc_string.begin());
-            //assert(res.first==dc_rules[k].dc_string.end());
-            nt_compressed++;
-        }
-    }
-    return nt_compressed;
-}
-
-size_t get_cs_right_rules(std::vector<collage_data>& dc_rules) {
-
-    std::sort(dc_rules.begin(), dc_rules.end(), [&](auto const& a, auto const& b) -> bool{
-        size_t len = std::min(a.dc_string.size(), b.dc_string.size());
-        size_t pos_a = a.dc_string.size()-1;
-        size_t pos_b = b.dc_string.size()-1;
-
-        for(size_t k=0;k<len;k++){
-            if(a.dc_string[pos_a-k]!=b.dc_string[pos_b-k]){
-                return a.dc_string[pos_a-k]<b.dc_string[pos_b-k];
-            }
-        }
-        return a.dc_string.size()<b.dc_string.size();
-    });
-
-    size_t prev_len = dc_rules[0].dc_string.size();
-    size_t nt_compressed=0;
-
-    for(size_t k=1;k<dc_rules.size();k++){
-        size_t u = 0;
-        size_t len = dc_rules[k].dc_string.size()-1;
-
-        while(u<dc_rules[k-1].dc_string.size() &&
-              dc_rules[k].dc_string[len-u]==dc_rules[k-1].dc_string[prev_len-u]){
-            u++;
-        }
-        dc_rules[k].lcp = u;
-        prev_len = len;
-    }
-
-    for(size_t k=0;k<dc_rules.size()-1;k++) {
-        size_t len = dc_rules[k].dc_string.size();
-        if(dc_rules[k+1].lcp<len){
-            continue;
-        }
-
-        prev_len = len;
-        size_t ptr_rl = k+1;
-        while(ptr_rl<dc_rules.size() && dc_rules[ptr_rl].lcp>=prev_len){
-            prev_len = dc_rules[ptr_rl].lcp;
-            ptr_rl++;
-        }
-
-        if(dc_rules[k].ref_nt<0 && dc_rules[k].rule_size>1){
-            dc_rules[k].ref_nt = (long)ptr_rl-1;
-            //std::string& str = dc_rules[dc_rules[k].ref_nt].dc_string;
-            //std::string& suffix = dc_rules[k].dc_string;
-            //assert(str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0);
-            nt_compressed++;
-        }
-    }
-    return nt_compressed;
-}
-
-std::pair<size_t, size_t> compute_cg_rules(lc_gram_t& gram, std::unordered_map<size_t, std::pair<size_t, size_t>>& ht){
-
-    size_t max_len = 0, new_g_size=0;
-    for(size_t i=0;i<gram.lvl_rules.size()-1; i++){
-        size_t lvl_rules = gram.lvl_rules[i+1]-gram.lvl_rules[i];//number of rules in the level
-
-        if(lvl_rules>0){
-
-            std::vector<collage_data> dc_rules;
-            dc_rules.resize(lvl_rules);
-
+        if(n_lvl_rules>0) {
+            std::vector<collage_data> level_rules;
+            level_rules.resize(n_lvl_rules);
             size_t first_nt = gram.lvl_rules[i];
             size_t last_nt = gram.lvl_rules[i + 1] - 1;
 
             for(size_t nt=first_nt, j=0;nt<=last_nt;nt++,j++){
-                dc_rules[j].nt = nt;
-                gram.in_memory_decompression(nt, dc_rules[j].dc_string);
+                level_rules[j].nt = nt;
                 auto res = gram.nt2phrase(nt);
-                dc_rules[j].rule_size = res.second-res.first+1;
+                level_rules[j].position = res.first;
+                level_rules[j].rule_size = res.second-res.first+1;
             }
 
-            get_cs_left_rules(dc_rules);
-            get_cs_right_rules(dc_rules);
+            //sort the level rules in lexicographical order
+            std::sort(level_rules.begin(), level_rules.end(), [&](const auto& a, const auto& b){
+                size_t len = std::min(a.rule_size, b.rule_size);
+                for(size_t i=0;i<len;i++){
+                    if(gram.rules[a.position+i]!=gram.rules[b.position+i]){
+                        return gram.rules[a.position+i] < gram.rules[b.position+i];
+                    }
+                }
+                return a.rule_size<b.rule_size;
+            });
 
-            for(auto const& rule : dc_rules){
-                if(rule.ref_nt>=0){
-                    if(rule.dc_string.size()>max_len) max_len = rule.dc_string.size();
-                    ht.insert({rule.nt, {rule.ref_nt, rule.dc_string.size()}});
-                    new_g_size+=2;
-                }else{
-                    new_g_size+=rule.rule_size;
+            //get which rules are suffixes of others
+            std::unordered_set<size_t> suff_nts;
+            for(size_t k=1;k<level_rules.size();k++) {
+                size_t u = 0;
+                size_t min_size = std::min(level_rules[k - 1].rule_size, level_rules[k].rule_size);
+                size_t pos_a = level_rules[k - 1].position;
+                size_t pos_b = level_rules[k].position;
+
+                while (u < min_size &&
+                       gram.rules[pos_b + u] == gram.rules[pos_a + u]) {
+                    u++;
+                }
+
+                if (min_size == u) {
+                    assert(level_rules[k-1].rule_size == min_size);
+                    suff_nts.insert(level_rules[k - 1].nt);
                 }
             }
-            //auto res1 = gram.nt2phrase(gram.lvl_rules[i]);
-            //auto res2 = gram.nt2phrase(gram.lvl_rules[i + 1] - 1);
-            //size_t tot_sym = res2.second-res1.first+1;
-            //g_size += tot_sym;
+            std::cout<<"There are "<<suff_nts.size()<<" suffix rules "<<std::endl;
+
+            //inspect the upper grammar levels to obtain the contexts of the suffix rules
+            uint8_t width = gram.rules.width();
+            std::unordered_set<size_t> ext_contexts;
+            for(size_t l=i+1;l<gram.lvl_rules.size()-1;l++){
+                first_nt = gram.lvl_rules[l];
+                last_nt = gram.lvl_rules[l + 1] - 1;
+                n_lvl_rules = last_nt - first_nt+1;
+                if(n_lvl_rules>1) {
+                    for (size_t nt = first_nt; nt <= last_nt; nt++) {
+                        auto res = gram.nt2phrase(nt);
+                        for (size_t k = res.first; k <= res.second; k++) {
+                            if (suff_nts.find(gram.rules[k]) != suff_nts.end()) {
+                                //TODO hash the pair
+                                if(k<res.second){
+                                    size_t pair = (gram.rules[k]<<width) | gram.rules[k+1];
+                                    ext_contexts.insert(pair);
+                                }else{
+                                    suff_nts.insert(nt);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::unordered_map<size_t, size_t> new_suff_nts;
+            std::stack<size_t> left_branch, right_branch;
+            size_t new_nt = 0;
+            for(auto const& context : ext_contexts){
+                size_t left = context>>width;
+                size_t right = context & ((1<<width)-1);
+
+                size_t context_lvl = gram.parsing_level(left);
+
+                //descend over the adjacent branches
+                size_t top_right = right;
+                while(context_lvl>(i+1)){
+                    auto res = gram.nt2phrase(left);
+                    left = gram.rules[res.second];
+                    auto res2 = gram.nt2phrase(right);
+                    right = gram.rules[res2.first];
+
+                    left_branch.push(left);
+                    right_branch.push(right);
+                    context_lvl--;
+                }
+
+                //create the new phrase gram.rules[res1.first..res1.second]{\cdot}right
+                std::vector<uint32_t> new_phrase;
+                auto res1 = gram.nt2phrase(left);
+                for(size_t u=res1.first;u<res1.second;u++){
+                    new_phrase.push_back(gram.rules[u]);
+                }
+                auto res2 = gram.nt2phrase(right);
+                new_phrase.push_back(gram.rules[res2.first]);
+                //TODO hash new_phrase and assign it a nonterminal value
+
+                new_phrase.clear();
+                //ascend back to do the renaming
+                while(!right_branch.empty()){
+                    left = left_branch.top();
+                    left_branch.pop();
+
+                    res1 = gram.nt2phrase(left);
+                    for(size_t u=res1.first; u<res1.second;u++){
+                        new_phrase.push_back(gram.rules[u]);
+                    }
+                    //IMPORTANT: what happens if right is also modified? (I mean, its suffix?)
+                    new_phrase.push_back(right);
+
+                    //TODO hash the new phrase
+
+                    right = right_branch.top();
+                    right_branch.pop();
+                    new_phrase.clear();
+                }
+                //TODO associate phrase,top_right with context in a map
+            }
+            //std::cout<<" there are "<<suff_nts.size()<<" distinct contexts for the suffix rules "<<std::endl;
         }
     }
-    //std::cout<<new_g_size<<" "<<g_size<<" "<<(float(comp_rules)/float(gram.r))*100<<"% of the rules are compressible"<<std::endl;
-    return {new_g_size, max_len};
 }
 
-void make_collage_system(lc_gram_t& gram){
+template<class gram_t>
+void compute_exp_len(gram_t& gram){
 
-    std::unordered_map<size_t, std::pair<size_t, size_t>> ht;
-    auto cs_res = compute_cg_rules(gram, ht);
+    int_array<size_t> exp(gram.r, sym_width(gram.longest_str));
+    size_t tmp_sym, len, exp_size;
+    size_t last_sym;
 
-    int_array<size_t> new_rules(cs_res.first, sym_width(std::max(gram.r, cs_res.second)));
-    int_array<size_t> new_rl_ptrs(sym_width(gram.r), sym_width(cs_res.first));
-
-    //insert terminals
-    for(size_t i=0;i<gram.n_terminals();i++){
-        new_rules.push_back(i);
+    for(size_t i=0;i<=gram.max_tsym;i++){
+        exp[i] = 1;
     }
 
-    //insert regular rules
-    size_t start_sym = gram.start_symbol();
-    for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
-        new_rl_ptrs.push_back(new_rules.size());
+    if constexpr (gram_t::has_rl_rules){
+        last_sym = gram.first_rl_sym();
+    }else{
+        last_sym = gram.r-1;
+    }
 
-        auto res = ht.find(sym);
-        if(res!=ht.end()){
-            new_rules.push_back(res->second.first);
-            new_rules.push_back(res->second.second);
-        }else{
-            auto range = gram.nt2phrase(sym);
-            for(size_t j=range.first;j<=range.second;j++){
-                new_rules.push_back(gram.rules[j]);
+    //get the expansion length of each nonterminal in the grammar
+    for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
+        auto range = gram.nt2phrase(sym);
+        exp_size = 0;
+        for(size_t i=range.first;i<=range.second;i++){
+            tmp_sym = gram.rules.read(i);
+            len = 1;
+            if(gram.is_rl_sym(tmp_sym)) {
+                auto range2 = gram.nt2phrase(tmp_sym);
+                tmp_sym = gram.rules.read(range2.first);
+                len = gram.rules.read(range2.second);
+            }
+
+            if(gram.is_terminal(tmp_sym)){
+                exp_size += len;
+            } else{
+                exp_size += exp.read(tmp_sym)*len;
             }
         }
+        exp.write(sym, exp_size);
     }
 
-    //insert the compressed strings
-    new_rl_ptrs.push_back(new_rules.size());
-    for(size_t str=0;str<gram.n_strings();str++){
-        auto range = gram.str2phrase(str);
-        gram.str_boundaries[str] = new_rules.size();
-        for(size_t j=range.first;j<=range.second;j++){
-            new_rules.push_back(gram.rules[j]);
+    if constexpr (gram_t::has_rl_rules){
+        last_sym = gram.last_rl_sym();
+        for(size_t sym=gram.first_rl_sym();sym<=last_sym; sym++) {
+            auto range = gram.nt2phrase(sym);
+            tmp_sym = gram.rules.read(range.first);
+            len = gram.rules.read(range.second);
+            if(gram.is_terminal(tmp_sym)){
+                exp_size = len;
+            }else{
+                exp_size = exp.read(tmp_sym)*len;
+            }
+            exp.write(sym, exp_size);
         }
     }
-    new_rl_ptrs.push_back(new_rules.size());
-    gram.str_boundaries[gram.n_strings()]=new_rules.size();
-
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before: "<<gram.rules.size()<<std::endl;
-    std::cout<<"    Grammar size after:  "<<new_rules.size()<<std::endl;
-    std::cout<<"    Number of cs rules:  "<<ht.size()<<" ("<<float(ht.size())/float(gram.r)*100<<"%)"<<std::endl;
-    std::cout<<"    Compression ratio:   "<<float(new_rules.size())/float(gram.rules.size())<<std::endl;
-
-    gram.g  = new_rules.size();
-    new_rules.swap(gram.rules);
-    new_rl_ptrs.swap(gram.rl_ptr);
-    gram.has_cg_rules = true;
-
-    for(size_t sym=gram.max_tsym+1;sym<gram.start_symbol();sym++){
-        std::cout<<(ht.find(sym)!=ht.end())<<" "<<gram.is_cs_nt(sym)<<std::endl;
-    }
+    gram.rule_exp.swap(exp);
 }
 
-void add_random_access_support(lc_gram_t& gram){
+template<class gram_t>
+void add_random_access_support(gram_t& gram){
 
     int_array<size_t> exp(gram.n_nonterminals(), sym_width(gram.longest_str));
-
     size_t tmp_sym, len, exp_size;
     size_t last_sym = gram.first_rl_sym();
 
@@ -316,7 +297,8 @@ void merge_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
 
 }*/
 
-size_t get_new_rl_rules(lc_gram_t& gram, par_string_map<size_t>& ht) {
+template<class gram_t>
+size_t get_new_rl_rules(gram_t& gram, par_string_map<size_t>& ht) {
 
     size_t prev_sym, curr_sym, run_len, tmp_sym;
     size_t pair[2] = {0};
@@ -402,9 +384,10 @@ size_t get_new_rl_rules(lc_gram_t& gram, par_string_map<size_t>& ht) {
     return new_size+(ht.size()*2);
 }
 
-void run_length_compress(lc_gram_t& gram) {
+template<class gram_t>
+void run_length_compress(gram_t& gram) {
 
-    assert(!gram.has_rl_rules);
+    assert(gram.run_len_nt.second==0);
     par_string_map<size_t> ht(4, 0.6, 1);
     size_t new_size = get_new_rl_rules(gram, ht);
 
@@ -524,14 +507,14 @@ void run_length_compress(lc_gram_t& gram) {
 
     new_rules.swap(gram.rules);
     new_rl_ptrs.swap(gram.rl_ptr);
-    gram.has_rl_rules = true;
 
     if(gram.has_rand_access){
         add_random_access_support(gram);
     }
 }
 
-void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
+template<class gram_t>
+void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
 
     std::cout<<"Checking the grammar produces the exact input string"<<std::endl;
     std::cout<<"  This step is optional and for debugging purposes"<<std::endl;
@@ -603,11 +586,31 @@ void check_plain_grammar(lc_gram_t& gram, std::string& uncomp_file) {
     std::cout<<"Grammar is correct!!"<<std::endl;
 }
 
-void estimate_alt_encodings(lc_gram_t& gram){
-    std::vector<size_t> freqs(gram.r, 0);
-    auto res1 = gram.nt2phrase(gram.first_rl_sym());
-    auto res2 = gram.nt2phrase(gram.last_rl_sym());
+template<class gram_t>
+void estimate_alt_encodings(gram_t& gram){
 
+    size_t max_sym=0;
+    for(size_t i=0;i<gram.rules.size();i++){
+        if(gram.rules[i]>max_sym){
+            max_sym = gram.rules[i];
+        }
+    }
+    std::vector<size_t> freqs(max_sym, 0);
+    for(size_t i=0;i<gram.rules.size();i++){
+        freqs[gram.rules[i]]++;
+    }
+
+    double h0 = 0;
+    auto f = (double)gram.rules.size();
+    for(unsigned long freq : freqs){
+        if(freq!=0){
+            auto f_c = (double)freq;
+            h0 += (f_c/f)*log2(f/f_c);
+        }
+    }
+
+    /*auto res1 = gram.nt2phrase(gram.first_rl_sym());
+    auto res2 = gram.nt2phrase(gram.last_rl_sym());
     for(size_t i=0;i<res1.first;i++){
         freqs[gram.rules[i]]++;
     }
@@ -618,11 +621,13 @@ void estimate_alt_encodings(lc_gram_t& gram){
 
     for(size_t i=res2.second+1;i<gram.rules.size();i++){
         freqs[gram.rules[i]]++;
-    }
+    }*/
+
+    size_t lb_bytes= INT_CEIL(size_t(ceil(f*h0)), 8);
+    std::cout<<"nH_0(G): "<<report_space((off_t)lb_bytes)<<std::endl;
 
     size_t curr_bytes = INT_CEIL(gram.rules.size()*gram.rules.width(), 8);
     std::cout<<"Current grammar space: "<<report_space((off_t)curr_bytes)<<std::endl;
-
     size_t tot_bits=0, n_bits;
     size_t new_sym=1;
     uint8_t code_len;
@@ -669,7 +674,8 @@ void estimate_alt_encodings(lc_gram_t& gram){
     std::cout<<"Vbytes with permutation: "<<report_space((off_t)tot_bytes)<<std::endl;
 }
 
-std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const lc_gram_t& gram) {
+template<class gram_t>
+std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const gram_t& gram) {
 
     //compute which nonterminals are repeated and
     // which have a replacement of length 1
@@ -701,7 +707,30 @@ std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const lc_gram_t&
     return {rem_nts, n_rem};
 }
 
-void simplify_grammar(lc_gram_t& gram) {
+template<class gram_t>
+void balanced_simplification(gram_t& gram){
+
+    assert(!gram.is_simplified);
+    auto rem_syms = mark_disposable_symbols(gram);
+    int_array<size_t> new_rules(gram.g-rem_syms.second, sym_width(gram.r-rem_syms.second));
+    int_array<size_t> new_rl_ptrs(gram.r-rem_syms.second, sym_width((gram.g+1)-rem_syms.second));
+    int_array<size_t> offsets(gram.r, sym_width(gram.r));
+
+    size_t start_sym = gram.start_symbol();
+    for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
+        auto range = gram.nt2phrase(sym);
+        new_rl_ptrs.push_back(new_rules.size());
+        if(!gram.is_rl_sym(sym)){
+            for(size_t j=range.first;j<=range.second;j++){
+                while(rem_syms.first[gram.rules[j]]){
+                }
+            }
+        }
+    }
+}
+
+template<class gram_t>
+void simplify_grammar(gram_t& gram) {
 
     assert(!gram.is_simplified);
 
@@ -847,46 +876,52 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
  * @param i_file : input text file
  * @param n_threads : number of working threads
  */
-template<class sym_type>
+template<class sym_type, class gram_type>
 void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, bool se_p_rounds){
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
     if(se_p_rounds){
-        lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
+        lc_parsing_algo<sym_type, gram_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }else{
         lzstrat::lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }
 
-    lc_gram_t gram;
+    gram_type gram;
     load_from_file(o_file, gram);
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
-    /*std::cout<<"Transforming the grammar into a college system"<<std::endl;
-    start = std::chrono::steady_clock::now();
-    make_collage_system(gram);
-    end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);*/
+    /*if(gram_type::has_cg_rules){
+        std::cout<<"Transforming the grammar into a college system"<<std::endl;
+        start = std::chrono::steady_clock::now();
+        compute_exp_len(gram);
+        make_gram_fix_free(gram);
+        //make_collage_system(gram);
+        end = std::chrono::steady_clock::now();
+        report_time(start, end, 2);
+    }*/
 
-    std::cout<<"Run-length compressing the grammar"<<std::endl;
-    start = std::chrono::steady_clock::now();
-    run_length_compress(gram);
-    end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);
+    //if(gram_type::has_rl_rules){
+    //    std::cout<<"Run-length compressing the grammar"<<std::endl;
+    //    start = std::chrono::steady_clock::now();
+    //    run_length_compress(gram);
+    //    end = std::chrono::steady_clock::now();
+    //    report_time(start, end, 2);
+    //}
 
-    std::cout<<"Simplifying the grammar"<<std::endl;
-    start = std::chrono::steady_clock::now();
-    simplify_grammar(gram);
-    end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);
+    //std::cout<<"Simplifying the grammar"<<std::endl;
+    //start = std::chrono::steady_clock::now();
+    //simplify_grammar(gram);
+    //end = std::chrono::steady_clock::now();
+    //report_time(start, end, 2);
 
     //estimate_alt_encodings(gram);
-    std::cout<<"Adding random access support"<<std::endl;
-    start = std::chrono::steady_clock::now();
-    add_random_access_support(gram);
-    end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);
+    //std::cout<<"Adding random access support"<<std::endl;
+    //start = std::chrono::steady_clock::now();
+    //add_random_access_support(gram);
+    //end = std::chrono::steady_clock::now();
+    //report_time(start, end, 2);
 
     //optional check
     //check_plain_grammar(gram, i_file);

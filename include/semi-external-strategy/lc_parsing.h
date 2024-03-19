@@ -89,7 +89,7 @@ void par_round(std::string& input_file, std::string& output_file,
 }
 
 
-template<class sym_type>
+template<class sym_type, class gram_type>
 void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gram_file, tmp_workspace& ws, size_t n_threads, size_t active_chunks, size_t chunk_size) {
 
     struct stat st{};
@@ -199,7 +199,7 @@ void lc_parsing_algo(std::string& i_file, std::string& pf_file, std::string& gra
     }
     gram_buff.rules_buffer.close();
 
-    lc_gram_t lc_gram(gram_buff);
+    gram_type lc_gram(gram_buff);
 
     std::cout<<"  Breakdown of the resulting locally-consistent grammar:"<<std::endl;
     lc_gram.breakdown(4);
