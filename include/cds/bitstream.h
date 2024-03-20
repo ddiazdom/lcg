@@ -24,17 +24,55 @@ struct bitstream{
 
     bitstream(): stream(nullptr), stream_size(0){};
 
-    [[nodiscard]] inline size_t n_bits() const {
+    [[nodiscard]] inline size_t bit_capacity() const {
         return stream_size<<word_shift;
     }
 
-    inline bitstream<word_t>& swap(bitstream<word_t>& other) {
+    [[nodiscard]] inline size_t capacity_in_bits() const {
+        return stream_size*sizeof(word_t)*8;
+    }
+
+    [[nodiscard]] inline size_t capacity_in_words() const {
+        return stream_size;
+    }
+
+    void reserve_in_bits(size_t bit_size){
+        size_t n_words = INT_CEIL(bit_size, (sizeof(word_t)*8));
+        if(n_words>stream_size){
+            stream_size = n_words;
+            if(stream==nullptr){
+                stream = (word_t *)malloc(stream_size*sizeof(word_t));
+            }else{
+                stream = (word_t *)realloc(stream, stream_size*sizeof(word_t));
+            }
+        }
+    }
+
+    void reserve_in_words(size_t n_words){
+        if(n_words>stream_size){
+            stream_size = n_words;
+            if(stream==nullptr){
+                stream = (word_t *)malloc(stream_size*sizeof(word_t));
+            }else{
+                stream = (word_t *)realloc(stream, stream_size*sizeof(word_t));
+            }
+        }
+    }
+
+    void destroy(){
+        if(stream!= nullptr){
+            free(stream);
+        }
+        stream_size=0;
+    }
+
+    inline bitstream& swap(bitstream& other) {
         std::swap(stream, other.stream);
         std::swap(stream_size, other.stream_size);
         return *this;
     }
 
-    inline bitstream<word_t>& operator=(bitstream<word_t> const& other){
+    inline bitstream& operator=(bitstream const& other){
         if(&other!=this){
             if(stream_size!=other.stream_size){
                 stream = reinterpret_cast<word_t *>(realloc(stream, other.stream_size*sizeof(word_t)));
@@ -42,6 +80,7 @@ struct bitstream{
             }
             memcpy(stream, other.stream, stream_size*sizeof(word_t));
         }
+        return *this;
     }
 
     inline void write(size_t i, size_t j, size_t value){

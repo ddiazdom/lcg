@@ -480,20 +480,20 @@ namespace lzstrat {
 
         auto gram_read_worker = [&](){
             std::string grams_file = tmp_ws.get_file("concatenated_grams");
-            std::vector<partial_gram<sym_type>> partial_grams(p_opts.n_chunks);
+            std::vector<partial_gram<sym_type>> partial_grams(/*p_opts.n_chunks*/10);
             int fd_r = open(grams_file.c_str(), O_RDONLY);
             size_t rem_bytes = file_size(grams_file);
             size_t read_bytes;
             size_t i=0;
-            while(i<p_opts.n_chunks && rem_bytes>0){
-                read_bytes = partial_grams[i].load_from_fs(fd_r);
+            while(/*i<p_opts.n_chunks* &&*/ rem_bytes>0){
+                read_bytes = partial_grams[i].load_from_fd(fd_r);
                 std::cout<<"We read "<<report_space(off_t(read_bytes))<<std::endl;
-                //partial_grams[i].print_stats();
+                partial_grams[i].print_stats();
                 //std::cout<<""<<std::endl;
                 rem_bytes-=read_bytes;
                 i++;
             }
-            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[2], p_opts.p_seeds);
         };
 
         std::vector<std::thread> threads;
