@@ -45,12 +45,14 @@ namespace lzstrat {
     off_t create_meta_sym(std::vector<uint32_t>& mt_perm, uint64_t pf_seed,
                          const lz_map::phrase_list_t & phrase_set,
                          sym_type * text, off_t txt_size,
-                         std::vector<uint64_t>& hash_values_vector,
+                         std::vector<uint64_t>& prev_fps,
                          partial_gram<uint8_t>& p_gram){
 
         size_t source, end, tot_symbols=0;
         std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
         std::vector<uint64_t> tmp_phrase;
+
+        //std::cout<<"The seed is "<<pf_seed<<std::endl;
 
         for(size_t i=0;i<phrase_set.size();i++) {
             perm[i].first = i;
@@ -58,13 +60,8 @@ namespace lzstrat {
             end = source + (phrase_set[i].len/sizeof(sym_type));
             for(size_t j=source;j<end;j++){
                 assert(text[j]>0);
-                if constexpr (p_round){
-                    uint64_t fp_sym = XXH64(&text[j], sizeof(sym_type), pf_seed);
-                    tmp_phrase.push_back(fp_sym);
-                }else{
-                    assert((text[j]-1)<hash_values_vector.size());
-                    tmp_phrase.push_back(hash_values_vector[text[j]-1]);
-                }
+                assert(text[j]<prev_fps.size());
+                tmp_phrase.push_back(prev_fps[text[j]]);
             }
             perm[i].second = XXH64(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), pf_seed);
             tot_symbols+=tmp_phrase.size();
@@ -72,7 +69,7 @@ namespace lzstrat {
         }
 
         //sort the phrases according their hash values
-        std::sort(perm.begin(), perm.end(), [&](auto a, auto b) -> bool{
+        std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
             return a.second<b.second;
         });
 
@@ -95,13 +92,7 @@ namespace lzstrat {
 
                         tmp_phrase.clear();
                         for (off_t u = s, l=0; l < len; u++, l++) {
-                            uint64_t fp;
-                            if constexpr (p_round){
-                                fp = XXH64(&text[u], sizeof(sym_type), pf_seed);
-                            }else{
-                                fp = hash_values_vector[text[u]-1];
-                            }
-                            tmp_phrase.push_back(fp);
+                            tmp_phrase.push_back(prev_fps[text[u]]);
                         }
                         uint64_t test_hash = XXH64(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), pf_seed);
                         assert(perm[k].second==test_hash);
@@ -125,7 +116,7 @@ namespace lzstrat {
                         while(j<len && data_a[j]==data_b[j]) j++;
 
                         if constexpr (p_round){
-                            return XXH64(&data_a[j], sizeof(sym_type), pf_seed) < XXH64(&data_b[j], sizeof(sym_type), pf_seed);
+                            return prev_fps[data_a[j]] < prev_fps[data_b[j]];
                         }else{
                             return data_a[j]<data_b[j];
                         }
@@ -136,17 +127,17 @@ namespace lzstrat {
             }
         }
 
-        hash_values_vector.resize(perm.size());
-        for(size_t i=0;i<hash_values_vector.size();i++){
-            hash_values_vector[i] = perm[i].second;
+        prev_fps.resize(perm.size()+1);
+        mt_perm.resize(perm.size()+1);
+        prev_fps[0] = 0;
+        mt_perm[0] = 0;
+        for(size_t i=0, mt_sym=1;i<perm.size();i++, mt_sym++){
+            size_t perm_mt_sym =  perm[i].first+1;
+            assert(perm_mt_sym<mt_perm.size());
+            mt_perm[perm_mt_sym] = mt_sym;
+            prev_fps[mt_sym] = perm[i].second;
         }
-        hash_values_vector.shrink_to_fit();
-
-        mt_perm.resize(perm.size());
-        for(size_t i=0, rank=0;i<mt_perm.size();i++, rank++){
-            assert(perm[i].first<mt_perm.size());
-            mt_perm[perm[i].first] = rank;
-        }
+        prev_fps.shrink_to_fit();
         p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, perm);
         return n_cols;
     }
@@ -154,9 +145,11 @@ namespace lzstrat {
     template<class sym_type, bool p_round>
     off_t parsing_round(sym_type* text, off_t txt_size, text_chunk::size_type* parse,
                         off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                        std::vector<uint64_t>& prev_hash_values, partial_gram<uint8_t>& p_gram){
+                        std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
         size_t prev_sym, curr_sym, next_sym;
+        uint64_t prev_hash=0, curr_hash=0, next_hash=0;
+
         text_chunk::size_type mt_sym;
         off_t txt_pos = 0, parse_pos = 0, phrase_len, lb, rb;
         lz_map map((uint8_t *)text);
@@ -187,9 +180,23 @@ namespace lzstrat {
             next_sym = text[txt_pos++];
             while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
 
+            if constexpr (p_round) {
+                prev_hash = prev_fps[prev_sym];
+                curr_hash = prev_fps[curr_sym];
+            }
+
+            bool local_minimum;
+
             while(txt_pos<txt_size && next_sym!=sep_sym){
 
-                if(prev_sym>curr_sym && curr_sym<next_sym){
+                if constexpr (p_round){
+                    next_hash = prev_fps[next_sym];
+                    local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
+                }else{
+                    local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
+                }
+
+                if(local_minimum){
                     phrase_len = rb-lb;
                     //assert(text[lb+phrase_len-1]>0);
                     //assert(text[lb]>0);
@@ -199,7 +206,14 @@ namespace lzstrat {
                 }
 
                 rb = txt_pos-1;
-                prev_sym = curr_sym;
+
+                if constexpr (p_round){
+                    prev_hash = curr_hash;
+                    curr_hash = next_hash;
+                } else {
+                    prev_sym = curr_sym;
+                }
+
                 curr_sym = next_sym;
                 next_sym = text[txt_pos++];
                 while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
@@ -226,11 +240,11 @@ namespace lzstrat {
         map.destroy_table();
 
         std::vector<uint32_t> perm;
-        create_meta_sym<sym_type, p_round>(perm, fp_seed, map.phrase_set, text, txt_size, prev_hash_values, p_gram);
+        create_meta_sym<sym_type, p_round>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
         for(off_t i=0;i<parse_pos;i++){
-            if(parse[i]==0) continue;
-            assert(parse[i]<=perm.size());
-            parse[i] = perm[parse[i]-1]+1;
+            //if(parse[i]==0) continue;
+            assert(parse[i]<perm.size());
+            parse[i] = perm[parse[i]];
         }
         return parse_pos;
     }
@@ -238,26 +252,32 @@ namespace lzstrat {
     template<class sym_type>
     void compress_text_chunk(text_chunk& chunk, std::vector<uint64_t>& fp_seeds){
 
-        std::vector<uint64_t> prev_hash_values;
+        size_t alpha_size = std::numeric_limits<sym_type>::max();
+        std::vector<uint64_t> prev_fps(alpha_size);
+
+        for(sym_type i=0;i<alpha_size;i++){
+            prev_fps[i] = XXH64(&i, sizeof(sym_type), fp_seeds[0]);
+        }
+
         off_t n_strings=0;
         size_t p_round=0;
         size_t sep_sym = chunk.sep_sym;
 
-        off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, fp_seeds[p_round++], prev_hash_values, chunk.p_gram);
+        off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         sep_sym = 0;
         off_t size_limit = n_strings*2;
         auto * new_parse = (text_chunk::size_type *)chunk.text;
+        p_round++;
 
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
-            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, fp_seeds[p_round++], prev_hash_values, chunk.p_gram);
+            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
             std::swap(chunk.parse, new_parse);
+            p_round++;
         }
 
         chunk.p_gram.add_compressed_string(chunk.text, parse_size);
     }
-
-
 
     template<class sym_type>
     void build_grammars(parsing_opts& p_opts, std::string& i_file, tmp_workspace& tmp_ws){
@@ -473,7 +493,7 @@ namespace lzstrat {
                 rem_bytes-=read_bytes;
                 i++;
             }
-            merge_two_grammars<partial_gram<sym_type>>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
         };
 
         std::vector<std::thread> threads;
