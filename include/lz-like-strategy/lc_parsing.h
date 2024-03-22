@@ -327,6 +327,10 @@ namespace lz_like_strat {
                 size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
                 text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
+
+                //this is enough for 4GB strings
+                text_chunks[chunk_id].p_gram.rules.resize(32);
+
                 chunks_to_read.push(chunk_id);
 #ifdef __linux__
                 r_page_cache_bytes+=text_chunks[chunk_id].e_bytes;
@@ -491,16 +495,17 @@ namespace lz_like_strat {
             while(/*i<p_opts.n_chunks* &&*/ rem_bytes>0){
                 read_bytes = partial_grams[i].load_from_fd(fd_r);
                 std::cout<<"We read "<<report_space(off_t(read_bytes))<<std::endl;
-                //partial_grams[i].print_stats();
+                partial_grams[i].print_stats();
                 //std::cout<<""<<std::endl;
                 rem_bytes-=read_bytes;
                 i++;
             }
-            //merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
 
-            partial_grams[0].print_stats();
+            partial_gram<sym_type> m_gram;
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], m_gram, p_opts.p_seeds);
+
             std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
-            store_to_file(mg_p_gram_file, partial_grams[0]);
+            store_to_file(mg_p_gram_file, m_gram);
 
             lc_gram_t final_grammar(mg_p_gram_file, p_opts.p_seeds);
             store_to_file(o_file, final_grammar);
@@ -521,8 +526,8 @@ namespace lz_like_strat {
         parsing_opts p_opts;
         p_opts.n_threads = n_threads;
         p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
-        //p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
-        p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
+        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
+        //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = 10;
 

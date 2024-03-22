@@ -36,7 +36,7 @@ struct partial_gram {
         ter.n_rules = ter.tot_symbols;
         ter.terminals = true;
         metadata.push_back(ter);
-        rules.resize(40);//strings up to 1TB are allowed
+        //rules.resize(40);//strings up to 1TB are allowed
     }
 
     partial_gram& swap(partial_gram& other){
@@ -584,6 +584,7 @@ lvl_metadata_type concatenate_strings(bitstream<size_t> &stream_a, lvl_metadata_
     lvl_metadata_type c_string_lvl{};
     c_string_lvl.sym_width = sym_width(mg_lvl_sigma)+1;//+1 is to mark the end of each phrase in the stream of rules
     c_string_lvl.tot_symbols = lvl_met_a.tot_symbols + lvl_met_b.tot_symbols;
+    c_string_lvl.n_rules = 1;
     c_string_lvl.terminals = false;
 
     stream_c.reserve_in_bits(c_string_lvl.n_bits());
@@ -644,7 +645,7 @@ void print_merge_stats(std::vector<lvl_metadata_type>& met_a, std::vector<lvl_me
 }
 
 template<class gram_type, class sym_type>
-void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds) {
+void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, gram_type& p_gram_c, std::vector<uint64_t>& fp_seeds) {
 
     //in the first level, tot_symbols represent the alphabet of terminals
     std::vector<uint32_t> mt_map_a;
@@ -663,14 +664,16 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<ui
         mt_map_b[i] = i;
     }
 
-    gram_type p_gram_c;
+    //gram_type p_gram_c;
     p_gram_c.text_size = p_gram_a.text_size+p_gram_b.text_size;
     p_gram_c.max_tsym = p_gram_a.max_tsym;
     p_gram_c.sep_tsym = p_gram_a.sep_tsym;
 
-    //we subtract one because the last level contains the compressed strings, and they are not merged
+    //we subtract one because the last level contains the compressed strings,
+    // and we do not merge but concatenate them
     size_t max_lvl = std::max(p_gram_a.lvl, p_gram_b.lvl)-1;
     size_t min_lvl = std::min(p_gram_a.lvl, p_gram_b.lvl)-1;
+    p_gram_c.rules.resize(max_lvl+1);
 
     //pointer to the grammar with the least number of levels
     gram_type *st_gram = nullptr;
