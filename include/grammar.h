@@ -183,7 +183,7 @@ struct lc_gram_t {
         }
 
         bool last;
-        size_t rule=0, acc_rules=0, pos, width, n_bits, j=max_tsym+1, rule_start_ptr=j, sym;
+        size_t rule=0, pos, width, n_bits, j=max_tsym+1, rule_start_ptr=j, sym, min_sym=0, max_sym=max_tsym;
         bitstream<size_t> rules_buffer;
 
         for(size_t i=0;i<p_gram.lvl;i++){
@@ -196,7 +196,7 @@ struct lc_gram_t {
             while(pos<n_bits){
                 sym = rules_buffer.read(pos, pos+width-1);
                 last = sym & 1UL;
-                sym = acc_rules+(sym>>1);
+                sym = min_sym+(sym>>1);//sym is one-based
                 rules.write(j, sym);
                 pos+=width;
                 j++;
@@ -207,8 +207,9 @@ struct lc_gram_t {
                     rule++;
                 }
             }
-            acc_rules+=p_gram.metadata[i+1].n_rules;
-            assert(acc_rules==rule);
+            min_sym = max_sym;
+            max_sym+=p_gram.metadata[i+1].n_rules;
+            assert((max_sym-max_tsym)==rule);
             assert(pos==n_bits);
         }
         assert(rules.size()==g);

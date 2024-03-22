@@ -551,7 +551,6 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
                 decompression.push_back((char)gram.get_byte_ter(curr_sym));
             }else{
                 auto res2 = gram.nt2phrase(curr_sym);
-
                 if(gram.is_rl_sym(curr_sym)){
                     assert(res2.second-res2.first+1==2);
                     size_t len = gram.pos2symbol(res2.second);
@@ -924,7 +923,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     //report_time(start, end, 2);
 
     //optional check
-    //check_plain_grammar(gram, i_file);
+    check_plain_grammar(gram, i_file);
     //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;

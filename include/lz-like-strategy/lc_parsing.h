@@ -279,7 +279,7 @@ namespace lz_like_strat {
             p_round++;
         }
 
-        chunk.p_gram.add_compressed_string(chunk.text, parse_size);
+        chunk.p_gram.add_compressed_string(chunk.parse, parse_size);
     }
 
     template<class sym_type>

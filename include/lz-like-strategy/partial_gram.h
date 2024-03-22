@@ -182,7 +182,7 @@ struct partial_gram {
         size_t last = size-2;
         size_t acc_bits=0;
         for(size_t j=0;j<last;j+=2){
-            assert(text[j]>0);
+            assert(text[j]>0 && text[j+1]==0);
             rules[lvl].write(acc_bits, acc_bits+lvl_met.sym_width-1, text[j]<<1UL);
             acc_bits+=lvl_met.sym_width;
         }
