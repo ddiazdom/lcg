@@ -5,7 +5,7 @@
 #ifndef LCG_PARTIAL_GRAM_H
 #define LCG_PARTIAL_GRAM_H
 #include "cds/bitstream.h"
-#include "lz_map.h"
+#include "lz_like_map.h"
 
 struct lvl_metadata_type{
     size_t n_rules;
@@ -52,10 +52,13 @@ struct partial_gram {
         written_bytes += serialize_elm(ofs, max_tsym);
         written_bytes += serialize_elm(ofs, sep_tsym);
         written_bytes += serialize_elm(ofs, lvl);
-
         written_bytes+= serialize_plain_vector(ofs, metadata);
+
+        size_t n_words;
         for(size_t i=0;i<lvl;i++){
-            written_bytes += rules[i].serialize(ofs);
+            n_words = rules[i].bits2words(metadata[i+1].n_bits());
+            ofs.write((char *)rules[i].stream,  rules[i].words2bytes(n_words));
+            written_bytes += rules[i].words2bytes(n_words);
         }
         return written_bytes;
     }
@@ -98,8 +101,6 @@ struct partial_gram {
         size_t n_words;
         for(size_t i=0;i<lvl;i++){
             n_words = rules[i].bits2words(metadata[i+1].n_bits());
-            //write(fd, &n_words, sizeof(size_t));
-            //written_bytes += sizeof(size_t);
             write(fd, rules[i].stream,  rules[i].words2bytes(n_words));
             written_bytes += rules[i].words2bytes(n_words);
         }
@@ -132,7 +133,7 @@ struct partial_gram {
     }
 
     template<class sym_type>
-    void append_new_lvl(sym_type* text, const lz_map::phrase_list_t &phrase_set, size_t tot_symbols,
+    void append_new_lvl(sym_type* text, const lz_like_map::phrase_list_t &phrase_set, size_t tot_symbols,
                         std::vector<std::pair<uint32_t, uint64_t>>& perm){
 
         lvl_metadata_type lvl_met{};
@@ -204,16 +205,16 @@ struct partial_gram {
 
     [[nodiscard]] inline size_t gram_size() const {
         size_t g_size=0;
-        for(size_t i=1;i<metadata.size();i++){
-            g_size+=metadata[i].tot_symbols;
+        for(const auto & i : metadata){
+            g_size+=i.tot_symbols;
         }
         return g_size;
     }
 
-    [[nodiscard]] inline size_t tot_rules() const {
+    [[nodiscard]] inline size_t tot_gram_symbols() const {
         size_t n_rules=0;
-        for(size_t i=1;i<metadata.size();i++){
-           n_rules+=metadata[i].n_rules;
+        for(const auto & i : metadata){
+           n_rules+=i.n_rules;
         }
         return n_rules;
     }

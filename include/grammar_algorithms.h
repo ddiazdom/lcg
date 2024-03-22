@@ -884,7 +884,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     if(se_p_rounds){
         lc_parsing_algo<sym_type, gram_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }else{
-        lzstrat::lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
+        lz_like_strat::lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
     }
 
     gram_type gram;

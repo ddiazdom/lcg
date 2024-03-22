@@ -7,7 +7,7 @@
 
 #include "partial_gram.h"
 
-namespace lzstrat {
+namespace lz_like_strat {
 
    struct text_chunk{
 

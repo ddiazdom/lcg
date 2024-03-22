@@ -5,8 +5,10 @@
 #ifndef LCG_LZL_MAP_H
 #define LCG_LZL_MAP_H
 #include "../external/xxHash-dev/xxhash.h"
+#include "cds/cdt_common.hpp"
+#include <vector>
 
-class lz_map {
+class lz_like_map {
 
 public:
 
@@ -70,7 +72,7 @@ public:
 
     const phrase_list_t& phrase_set = phrases;
 
-    explicit lz_map(uint8_t* _data, size_t min_cap=4, float max_lf=0.6) : data(_data), m_max_load_factor(max_lf) {
+    explicit lz_like_map(uint8_t* _data, size_t min_cap=4, float max_lf=0.6) : data(_data), m_max_load_factor(max_lf) {
         m_table = table_t(round_to_power_of_two(min_cap), null_source);
     }
 

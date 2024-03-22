@@ -135,13 +135,13 @@ struct lc_gram_t {
 
     int_array<size_t>                  rule_exp;// length of the nt expansions
     int_array<size_t>                  sampled_exp;// sampled nt expansions in "rules"
-    size_t                             samp_rate=4; //sampling rate to sample nt expansions in "rules"
+    size_t                             samp_rate=4;//sampling rate to sample nt expansions in "rules"
 
-    std::pair<size_t, size_t>          run_len_nt{0,0}; //first run-length rule and total number of run-length rules
+    std::pair<size_t, size_t>          run_len_nt{0,0};//first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
 
-    explicit lc_gram_t(std::string& p_gram_file, std::vector<uint64_t>& fp_seeds_) {
+    explicit lc_gram_t(std::string& p_gram_file, std::vector<uint64_t>& fp_seeds_){
 
         partial_gram<uint8_t> p_gram;
         std::ifstream ifs(p_gram_file, std::ios::binary);
@@ -149,8 +149,9 @@ struct lc_gram_t {
         p_gram.load_metadata(ifs);
 
         n = p_gram.txt_size();
-        r = p_gram.tot_rules();
+        r = p_gram.tot_gram_symbols();
         g = p_gram.gram_size();
+        s = p_gram.tot_strings();
         c = p_gram.tot_strings();
 
         max_tsym = size_t(p_gram.max_terminal_symbol());
@@ -163,7 +164,7 @@ struct lc_gram_t {
         lvl_rules.reserve(p_gram.metadata.size());
         size_t acc=max_tsym+1, tmp;
         for(size_t i=1;i<p_gram.metadata.size();i++){
-            tmp = p_gram.metadata[i].tot_symbols;
+            tmp = p_gram.metadata[i].n_rules;
             lvl_rules.push_back(acc);
             acc+=tmp;
         }
@@ -213,6 +214,14 @@ struct lc_gram_t {
         assert(rules.size()==g);
         assert(rule==(r-(max_tsym+1)));
         rl_ptr.write(rule, g);
+
+        size_t offset = g-c;
+        str_boundaries.resize(s+1);
+        for(size_t str=0;str<=s;str++){
+            str_boundaries[str] = offset+str;
+        }
+        assert(str_boundaries[0]==offset);
+        assert(str_boundaries.back()==rules.size());
     }
 
     explicit lc_gram_t(lc_gram_buffer_t& gram_buff) {

@@ -14,12 +14,11 @@
 #include "cds/utils.h"
 #include "cds/cdt_common.hpp"
 
-#include "../external/xxHash-dev/xxhash.h"
-
 #include "text_handler.h"
-#include "lz_map.h"
+#include "lz_like_map.h"
+#include "grammar.h"
 
-namespace lzstrat {
+namespace lz_like_strat {
 
     struct parsing_opts{
         size_t n_threads{};
@@ -43,7 +42,7 @@ namespace lzstrat {
 
     template<class sym_type, bool p_round>
     off_t create_meta_sym(std::vector<uint32_t>& mt_perm, uint64_t pf_seed,
-                         const lz_map::phrase_list_t & phrase_set,
+                         const lz_like_map::phrase_list_t & phrase_set,
                          sym_type * text, off_t txt_size,
                          std::vector<uint64_t>& prev_fps,
                          partial_gram<uint8_t>& p_gram){
@@ -102,11 +101,11 @@ namespace lzstrat {
                     //sort the range [prev_pos..i-1]
                     std::sort(perm.begin()+prev_pos, perm.begin()+i, [&](auto a, auto b) -> bool{
 
-                        lz_map::phrase_t phrase_a = phrase_set[a.first];
+                        lz_like_map::phrase_t phrase_a = phrase_set[a.first];
                         auto data_a = (sym_type *)&text[phrase_a.source/sizeof(sym_type)];
                         off_t len_a = phrase_a.len/sizeof(sym_type);
 
-                        lz_map::phrase_t phrase_b = phrase_set[b.first];
+                        lz_like_map::phrase_t phrase_b = phrase_set[b.first];
                         auto data_b = (sym_type *)&text[phrase_b.source/sizeof(sym_type)];
                         off_t len_b = phrase_b.len/sizeof(sym_type);
 
@@ -152,7 +151,7 @@ namespace lzstrat {
 
         text_chunk::size_type mt_sym;
         off_t txt_pos = 0, parse_pos = 0, phrase_len, lb, rb;
-        lz_map map((uint8_t *)text);
+        lz_like_map map((uint8_t *)text);
 
         bool inserted;
         n_strings = 0;
@@ -305,7 +304,7 @@ namespace lzstrat {
             off_t rem_bytes = st.st_size, r_acc_bytes = 0;
             size_t chunk_id = 0;
 
-            auto tmp_ck_size = off_t((p_opts.chunk_size/sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
+            auto tmp_ck_size = off_t(INT_CEIL(p_opts.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
 
             while (chunk_id < p_opts.n_chunks && rem_bytes > 0) {
 
@@ -483,21 +482,28 @@ namespace lzstrat {
     void merge_grammars(parsing_opts& p_opts, std::string& o_file, tmp_workspace& tmp_ws){
 
         auto gram_read_worker = [&](){
-            std::string grams_file = tmp_ws.get_file("concatenated_grams");
+            std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
             std::vector<partial_gram<sym_type>> partial_grams(/*p_opts.n_chunks*/10);
-            int fd_r = open(grams_file.c_str(), O_RDONLY);
-            size_t rem_bytes = file_size(grams_file);
+            int fd_r = open(p_grams_file.c_str(), O_RDONLY);
+            size_t rem_bytes = file_size(p_grams_file);
             size_t read_bytes;
             size_t i=0;
             while(/*i<p_opts.n_chunks* &&*/ rem_bytes>0){
                 read_bytes = partial_grams[i].load_from_fd(fd_r);
                 std::cout<<"We read "<<report_space(off_t(read_bytes))<<std::endl;
-                partial_grams[i].print_stats();
+                //partial_grams[i].print_stats();
                 //std::cout<<""<<std::endl;
                 rem_bytes-=read_bytes;
                 i++;
             }
-            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+            //merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+
+            partial_grams[0].print_stats();
+            std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
+            store_to_file(mg_p_gram_file, partial_grams[0]);
+
+            lc_gram_t final_grammar(mg_p_gram_file, p_opts.p_seeds);
+            store_to_file(o_file, final_grammar);
         };
 
         std::vector<std::thread> threads;
@@ -515,7 +521,8 @@ namespace lzstrat {
         parsing_opts p_opts;
         p_opts.n_threads = n_threads;
         p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
-        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size; //std::min<off_t>(1020*1024*100, file_size(i_file));
+        //p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
+        p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = 10;
 
@@ -527,7 +534,7 @@ namespace lzstrat {
         } else {
             std::random_device rd;  // Will be used to obtain a seed for the random number engine
             //std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
-            std::mt19937 gen(5489U); // Standard mersenne_twister_engine seeded with rd()
+            std::mt19937 gen(5489U); // Standard mersenne_twister_engine seeded with a fixed value
             std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
             p_opts.p_seeds.resize(32);
             for(size_t i=0;i<32;i++){
