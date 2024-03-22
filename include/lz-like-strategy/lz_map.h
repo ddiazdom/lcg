@@ -4,6 +4,7 @@
 
 #ifndef LCG_LZL_MAP_H
 #define LCG_LZL_MAP_H
+#include "../external/xxHash-dev/xxhash.h"
 
 class lz_map {
 

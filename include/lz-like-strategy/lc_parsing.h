@@ -263,6 +263,10 @@ namespace lzstrat {
         size_t p_round=0;
         size_t sep_sym = chunk.sep_sym;
 
+        chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
+        chunk.p_gram.sep_tsym = chunk.sep_sym;
+        chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
+
         off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         sep_sym = 0;
         off_t size_limit = n_strings*2;
@@ -493,7 +497,7 @@ namespace lzstrat {
                 rem_bytes-=read_bytes;
                 i++;
             }
-            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[2], p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
         };
 
         std::vector<std::thread> threads;

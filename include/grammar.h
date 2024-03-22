@@ -12,6 +12,7 @@
 #include "cds/file_streams.hpp"
 #include "hashing.h"
 #include "cds/utils.h"
+#include "lz-like-strategy/partial_gram.h"
 
 struct lc_gram_buffer_t{
 
@@ -139,6 +140,80 @@ struct lc_gram_t {
     std::pair<size_t, size_t>          run_len_nt{0,0}; //first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
+
+    explicit lc_gram_t(std::string& p_gram_file, std::vector<uint64_t>& fp_seeds_) {
+
+        partial_gram<uint8_t> p_gram;
+        std::ifstream ifs(p_gram_file, std::ios::binary);
+
+        p_gram.load_metadata(ifs);
+
+        n = p_gram.txt_size();
+        r = p_gram.tot_rules();
+        g = p_gram.gram_size();
+        c = p_gram.tot_strings();
+
+        max_tsym = size_t(p_gram.max_terminal_symbol());
+        sep_tsym = p_gram.separator_symbol();
+
+        //add the set of seeds we use for the hash function
+        //TODO add the set of seeds we used for the hash functions
+        //fp_seeds = p_gram.par_functions;
+
+        lvl_rules.reserve(p_gram.metadata.size());
+        size_t acc=max_tsym+1, tmp;
+        for(size_t i=1;i<p_gram.metadata.size();i++){
+            tmp = p_gram.metadata[i].tot_symbols;
+            lvl_rules.push_back(acc);
+            acc+=tmp;
+        }
+        lvl_rules.push_back(acc);
+
+        rules.set_width(sym_width(r));
+        rules.resize(g);
+
+        rl_ptr.set_width(sym_width(g));
+        rl_ptr.resize(r-max_tsym);
+
+        terminals.resize(max_tsym+1);
+        for(size_t j=0;j<=max_tsym;j++){
+            rules.write(j, j);
+            terminals[j] = j;
+        }
+
+        bool last;
+        size_t rule=0, acc_rules=0, pos, width, n_bits, j=max_tsym+1, rule_start_ptr=j, sym;
+        bitstream<size_t> rules_buffer;
+
+        for(size_t i=0;i<p_gram.lvl;i++){
+
+            p_gram.load_next_rule_set(ifs, i, rules_buffer);
+            pos = 0;
+            width = p_gram.metadata[i+1].sym_width;
+            n_bits = p_gram.metadata[i+1].n_bits();
+
+            while(pos<n_bits){
+                sym = rules_buffer.read(pos, pos+width-1);
+                last = sym & 1UL;
+                sym = acc_rules+(sym>>1);
+                rules.write(j, sym);
+                pos+=width;
+                j++;
+
+                if(last){
+                    rl_ptr.write(rule, rule_start_ptr);
+                    rule_start_ptr = j;
+                    rule++;
+                }
+            }
+            acc_rules+=p_gram.metadata[i+1].n_rules;
+            assert(acc_rules==rule);
+            assert(pos==n_bits);
+        }
+        assert(rules.size()==g);
+        assert(rule==(r-(max_tsym+1)));
+        rl_ptr.write(rule, g);
+    }
 
     explicit lc_gram_t(lc_gram_buffer_t& gram_buff) {
 

@@ -24,6 +24,11 @@ struct bitstream{
 
     bitstream(): stream(nullptr), stream_size(0){};
 
+    bitstream(bitstream&& other) noexcept {
+        std::swap(stream, other.stream);
+        std::swap(stream_size, other.stream_size);
+    }
+
     [[nodiscard]] inline size_t bit_capacity() const {
         return stream_size<<word_shift;
     }
@@ -46,6 +51,14 @@ struct bitstream{
                 stream = (word_t *)realloc(stream, stream_size*sizeof(word_t));
             }
         }
+    }
+
+    [[nodiscard]] inline size_t bits2words(size_t n_bits) const {
+        return INT_CEIL(n_bits, (sizeof(word_t)*8));
+    }
+
+    [[nodiscard]] inline size_t words2bytes(size_t n_words) const {
+        return n_words*sizeof(word_t);
     }
 
     void reserve_in_words(size_t n_words){
