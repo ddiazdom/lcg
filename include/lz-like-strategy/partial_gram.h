@@ -348,7 +348,7 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
     size_t len_a, len_b;
 
     lvl_metadata_type lvl_met_c{};
-    lvl_met_c.sym_width = sym_width(mg_lvl_sigma)+1;//+1 is to mark the end of each phrase in the stream of rules
+    lvl_met_c.sym_width = sym_width(mg_lvl_sigma)+1;//we use the extra bit to mark the end of each phrase in the stream of rules
     lvl_met_c.terminals = lvl_met_a.terminals;
 
     uint8_t m_width = lvl_met_c.sym_width;
@@ -392,7 +392,7 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
                                        curr_pos_b, stream_b, b_width,
                                        mt_map_a, mt_map_b);
 
-            //TODO asdasd
+            //a collision occurred (extremely unlikely, but not impossible)
             if(eq_seq!=0){
                 std::cout<<"Collision warning:  "<<fp_a<<" "<<fp_b<<" "<<curr_pos_a<<" "<<curr_pos_b<<std::endl;
                 size_t pos_a = curr_pos_a;
@@ -490,7 +490,7 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
     }
 
     //update mapping values
-    //it is one-based as the metasymbols are also one-based because of the separator symbol
+    //the new metasymbols are one-based to differentiate them from the separator symbol (0) is the parse
     size_t mt_sym_a=1, mt_sym_b=1, mg_mt_sym=1;
     mt_map_a.resize(lvl_met_a.n_rules+1);
     mt_map_b.resize(lvl_met_b.n_rules+1);
