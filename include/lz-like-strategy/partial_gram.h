@@ -8,10 +8,10 @@
 #include "lz_like_map.h"
 
 struct lvl_metadata_type{
-    size_t n_rules;
-    size_t tot_symbols;
-    uint8_t sym_width;
-    bool terminals;
+    size_t n_rules=0;
+    size_t tot_symbols=0;
+    uint8_t sym_width=0;
+    bool terminals=false;
 
     [[nodiscard]] inline size_t n_bits() const {
         return tot_symbols*sym_width;
@@ -518,18 +518,17 @@ template<class gram_type>
 void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>& prev_fps,
                        uint64_t fp_seed, std::vector<uint32_t>& mt_map){
 
-    lvl_metadata_type new_lvl_mt{};
 
     // new_level is to the previous level in the metadata because
     // the first element of the metadata vector has the terminal alphabet
-    new_lvl_mt.sym_width = sym_width(p_gram.metadata[new_lvl].n_rules)+1;
-    new_lvl_mt.n_rules = p_gram.metadata[new_lvl].n_rules;
-    new_lvl_mt.tot_symbols = p_gram.metadata[new_lvl].n_rules;
-    new_lvl_mt.terminals = false;
+    p_gram.metadata[new_lvl+1].sym_width = sym_width(p_gram.metadata[new_lvl].n_rules)+1;
+    p_gram.metadata[new_lvl+1].n_rules = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].tot_symbols = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].terminals = false;
 
-    assert((new_lvl_mt.n_rules+1) == mt_map.size());
+    assert((p_gram.metadata[new_lvl+1].n_rules+1) == mt_map.size());
 
-    p_gram.rules[new_lvl].reserve_in_bits(new_lvl_mt.n_bits());
+    p_gram.rules[new_lvl].reserve_in_bits(p_gram.metadata[new_lvl+1].n_bits());
 
     std::vector<std::tuple<uint64_t, uint64_t, uint32_t>> perm(mt_map.size());
     perm[0] = {0, 0, 0};
@@ -538,26 +537,26 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
         uint64_t fp = prev_fps[mt_map[i]];
         std::get<1>(perm[i]) = XXH64(&fp, sizeof(uint64_t), fp_seed);
         std::get<2>(perm[i]) = mt_map[i];
+        //std::cout<<"orig order id:"<<std::get<0>(perm[i])<<" fp:"<<std::get<1>(perm[i])<<" mt_sym:"<<std::get<2>(perm[i])<<" "<<mt_map[i]<<std::endl;
     }
 
-    std::sort(perm.begin()+1, perm.end(), [&](auto const& a, auto const &b) -> bool{
+    std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
         if(std::get<1>(a)!=std::get<1>(b)){
-            return std::get<1>(a)<std::get<1>(b);//break ties using the level fingerprint
+            return std::get<1>(a) < std::get<1>(b);//break ties using the level fingerprint
         }
         assert(prev_fps[mt_map[std::get<0>(a)]]!=prev_fps[mt_map[std::get<0>(b)]]);
         return prev_fps[mt_map[std::get<0>(a)]]<prev_fps[mt_map[std::get<0>(b)]];
     });
 
-    size_t pos=0, width=new_lvl_mt.sym_width;
+    size_t pos=0, width=p_gram.metadata[new_lvl+1].sym_width;
     std::vector<uint32_t> inv_perm(perm.size());
     for(size_t mt_sym=1;mt_sym<perm.size();mt_sym++){
         p_gram.rules[new_lvl].write(pos, pos+width-1, (std::get<0>(perm[mt_sym])<<1UL | 1));
-        mt_map[mt_sym] = std::get<2>(perm[mt_sym]);
+        mt_map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
         pos+=width;
         inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;
     }
-    assert(pos==new_lvl_mt.n_bits());
-    std::swap(p_gram.metadata[new_lvl+1], new_lvl_mt);
+    assert(pos==p_gram.metadata[new_lvl+1].n_bits());
 
     //update the compressed string
     size_t last_lvl = p_gram.rules.size()-1;
@@ -645,7 +644,7 @@ void print_merge_stats(std::vector<lvl_metadata_type>& met_a, std::vector<lvl_me
 }
 
 template<class gram_type, class sym_type>
-void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, gram_type& p_gram_c, std::vector<uint64_t>& fp_seeds) {
+void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds) {
 
     //in the first level, tot_symbols represent the alphabet of terminals
     std::vector<uint32_t> mt_map_a;
@@ -664,16 +663,10 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, gram_type& p_g
         mt_map_b[i] = i;
     }
 
-    //gram_type p_gram_c;
-    p_gram_c.text_size = p_gram_a.text_size+p_gram_b.text_size;
-    p_gram_c.max_tsym = p_gram_a.max_tsym;
-    p_gram_c.sep_tsym = p_gram_a.sep_tsym;
-
     //we subtract one because the last level contains the compressed strings,
     // and we do not merge but concatenate them
     size_t max_lvl = std::max(p_gram_a.lvl, p_gram_b.lvl)-1;
     size_t min_lvl = std::min(p_gram_a.lvl, p_gram_b.lvl)-1;
-    p_gram_c.rules.resize(max_lvl+1);
 
     //pointer to the grammar with the least number of levels
     gram_type *st_gram = nullptr;
@@ -696,32 +689,35 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, gram_type& p_g
         std::swap(st_gram->metadata[min_lvl+1], st_gram->metadata[max_lvl+1]);
     }
 
+    bitstream<size_t> buffer;
+    lvl_metadata_type buffer_metadata;
     size_t i=0;
     while(i<max_lvl) {
-
-        lvl_metadata_type mer_lvl_mt = merge_level(p_gram_a.rules[i], p_gram_a.metadata[i+1], mt_map_a,
-                                                   p_gram_b.rules[i], p_gram_b.metadata[i+1], mt_map_b,
-                                                   p_gram_c.rules[i], mg_lvl_sigma, fp_seeds[i+1], prev_fps);
-        p_gram_c.metadata.push_back(mer_lvl_mt);
-
+        buffer_metadata = merge_level(p_gram_a.rules[i], p_gram_a.metadata[i+1], mt_map_a,
+                                             p_gram_b.rules[i], p_gram_b.metadata[i+1], mt_map_b,
+                                             buffer, mg_lvl_sigma, fp_seeds[i+1], prev_fps);
         std::cout<<"level "<<i<<" "<<min_lvl<<" "<<max_lvl<<std::endl;
         i++;
-
         if(i>=min_lvl && i<max_lvl){
             assert(st_gram!=nullptr && st_gram!= nullptr);
             create_fake_level(*st_gram, i, prev_fps, fp_seeds[i+1], *st_gram_map);
         }
+
+        p_gram_a.metadata[i] = buffer_metadata;
+        p_gram_a.rules[i-1].swap(buffer);
     }
 
-    lvl_metadata_type c_str_lvl = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1], mt_map_a,
+    p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1], mt_map_a,
                                                        p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1], mt_map_b,
-                                                       p_gram_c.rules[max_lvl], mg_lvl_sigma);
-    p_gram_c.metadata.push_back(c_str_lvl);
+                                                       buffer, mg_lvl_sigma);
+    p_gram_a.rules[max_lvl].swap(buffer);
+
+    p_gram_a.lvl = p_gram_a.metadata.size()-1;
+    p_gram_a.text_size += p_gram_b.text_size;
 
     //TODO checking
-    p_gram_c.lvl = p_gram_c.metadata.size()-1;
-    std::cout<<"Merged stats"<<std::endl;
-    print_merge_stats(p_gram_a.metadata, p_gram_b.metadata, p_gram_c.metadata);
+    //std::cout<<"Merged stats"<<std::endl;
+    //print_merge_stats(p_gram_a.metadata, p_gram_b.metadata, p_gram_c.metadata);
     //
 }
 

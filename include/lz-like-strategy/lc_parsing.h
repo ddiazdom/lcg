@@ -501,11 +501,12 @@ namespace lz_like_strat {
                 i++;
             }
 
-            partial_gram<sym_type> m_gram;
-            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], m_gram, p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[1], p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[2], p_opts.p_seeds);
+            merge_two_grammars<partial_gram<sym_type>, sym_type>(partial_grams[0], partial_grams[3], p_opts.p_seeds);
 
             std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
-            store_to_file(mg_p_gram_file, m_gram);
+            store_to_file(mg_p_gram_file, partial_grams[0]);
 
             lc_gram_t final_grammar(mg_p_gram_file, p_opts.p_seeds);
             store_to_file(o_file, final_grammar);
@@ -526,8 +527,8 @@ namespace lz_like_strat {
         parsing_opts p_opts;
         p_opts.n_threads = n_threads;
         p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
-        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
-        //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
+        //p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
+        p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = 10;
 
@@ -558,7 +559,7 @@ namespace lz_like_strat {
         std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
 
         build_grammars<sym_type>(p_opts, i_file, tmp_ws);
-        merge_grammars<sym_type>(p_opts, o_file, tmp_ws);
+        //merge_grammars<sym_type>(p_opts, o_file, tmp_ws);
     }
 }
 
