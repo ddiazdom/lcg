@@ -212,6 +212,7 @@ struct lc_gram_t {
             assert((max_sym-max_tsym)==rule);
             assert(pos==n_bits);
         }
+        rules_buffer.destroy();
         assert(rules.size()==g);
         assert(rule==(r-(max_tsym+1)));
         rl_ptr.write(rule, g);

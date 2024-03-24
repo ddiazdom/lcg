@@ -25,8 +25,8 @@ struct partial_gram {
     ter_type max_tsym = std::numeric_limits<ter_type>::max();
     ter_type sep_tsym = 0;
     size_t lvl = 0;
+    size_t longest_rule=0;
     std::vector<lvl_metadata_type> metadata;
-
     std::vector<bitstream<size_t>> rules;
 
     partial_gram(){
@@ -52,6 +52,8 @@ struct partial_gram {
         written_bytes += serialize_elm(ofs, max_tsym);
         written_bytes += serialize_elm(ofs, sep_tsym);
         written_bytes += serialize_elm(ofs, lvl);
+        written_bytes += serialize_elm(ofs, longest_rule);
+
         written_bytes+= serialize_plain_vector(ofs, metadata);
 
         size_t n_words;
@@ -68,6 +70,7 @@ struct partial_gram {
         load_elm(ifs, max_tsym);
         load_elm(ifs, sep_tsym);
         load_elm(ifs, lvl);
+        load_elm(ifs, longest_rule);
         load_plain_vector(ifs, metadata);
     }
 
@@ -93,7 +96,8 @@ struct partial_gram {
         write(fd, &max_tsym, sizeof(size_t));
         write(fd, &sep_tsym, sizeof(size_t));
         write(fd, &lvl, sizeof(size_t));
-        size_t written_bytes = 4*sizeof(size_t);
+        write(fd, &longest_rule, sizeof(size_t));
+        size_t written_bytes = 5*sizeof(size_t);
 
         write(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));
         written_bytes += metadata.size()*sizeof(lvl_metadata_type);
@@ -112,7 +116,14 @@ struct partial_gram {
         read(fd, &max_tsym, sizeof(size_t));
         read(fd, &sep_tsym, sizeof(size_t));
         read(fd, &lvl, sizeof(size_t));
-        size_t read_bytes = 4*sizeof(size_t);
+        read(fd, &longest_rule, sizeof(size_t));
+        size_t read_bytes = 5*sizeof(size_t);
+
+        if(rules.size()>lvl){
+            for(size_t i=lvl;i<rules.size();i++){
+                rules[i].destroy();
+            }
+        }
 
         metadata.resize(lvl+1);
         read(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));
@@ -150,6 +161,7 @@ struct partial_gram {
             size_t idx = perm[i].first;
             uint32_t source = phrase_set[idx].source/sizeof(sym_type);
             uint32_t len = (phrase_set[idx].len/sizeof(sym_type));
+            if(len>longest_rule) longest_rule = len;
             uint32_t last = source + len-1;
             for(size_t j=source;j<last;j++){
                 assert(text[j]>0);
@@ -238,6 +250,15 @@ struct partial_gram {
         std::vector<lvl_metadata_type>().swap(metadata);
     }
 
+    size_t space_usage(){
+        size_t n_bytes=0;
+        for(auto & lvl_rules : rules){
+            n_bytes +=lvl_rules.capacity_in_bytes();
+        }
+        n_bytes+=metadata.size()+sizeof(lvl_metadata_type);
+        return n_bytes;
+    }
+
     void print_stats(){
         for(size_t i=0;i<metadata.size();i++){
             if(i==0){
@@ -252,23 +273,25 @@ struct partial_gram {
 };
 
 std::pair<uint64_t,size_t> get_rule_info(bitstream<size_t>& rule_stream, size_t pos, size_t width,
-                                         std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map, size_t fp_seed){
+                                         std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map,
+                                         size_t fp_seed, std::vector<uint64_t> phrase_fp_buffer){
     size_t len=0, sym;
     uint64_t fingerprint;
-    std::vector<uint64_t> tmp_phrase;
+    phrase_fp_buffer.clear();
 
     do{
         sym = rule_stream.read(pos, pos+width-1);
         size_t tmp = sym>>1UL;
-        assert(tmp<mt_map.size());
+        //assert(tmp<mt_map.size());
         tmp = mt_map[tmp];
-        assert(tmp<prev_fps.size());
-        tmp_phrase.push_back(prev_fps[tmp]);
+        //assert(tmp<prev_fps.size());
+        //phrase_buffer[len] = prev_fps[tmp];
+        phrase_fp_buffer.push_back(prev_fps[tmp]);
         pos+=width;
         len++;
-    }while(!(sym & 1UL));
+    } while(!(sym & 1UL));
 
-    fingerprint = XXH64(tmp_phrase.data(), sizeof(uint64_t)*len, fp_seed);
+    fingerprint = XXH64(phrase_fp_buffer.data(), sizeof(uint64_t)*len, fp_seed);
     return {fingerprint, len};
 }
 
@@ -280,19 +303,19 @@ int compare_rules(size_t pos_a, bitstream<size_t>& rule_a, uint8_t width_a,
     size_t sym_a, sym_b;
     while(!last_a){
 
-        assert((pos_a+width_a-1)<rule_a.capacity_in_bits());
+        //assert((pos_a+width_a-1)<rule_a.capacity_in_bits());
         sym_a = rule_a.read(pos_a, pos_a+width_a-1);
         last_a = sym_a & 1UL;
-        assert((sym_a>>1UL)>0);
-        assert((sym_a>>1UL)<mt_map_a.size());
+        //assert((sym_a>>1UL)>0);
+        //assert((sym_a>>1UL)<mt_map_a.size());
         sym_a = mt_map_a[sym_a>>1UL];
 
-        assert((pos_b+width_b-1)<(rule_b.capacity_in_bits()));
+        //assert((pos_b+width_b-1)<(rule_b.capacity_in_bits()));
         sym_b = rule_b.read(pos_b, pos_b+width_b-1);
         last_b = sym_b & 1UL;
 
-        assert((sym_b>>1UL)>0);
-        assert((sym_b>>1UL)<mt_map_b.size());
+        //assert((sym_b>>1UL)>0);
+        //assert((sym_b>>1UL)<mt_map_b.size());
         sym_b = mt_map_b[sym_b>>1UL];
 
         equal = (sym_a == sym_b) && (last_a == last_b);
@@ -326,15 +349,15 @@ void append_rule(size_t& s_pos, size_t s_width, size_t s_len, bitstream<size_t>&
         sym = source.read(s_pos, s_pos+s_width-1);
         last = sym & 1UL;
         sym>>=1UL;
-        assert(sym>0);
+        //assert(sym>0);
         sym = ((mt_map[sym]<<1UL) | last);
-        assert(sym>0);
-        assert((d_pos+d_width)<=dest.capacity_in_bits());
+        //assert(sym>0);
+        //assert((d_pos+d_width)<=dest.capacity_in_bits());
         dest.write(d_pos, d_pos+d_width-1, sym);
         d_pos+=d_width;
         s_pos+=s_width;
     }
-    assert(last & 1UL);
+    //assert(last & 1UL);
 }
 
 lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lvl_met_a, std::vector<uint32_t> &mt_map_a,
@@ -357,13 +380,19 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
     stream_c.reserve_in_bits(std::max(lvl_met_a.n_bits(), lvl_met_b.n_bits()));
 
     std::vector<uint8_t> merge_marks;
+    merge_marks.reserve(lvl_met_a.n_rules);
+
     std::vector<uint64_t> new_fps(1, 0);
+    new_fps.reserve(lvl_met_a.n_rules);
 
     uint8_t a_width = lvl_met_a.sym_width;
     uint8_t b_width = lvl_met_b.sym_width;
 
-    std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed);
-    std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed);
+    std::vector<uint64_t> phrase_buffer;
+    phrase_buffer.reserve(200);
+
+    std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed, phrase_buffer);
+    std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed, phrase_buffer);
 
     uint64_t prev_fp_a = fp_a;
     uint64_t prev_fp_b = fp_b;
@@ -445,13 +474,13 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
         }
 
         if((merge_marks.back() & 1) && curr_rule_a<lvl_met_a.n_rules){
-            std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed);
+            std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed, phrase_buffer);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
 
         if((merge_marks.back() & 2) && curr_rule_b<lvl_met_b.n_rules){
-            std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed);
+            std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed, phrase_buffer);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
         }
@@ -467,7 +496,7 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
         merge_marks.push_back(1);
 
         if(curr_rule_a<lvl_met_a.n_rules){
-            std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed);
+            std::tie(fp_a, len_a) = get_rule_info(stream_a, curr_pos_a, a_width, prev_fps, mt_map_a, fp_seed, phrase_buffer);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
@@ -483,7 +512,7 @@ lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lv
         merge_marks.push_back(2);
 
         if(curr_rule_b<lvl_met_b.n_rules){
-            std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed);
+            std::tie(fp_b, len_b) = get_rule_info(stream_b, curr_pos_b, b_width, prev_fps, mt_map_b, fp_seed, phrase_buffer);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
         }
@@ -544,8 +573,9 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
         if(std::get<1>(a)!=std::get<1>(b)){
             return std::get<1>(a) < std::get<1>(b);//break ties using the level fingerprint
         }
-        assert(prev_fps[mt_map[std::get<0>(a)]]!=prev_fps[mt_map[std::get<0>(b)]]);
-        return prev_fps[mt_map[std::get<0>(a)]]<prev_fps[mt_map[std::get<0>(b)]];
+        assert(std::get<0>(a)==std::get<0>(b) ||
+               prev_fps[std::get<2>(a)]!=prev_fps[std::get<2>(b)]);
+        return prev_fps[std::get<2>(a)]<prev_fps[std::get<2>(b)];
     });
 
     size_t pos=0, width=p_gram.metadata[new_lvl+1].sym_width;
@@ -694,9 +724,8 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<ui
     size_t i=0;
     while(i<max_lvl) {
         buffer_metadata = merge_level(p_gram_a.rules[i], p_gram_a.metadata[i+1], mt_map_a,
-                                             p_gram_b.rules[i], p_gram_b.metadata[i+1], mt_map_b,
-                                             buffer, mg_lvl_sigma, fp_seeds[i+1], prev_fps);
-        std::cout<<"level "<<i<<" "<<min_lvl<<" "<<max_lvl<<std::endl;
+                                      p_gram_b.rules[i], p_gram_b.metadata[i+1], mt_map_b,
+                                      buffer, mg_lvl_sigma, fp_seeds[i+1], prev_fps);
         i++;
         if(i>=min_lvl && i<max_lvl){
             assert(st_gram!=nullptr && st_gram!= nullptr);
@@ -715,10 +744,7 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<ui
     p_gram_a.lvl = p_gram_a.metadata.size()-1;
     p_gram_a.text_size += p_gram_b.text_size;
 
-    //TODO checking
-    //std::cout<<"Merged stats"<<std::endl;
-    //print_merge_stats(p_gram_a.metadata, p_gram_b.metadata, p_gram_c.metadata);
-    //
+    buffer.destroy();
 }
 
 #endif //LCG_PARTIAL_GRAM_H

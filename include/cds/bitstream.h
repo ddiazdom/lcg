@@ -41,6 +41,10 @@ struct bitstream{
         return stream_size;
     }
 
+    [[nodiscard]] inline size_t capacity_in_bytes() const {
+        return stream_size*sizeof(word_t);
+    }
+
     void reserve_in_bits(size_t bit_size){
         size_t n_words = INT_CEIL(bit_size, (sizeof(word_t)*8));
         if(n_words>stream_size){
