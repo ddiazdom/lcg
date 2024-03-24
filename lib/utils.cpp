@@ -67,7 +67,7 @@ std::string report_space(off_t bytes){
 void report_mem_peak(){
     struct rusage usage{};
     getrusage(RUSAGE_SELF, &usage);
-    std::cout<<"\n peak : "<<usage.ru_maxrss<<" megabytes "<<std::endl;
+    std::cout<<"\n peak : "<<report_space(usage.ru_maxrss)<<std::endl;
 }
 
 std::ifstream::pos_type file_size(std::string & filename) {
