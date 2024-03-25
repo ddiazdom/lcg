@@ -29,6 +29,15 @@ struct merge_data_t{
         }
     }
 
+    [[nodiscard]] size_t space_usage() const {
+        size_t bytes = fps.capacity()*sizeof(uint64_t);
+        bytes += new_fps.capacity()*sizeof(uint64_t);
+        bytes += map_a.capacity()*sizeof(uint32_t);
+        bytes += map_b.capacity()*sizeof(uint32_t);
+        bytes += merge_marks.capacity()*sizeof(uint8_t);
+        return bytes;
+    }
+
     ~merge_data_t(){
         destroy(fps);
         destroy(new_fps);
@@ -724,6 +733,7 @@ void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<ui
         p_gram_a.metadata[i] = buffer_metadata;
         //p_gram_a.rules[i-1].swap(mg_data.buffer);
         mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
+        std::cout<<"Extra data is using"<<report_space(off_t(mg_data.space_usage()))<<std::endl;
     }
     p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
                                                        p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
