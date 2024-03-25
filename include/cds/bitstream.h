@@ -45,8 +45,12 @@ struct bitstream{
         return stream_size*sizeof(word_t);
     }
 
-    void reserve_in_bits(size_t bit_size){
+    inline void reserve_in_bits(size_t bit_size){
         size_t n_words = INT_CEIL(bit_size, (sizeof(word_t)*8));
+        reserve_in_words(n_words);
+    }
+
+    inline void reserve_in_words(size_t n_words){
         if(n_words>stream_size){
             stream_size = n_words;
             if(stream==nullptr){
@@ -63,17 +67,6 @@ struct bitstream{
 
     [[nodiscard]] inline size_t words2bytes(size_t n_words) const {
         return n_words*sizeof(word_t);
-    }
-
-    void reserve_in_words(size_t n_words){
-        if(n_words>stream_size){
-            stream_size = n_words;
-            if(stream==nullptr){
-                stream = (word_t *)malloc(stream_size*sizeof(word_t));
-            }else{
-                stream = (word_t *)realloc(stream, stream_size*sizeof(word_t));
-            }
-        }
     }
 
     void destroy(){
@@ -218,6 +211,12 @@ struct bitstream{
         return (tmp_in[n_words - 1] & masks[(bits-read_bits)]) == read(i + read_bits, i+bits-1);
     }
 
+    void copy(size_t n_bits, bitstream& dest_stream){
+        size_t n_words = bits2words(n_bits);
+        dest_stream.reserve_in_words(n_words);
+        memcpy(dest_stream.stream, stream, words2bytes(n_words));
+    }
+
     //compare a segment of the stream with an external source of bits
     /*inline bool compare_segment(const uint8_t* input, size_t i, size_t bits) const {
 
@@ -292,7 +291,6 @@ struct bitstream{
         }else{
             stream = (word_t *) realloc(stream, sizeof(word_t)*stream_size);
         }
-
         in.read((char *)stream, sizeof(word_t)*stream_size);
     }
 };

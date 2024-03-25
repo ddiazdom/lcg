@@ -17,6 +17,7 @@
 #include "text_handler.h"
 #include "lz_like_map.h"
 #include "grammar.h"
+#include "special_allocator.h"
 
 namespace lz_like_strat {
 
@@ -327,7 +328,6 @@ namespace lz_like_strat {
                 size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
                 text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
-
                 //this is enough for 4GB strings
                 text_chunks[chunk_id].p_gram.rules.resize(32);
 
@@ -531,10 +531,12 @@ namespace lz_like_strat {
 
             std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
 
+            merge_data_t mg_data;
             for(size_t i=1;i<n_threads;i++){
                 merge_two_grammars<partial_gram<sym_type>, sym_type>(initial_grams[0],
                                                                      grams_to_merge[i],
-                                                                     p_opts.p_seeds);
+                                                                     p_opts.p_seeds,
+                                                                     mg_data);
             }
             //TODO reorder the compressed strings when using multiple threads for the merge
 
@@ -545,20 +547,19 @@ namespace lz_like_strat {
         };
 
         auto gram_merge_worker = [&](size_t idx){
+
             size_t buff_id;
             bool res;
+            merge_data_t mg_data;
+
             while (true) {
                 res = gram_to_merge_queue.pop(buff_id);
-                if (!res){
-                    break;
-                }
+                if (!res) break;
                 report_mem_peak();
-                merge_two_grammars<partial_gram<sym_type>, sym_type>(initial_grams[idx],
-                                                                     grams_to_merge[buff_id],
-                                                                     p_opts.p_seeds);
-
+                merge_two_grammars<partial_gram<sym_type>, sym_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds, mg_data);
                 av_buff_queue.push({buff_id, initial_grams[idx].text_size});
                 std::cout<<"whut? "<<report_space(initial_grams[idx].space_usage())<<" "<<report_space(grams_to_merge[buff_id].space_usage())<<std::endl;
+                std::cout<<"whut? "<<report_space(initial_grams[idx].gram_size_in_bytes())<<" "<<report_space(grams_to_merge[buff_id].gram_size_in_bytes())<<std::endl;
             }
         };
 
