@@ -30,7 +30,15 @@ struct merge_data_t{
     }
 
     ~merge_data_t(){
+        destroy(fps);
+        destroy(new_fps);
+        destroy(map_a);
+        destroy(map_b);
         buffer.destroy();
+        destroy(merge_marks);
+#ifdef __linux__
+        malloc_trim(0);
+#endif
     }
 };
 
@@ -619,7 +627,7 @@ lvl_metadata_type concatenate_strings(stream_type &stream_a, lvl_metadata_type &
     size_t s_pos =0;
     size_t s_width = lvl_met_a.sym_width;
     size_t n_bits = lvl_met_a.n_bits();
-    size_t mt_sym;
+    size_t mt_sym=0;
     while(s_pos<n_bits){
         mt_sym = stream_a.read(s_pos, s_pos+s_width-1);
         mt_sym>>=1UL;

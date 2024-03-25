@@ -114,4 +114,9 @@ void load_pl_vector(std::string const& file, vector_type& vector){
     load_plain_vector<vector_type>(ifs, vector);
     ifs.close();
 }
+
+template<class val_type>
+void destroy(val_type& elm){
+    val_type().swap(elm);
+}
 #endif //CDT_COMMON_H
