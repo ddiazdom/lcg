@@ -17,7 +17,7 @@
 #include "text_handler.h"
 #include "lz_like_map.h"
 #include "grammar.h"
-#include "special_allocator.h"
+#include "cds/mmap_allocator.h"
 
 namespace lz_like_strat {
 
@@ -319,7 +319,8 @@ namespace lz_like_strat {
                 off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
 
                 text_chunks[chunk_id].buffer_bytes = off_t(tmp_ck_size + parse_bytes);
-                text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
+                //text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
+                text_chunks[chunk_id].buffer = (text_chunk::size_type *) mmap_allocate(text_chunks[chunk_id].buffer_bytes);
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
@@ -360,7 +361,7 @@ namespace lz_like_strat {
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
-                        w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
+                        w_page_cache_bytes += g_bytes;
                         if(w_page_cache_bytes>p_opts.page_cache_limit){
                             std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
                             posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
@@ -417,11 +418,10 @@ namespace lz_like_strat {
                     chunks_to_merge.pop(h_node);
 
                     if(h_node.chunk_id==next_chunk) {
-                        //TODO store grammar to disk
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
-                        w_page_cache_bytes += text_chunks[node.buff_idx].e_bytes;
+                        w_page_cache_bytes += g_bytes;
                         if(w_page_cache_bytes>p_opts.page_cache_limit){
                             std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
                             posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
@@ -480,14 +480,21 @@ namespace lz_like_strat {
         for (auto &thread: threads) {
             thread.join();
         }
+
+        for(auto &chunk : text_chunks){
+            mmap_deallocate(chunk.buffer, chunk.buffer_bytes);
+            chunk.buffer=nullptr;
+        }
     }
 
     template<class sym_type>
     void merge_grammars(parsing_opts& p_opts, std::string& o_file, tmp_workspace& tmp_ws){
 
+        using p_gram_type = partial_gram<sym_type, true>;
+
         size_t n_threads = p_opts.n_threads;
 
-        std::vector<partial_gram<sym_type>> initial_grams(n_threads);
+        std::vector<p_gram_type> initial_grams(n_threads);
 
         ts_queue<size_t> gram_to_merge_queue;
         ts_queue<std::pair<size_t, off_t>> av_buff_queue;
@@ -507,7 +514,7 @@ namespace lz_like_strat {
             i++;
         }
         n_threads = i;
-        std::vector<partial_gram<sym_type>> grams_to_merge(n_threads);
+        std::vector<p_gram_type> grams_to_merge(n_threads);
 
         auto gram_read_worker = [&](){
             if(rem_bytes==0){
@@ -533,10 +540,7 @@ namespace lz_like_strat {
 
             merge_data_t mg_data;
             for(size_t i=1;i<n_threads;i++){
-                merge_two_grammars<partial_gram<sym_type>, sym_type>(initial_grams[0],
-                                                                     grams_to_merge[i],
-                                                                     p_opts.p_seeds,
-                                                                     mg_data);
+                merge_two_grammars<p_gram_type>(initial_grams[0], grams_to_merge[i], p_opts.p_seeds, mg_data);
             }
             //TODO reorder the compressed strings when using multiple threads for the merge
 
@@ -556,7 +560,7 @@ namespace lz_like_strat {
                 res = gram_to_merge_queue.pop(buff_id);
                 if (!res) break;
                 report_mem_peak();
-                merge_two_grammars<partial_gram<sym_type>, sym_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds, mg_data);
+                merge_two_grammars<p_gram_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds, mg_data);
                 av_buff_queue.push({buff_id, initial_grams[idx].text_size});
                 std::cout<<"whut? "<<report_space(initial_grams[idx].space_usage())<<" "<<report_space(grams_to_merge[buff_id].space_usage())<<std::endl;
                 std::cout<<"whut? "<<report_space(initial_grams[idx].gram_size_in_bytes())<<" "<<report_space(grams_to_merge[buff_id].gram_size_in_bytes())<<std::endl;

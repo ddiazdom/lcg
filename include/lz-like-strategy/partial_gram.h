@@ -8,12 +8,13 @@
 #include "lz_like_map.h"
 
 struct merge_data_t{
+
     std::vector<uint64_t> fps;
     std::vector<uint64_t> new_fps;
     std::vector<uint32_t> map_a;
     std::vector<uint32_t> map_b;
-    size_t lvl_sigma;
-    bitstream<size_t> buffer;
+    size_t lvl_sigma=0;
+    bitstream<size_t, true> buffer;
     std::vector<uint8_t> merge_marks;
 
     void initialize(size_t lvl_sigma_, size_t sym_bytes, uint64_t seed){
@@ -44,8 +45,11 @@ struct lvl_metadata_type{
     }
 };
 
-template<class ter_type>
+template<class ter_type, bool mmap_allocator=false>
 struct partial_gram {
+
+    typedef ter_type                            sym_type;
+    typedef bitstream<size_t, mmap_allocator> stream_type;
 
     size_t text_size=0;
     ter_type max_tsym = std::numeric_limits<ter_type>::max();
@@ -53,7 +57,7 @@ struct partial_gram {
     size_t lvl = 0;
     size_t longest_rule=0;
     std::vector<lvl_metadata_type> metadata;
-    std::vector<bitstream<size_t>> rules;
+    std::vector<stream_type> rules;
 
     partial_gram(){
         lvl_metadata_type ter{};
@@ -303,7 +307,8 @@ struct partial_gram {
     }
 };
 
-inline void get_rule_info(bitstream<size_t>& rule_stream, size_t& pos, size_t width,
+template<class stream_type>
+inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
                           std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map, size_t fp_seed,
                           std::vector<uint64_t>& phrase_fp_buff, std::vector<uint64_t>& phrase_buff,
                           uint64_t& fingerprint, size_t& len){
@@ -335,7 +340,8 @@ bool compare_rules(std::vector<uint64_t>& phrase_a, size_t len_a, std::vector<ui
     return len_a<len_b;
 }
 
-void append_rule(std::vector<uint64_t>& s_phrase, size_t s_len, size_t& d_pos, size_t d_width, bitstream<size_t>& dest){
+template<class stream_type>
+void append_rule(std::vector<uint64_t>& s_phrase, size_t s_len, size_t& d_pos, size_t d_width, stream_type& dest){
 
     //check the appended rule fits the buffer of merged rules
     size_t min_bits = d_pos+(s_len*d_width);
@@ -351,8 +357,9 @@ void append_rule(std::vector<uint64_t>& s_phrase, size_t s_len, size_t& d_pos, s
     }
 }
 
-lvl_metadata_type merge_level(bitstream<size_t> &stream_a, lvl_metadata_type &lvl_met_a,
-                              bitstream<size_t> &stream_b, lvl_metadata_type &lvl_met_b,
+template<class stream_type>
+lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_a,
+                              stream_type &stream_b, lvl_metadata_type &lvl_met_b,
                               uint64_t &fp_seed, merge_data_t& mg_data, size_t longest_rule) {
 
 
@@ -590,11 +597,12 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
         pos+=width;
     }
     assert(pos==p_gram.metadata[last_lvl+1].n_bits());
-
 }
 
-lvl_metadata_type concatenate_strings(bitstream<size_t> &stream_a, lvl_metadata_type &lvl_met_a,
-                                      bitstream<size_t> &stream_b, lvl_metadata_type &lvl_met_b, merge_data_t& mg_data){
+template<class stream_type>
+lvl_metadata_type concatenate_strings(stream_type &stream_a, lvl_metadata_type &lvl_met_a,
+                                      stream_type &stream_b, lvl_metadata_type &lvl_met_b, merge_data_t& mg_data){
+
     std::cout<<"Buffer: "<<report_space(mg_data.buffer.capacity_in_bytes())<<" A:"<<report_space(stream_a.capacity_in_bytes())<<" B:"<<report_space(stream_b.capacity_in_bytes())<<std::endl;
 
     lvl_metadata_type c_string_lvl{};
@@ -659,11 +667,11 @@ void print_merge_stats(std::vector<lvl_metadata_type>& met_a, std::vector<lvl_me
     std::cout<<"  Number of strings: A:"<<met_a.back().tot_symbols<<", B:"<<met_b.back().tot_symbols<<" -> C:"<<met_c.back().tot_symbols<<std::endl;
 }
 
-template<class gram_type, class sym_type>
+template<class gram_type>
 void merge_two_grammars(gram_type& p_gram_a, gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds, merge_data_t& mg_data) {
 
     //in the first level, tot_symbols represent the alphabet of terminals
-    mg_data.initialize(p_gram_a.metadata[0].tot_symbols, sizeof(sym_type), fp_seeds[0]);
+    mg_data.initialize(p_gram_a.metadata[0].tot_symbols, sizeof(typename gram_type::sym_type), fp_seeds[0]);
 
     //we subtract one because the last level contains the compressed strings,
     // and we do not merge but concatenate them

@@ -9,8 +9,10 @@
 #include <limits>
 #include "macros.h"
 #include "cdt_common.hpp"
+#include "mmap_allocator.h"
 
 template<class word_t,
+         bool mmap_allocator=false,
          uint8_t max_dist=std::numeric_limits<word_t>::digits>
 struct bitstream{
 
@@ -27,6 +29,13 @@ struct bitstream{
     bitstream(bitstream&& other) noexcept {
         std::swap(stream, other.stream);
         std::swap(stream_size, other.stream_size);
+    }
+
+    bitstream(bitstream& other) noexcept {
+        if(&other!=this && other.stream!=nullptr){
+            reserve_in_words(other.stream_size);
+            memcpy(stream, other.stream, words2bytes(other.stream_size));
+        }
     }
 
     [[nodiscard]] inline size_t bit_capacity() const {
@@ -52,12 +61,21 @@ struct bitstream{
 
     inline void reserve_in_words(size_t n_words){
         if(n_words>stream_size){
-            stream_size = n_words;
             if(stream==nullptr){
-                stream = (word_t *)malloc(stream_size*sizeof(word_t));
+                if constexpr (mmap_allocator){
+                    stream = (word_t *)mmap_allocate(words2bytes(n_words));
+                }else{
+                    stream = (word_t *)malloc(words2bytes(n_words));
+                }
             }else{
-                stream = (word_t *)realloc(stream, stream_size*sizeof(word_t));
+                assert(stream_size!=0);
+                if constexpr (mmap_allocator){
+                    stream = (word_t *)mmap_reallocate(stream, words2bytes(stream_size), words2bytes(n_words));
+                }else{
+                    stream = (word_t *)realloc(stream, words2bytes(n_words));
+                }
             }
+            stream_size = n_words;
         }
     }
 
@@ -71,7 +89,12 @@ struct bitstream{
 
     void destroy(){
         if(stream!= nullptr){
-            free(stream);
+            if constexpr (mmap_allocator){
+                mmap_deallocate(stream, stream_size*sizeof(word_t));
+            }else{
+                free(stream);
+            }
+            stream = nullptr;
         }
         stream_size=0;
     }
@@ -84,11 +107,8 @@ struct bitstream{
 
     inline bitstream& operator=(bitstream const& other){
         if(&other!=this){
-            if(stream_size!=other.stream_size){
-                stream = reinterpret_cast<word_t *>(realloc(stream, other.stream_size*sizeof(word_t)));
-                stream_size = other.stream_size;
-            }
-            memcpy(stream, other.stream, stream_size*sizeof(word_t));
+            reserve_in_words(other.stream_size);
+            memcpy(stream, other.stream, words2bytes(other.stream_size));
         }
         return *this;
     }
@@ -211,8 +231,10 @@ struct bitstream{
         return (tmp_in[n_words - 1] & masks[(bits-read_bits)]) == read(i + read_bits, i+bits-1);
     }
 
-    void copy(size_t n_bits, bitstream& dest_stream){
+    template<class stream_type>
+    void copy(size_t n_bits, stream_type& dest_stream){
         size_t n_words = bits2words(n_bits);
+        assert(n_words<=stream_size);
         dest_stream.reserve_in_words(n_words);
         memcpy(dest_stream.stream, stream, words2bytes(n_words));
     }
@@ -280,38 +302,35 @@ struct bitstream{
 
     size_type serialize(std::ostream &out) const{
         size_t written_bytes = serialize_elm(out, stream_size);
-        out.write((char *)stream, sizeof(word_t)*stream_size);
-        return written_bytes + (sizeof(word_t)*stream_size);
+        out.write((char *)stream, words2bytes(stream_size));
+        return written_bytes + words2bytes(stream_size);
     }
 
     void load(std::istream &in){
-        load_elm(in, stream_size);
-        if(stream==nullptr){
-            stream = (word_t *) malloc(sizeof(word_t)*stream_size);
-        }else{
-            stream = (word_t *) realloc(stream, sizeof(word_t)*stream_size);
-        }
-        in.read((char *)stream, sizeof(word_t)*stream_size);
+        size_t tmp_size;
+        load_elm(in, tmp_size);
+        reserve_in_words(tmp_size);
+        in.read((char *)stream, words2bytes(tmp_size));
     }
 };
 
-template<class word_t, uint8_t max_dist>
-const size_t bitstream<word_t, max_dist>::masks[65]={0x0,
-                               0x1,0x3, 0x7,0xF,
-                               0x1F,0x3F, 0x7F,0xFF,
-                               0x1FF,0x3FF, 0x7FF,0xFFF,
-                               0x1FFF,0x3FFF, 0x7FFF,0xFFFF,
-                               0x1FFFF,0x3FFFF, 0x7FFFF,0xFFFFF,
-                               0x1FFFFF,0x3FFFFF, 0x7FFFFF,0xFFFFFF,
-                               0x1FFFFFF,0x3FFFFFF, 0x7FFFFFF,0xFFFFFFF,
-                               0x1FFFFFFF,0x3FFFFFFF, 0x7FFFFFFF,0xFFFFFFFF,
-                               0x1FFFFFFFF,0x3FFFFFFFF, 0x7FFFFFFFF,0xFFFFFFFFF,
-                               0x1FFFFFFFFF,0x3FFFFFFFFF, 0x7FFFFFFFFF,0xFFFFFFFFFF,
-                               0x1FFFFFFFFFF,0x3FFFFFFFFFF, 0x7FFFFFFFFFF,0xFFFFFFFFFFF,
-                               0x1FFFFFFFFFFF,0x3FFFFFFFFFFF, 0x7FFFFFFFFFFF,0xFFFFFFFFFFFF,
-                               0x1FFFFFFFFFFFF,0x3FFFFFFFFFFFF, 0x7FFFFFFFFFFFF,0xFFFFFFFFFFFFF,
-                               0x1FFFFFFFFFFFFF,0x3FFFFFFFFFFFFF, 0x7FFFFFFFFFFFFF,0xFFFFFFFFFFFFFF,
-                               0x1FFFFFFFFFFFFFF,0x3FFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFF,0xFFFFFFFFFFFFFFF,
-                               0x1FFFFFFFFFFFFFFF,0x3FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF,0xFFFFFFFFFFFFFFFF};
+template<class word_t, bool use_mmap, uint8_t max_dist>
+const size_t bitstream<word_t, use_mmap, max_dist>::masks[65]={0x0,
+                                                               0x1,0x3, 0x7,0xF,
+                                                               0x1F,0x3F, 0x7F,0xFF,
+                                                               0x1FF,0x3FF, 0x7FF,0xFFF,
+                                                               0x1FFF,0x3FFF, 0x7FFF,0xFFFF,
+                                                               0x1FFFF,0x3FFFF, 0x7FFFF,0xFFFFF,
+                                                               0x1FFFFF,0x3FFFFF, 0x7FFFFF,0xFFFFFF,
+                                                               0x1FFFFFF,0x3FFFFFF, 0x7FFFFFF,0xFFFFFFF,
+                                                               0x1FFFFFFF,0x3FFFFFFF, 0x7FFFFFFF,0xFFFFFFFF,
+                                                               0x1FFFFFFFF,0x3FFFFFFFF, 0x7FFFFFFFF,0xFFFFFFFFF,
+                                                               0x1FFFFFFFFF,0x3FFFFFFFFF, 0x7FFFFFFFFF,0xFFFFFFFFFF,
+                                                               0x1FFFFFFFFFF,0x3FFFFFFFFFF, 0x7FFFFFFFFFF,0xFFFFFFFFFFF,
+                                                               0x1FFFFFFFFFFF,0x3FFFFFFFFFFF, 0x7FFFFFFFFFFF,0xFFFFFFFFFFFF,
+                                                               0x1FFFFFFFFFFFF,0x3FFFFFFFFFFFF, 0x7FFFFFFFFFFFF,0xFFFFFFFFFFFFF,
+                                                               0x1FFFFFFFFFFFFF,0x3FFFFFFFFFFFFF, 0x7FFFFFFFFFFFFF,0xFFFFFFFFFFFFFF,
+                                                               0x1FFFFFFFFFFFFFF,0x3FFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFF,0xFFFFFFFFFFFFFFF,
+                                                               0x1FFFFFFFFFFFFFFF,0x3FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF,0xFFFFFFFFFFFFFFFF};
 
 #endif //LPG_COMPRESSOR_BITSTREAM_H

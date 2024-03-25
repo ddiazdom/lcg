@@ -6,6 +6,7 @@
 #define LCG_TEXT_HANDLER_H
 
 #include "partial_gram.h"
+#include "cds/mmap_allocator.h"
 
 namespace lz_like_strat {
 
@@ -86,9 +87,10 @@ namespace lz_like_strat {
            // where ``text_len'' is the number of input symbols that fits the buffer
            off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
 
-
+           size_t old_byte_size = chunk.buffer_bytes;
            chunk.buffer_bytes = off_t(tmp_ck_size + parse_bytes);
-           chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
+           //chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
+           chunk.buffer = (text_chunk::size_type *) mmap_reallocate(chunk.buffer, old_byte_size, chunk.buffer_bytes);
            chunk.text = (sym_type *)chunk.buffer;
            data = &chunk.text[chunk.text_bytes-chunk_bytes];
        }
