@@ -12,17 +12,18 @@ void * mmap_allocate(size_t n_bytes){
     n_bytes = INT_CEIL(n_bytes, page_size)*page_size;
     void *ptr = mmap(nullptr, n_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (ptr == MAP_FAILED){
-        std::cerr << "Memory mapping failed\n";
+        std::cerr << "mmap allocate failed\n";
         return nullptr;
     }
     return ptr;
 }
 
 void mmap_deallocate(void * ptr, size_t n_bytes){
+    if(ptr== nullptr) return;
     size_t page_size =  sysconf(_SC_PAGE_SIZE);
     n_bytes = INT_CEIL(n_bytes, page_size)*page_size;
     if (munmap(ptr, n_bytes)){
-        std::cerr << "Memory mapping failed\n";
+        std::cerr << "mmap deallocate failed\n";
     }
 }
 
@@ -34,7 +35,7 @@ void* mmap_reallocate(void* ptr, size_t old_size, size_t new_size) {
 
     void* new_ptr = mmap(nullptr, new_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (new_ptr == MAP_FAILED) {
-        std::cerr << "Memory mapping failed\n";
+        std::cerr << "mmap reallocate failed\n";
         return nullptr;
     }
 

@@ -169,8 +169,9 @@ namespace lz_like_strat {
 
             if(curr_sym==sep_sym){
                 n_strings++;
-                mt_sym = map.insert((txt_pos-2)*sym_bytes, sym_bytes, inserted);
-                //assert(text[txt_pos-2]!=0);
+                phrase_len = rb-lb;
+                mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+                assert(text[rb]==sep_sym);
 
                 parse[parse_pos++] = mt_sym+1;
                 parse[parse_pos++] = 0;
@@ -252,10 +253,10 @@ namespace lz_like_strat {
     template<class sym_type>
     void compress_text_chunk(text_chunk& chunk, std::vector<uint64_t>& fp_seeds){
 
-        size_t alpha_size = std::numeric_limits<sym_type>::max();
+        size_t alpha_size = std::numeric_limits<sym_type>::max()+1;
         std::vector<uint64_t> prev_fps(alpha_size);
 
-        for(sym_type i=0;i<alpha_size;i++){
+        for(size_t i=0;i<alpha_size;i++){
             prev_fps[i] = XXH64(&i, sizeof(sym_type), fp_seeds[0]);
         }
 
@@ -506,9 +507,6 @@ namespace lz_like_strat {
         size_t i=0;
         while(i<n_threads && rem_bytes>0){
             read_bytes = initial_grams[i].load_from_fd(fd_r);
-            //std::cout<<"We read "<<report_space(off_t(read_bytes))<<std::endl;
-            //initial_grams[i].print_stats();
-            //std::cout<<""<<std::endl;
             rem_bytes-=read_bytes;
             av_buff_queue.push({i, 0});
             i++;
