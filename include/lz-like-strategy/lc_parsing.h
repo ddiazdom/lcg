@@ -344,11 +344,18 @@ namespace lz_like_strat {
             //
 
             size_t proc_syms=0;
+            size_t acc_strings=0, n_strings;
             while (rem_bytes > 0) {
 
                 while(true) {
                     chunks_to_merge.pop(h_node);
                     if(h_node.chunk_id==next_chunk){
+
+                        n_strings = text_chunks[h_node.buff_idx].p_gram.tot_strings();
+                        text_chunks[h_node.buff_idx].p_gram.first_string = acc_strings;
+                        text_chunks[h_node.buff_idx].p_gram.last_string = acc_strings+n_strings-1;
+                        acc_strings+=n_strings;
+
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
@@ -409,6 +416,12 @@ namespace lz_like_strat {
                     chunks_to_merge.pop(h_node);
 
                     if(h_node.chunk_id==next_chunk) {
+
+                        n_strings = text_chunks[h_node.buff_idx].p_gram.tot_strings();
+                        text_chunks[h_node.buff_idx].p_gram.first_string = acc_strings;
+                        text_chunks[h_node.buff_idx].p_gram.last_string = acc_strings+n_strings-1;
+                        acc_strings+=n_strings;
+
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
@@ -483,7 +496,9 @@ namespace lz_like_strat {
 
         size_t n_threads = p_opts.n_threads;
 
-        std::vector<p_gram_type> initial_grams(n_threads);
+        std::vector<std::pair<p_gram_type,
+                    std::vector<std::pair<size_t, size_t>>>
+                    > initial_grams(n_threads);
 
         ts_queue<size_t> gram_to_merge_queue;
         ts_queue<std::pair<size_t, off_t>> av_buff_queue;
@@ -494,7 +509,10 @@ namespace lz_like_strat {
         size_t read_bytes;
         size_t i=0;
         while(i<n_threads && rem_bytes>0){
-            read_bytes = initial_grams[i].load_from_fd(fd_r);
+            read_bytes = initial_grams[i].first.load_from_fd(fd_r);
+            //store the range of strings this partial gram covers
+            initial_grams[i].second.push_back({initial_grams[i].first.first_string,
+                                               initial_grams[i].first.last_string});
             rem_bytes-=read_bytes;
             av_buff_queue.push({i, 0});
             i++;
@@ -518,15 +536,38 @@ namespace lz_like_strat {
                 gram_to_merge_queue.done();
             }
 
-            std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
-
-            for(size_t i=1;i<n_threads;i++){
-                merge_two_grammars<p_gram_type>(initial_grams[0], grams_to_merge[i], p_opts.p_seeds);
+            //no longer needed
+            for(auto &gram : grams_to_merge){
+                gram.destroy_gram();
             }
 
-            //TODO reorder the compressed strings when using multiple threads for the merge
+            if(n_threads>1) {
+                //merge the partial grams of the different threads into one
+                size_t n_ranges=0;
+                for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
+                initial_grams[i].second.reserve(n_ranges);
 
-            store_to_file(mg_p_gram_file, initial_grams[0]);
+                for (size_t i = 1; i < n_threads; i++) {
+                    merge_two_grammars<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_opts.p_seeds);
+                    //store the range of strings this partial gram covers
+                    initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
+                    initial_grams[i].first.destroy_gram();
+                }
+                initial_grams[0].second.shrink_to_fit();
+#ifdef __linux__
+                malloc_trim(0);
+#endif
+                initial_grams[0].first.reorder_strings(initial_grams[0].second);
+            }
+
+            std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
+            store_to_file(mg_p_gram_file, initial_grams[0].first);
+
+            initial_grams[0].first.destroy_gram();
+
+#ifdef __linux__
+            malloc_trim(0);
+#endif
 
             lc_gram_t final_grammar(mg_p_gram_file, p_opts.p_seeds);
             store_to_file(o_file, final_grammar);
@@ -540,11 +581,15 @@ namespace lz_like_strat {
             while (true) {
                 res = gram_to_merge_queue.pop(buff_id);
                 if (!res) break;
-                report_mem_peak();
-                merge_two_grammars<p_gram_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds);
-                av_buff_queue.push({buff_id, initial_grams[idx].text_size});
-                std::cout<<"whut? "<<report_space(initial_grams[idx].space_usage())<<" "<<report_space(grams_to_merge[buff_id].space_usage())<<std::endl;
-                std::cout<<"whut? "<<report_space(initial_grams[idx].gram_size_in_bytes())<<" "<<report_space(grams_to_merge[buff_id].gram_size_in_bytes())<<std::endl;
+                //report_mem_peak();
+                //std::cout<<grams_to_merge[buff_id].first_string<<" --- "<<grams_to_merge[buff_id].last_string<<std::endl;
+                merge_two_grammars<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_opts.p_seeds);
+
+                if(n_threads>1){
+                    initial_grams[idx].second.push_back({grams_to_merge[buff_id].first_string,
+                                                         grams_to_merge[buff_id].last_string});
+                }
+                av_buff_queue.push({buff_id, initial_grams[idx].first.text_size});
             }
         };
 
