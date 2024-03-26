@@ -50,9 +50,7 @@ namespace lz_like_strat {
 
         size_t source, end, tot_symbols=0;
         std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
-        std::vector<uint64_t> tmp_phrase;
-
-        //std::cout<<"The seed is "<<pf_seed<<std::endl;
+        std::vector<uint64_t> fp_sequence;
 
         for(size_t i=0;i<phrase_set.size();i++) {
             perm[i].first = i;
@@ -61,11 +59,11 @@ namespace lz_like_strat {
             for(size_t j=source;j<end;j++){
                 assert(text[j]>0);
                 assert(text[j]<prev_fps.size());
-                tmp_phrase.push_back(prev_fps[text[j]]);
+                fp_sequence.push_back(prev_fps[text[j]]);
             }
-            perm[i].second = XXH64(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), pf_seed);
-            tot_symbols+=tmp_phrase.size();
-            tmp_phrase.clear();
+            perm[i].second = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+            tot_symbols+=fp_sequence.size();
+            fp_sequence.clear();
         }
 
         //sort the phrases according their hash values
@@ -77,7 +75,6 @@ namespace lz_like_strat {
         off_t prev_pos=0, tot_phrases=off_t(perm.size());
         off_t n_cols =0;
         for(off_t i=1; i<tot_phrases; i++){
-
             if(prev_hash!=perm[i].second){
                 if((i-prev_pos)>1){
 
@@ -90,11 +87,11 @@ namespace lz_like_strat {
                         off_t len = phrase_set[perm[k].first].len/sizeof(sym_type);
                         assert(s<txt_size);
 
-                        tmp_phrase.clear();
+                        fp_sequence.clear();
                         for (off_t u = s, l=0; l < len; u++, l++) {
-                            tmp_phrase.push_back(prev_fps[text[u]]);
+                            fp_sequence.push_back(prev_fps[text[u]]);
                         }
-                        uint64_t test_hash = XXH64(tmp_phrase.data(), tmp_phrase.size()*sizeof(uint64_t), pf_seed);
+                        uint64_t test_hash = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
                         assert(perm[k].second==test_hash);
                     }
                     //
@@ -199,8 +196,6 @@ namespace lz_like_strat {
 
                 if(local_minimum){
                     phrase_len = rb-lb;
-                    //assert(text[lb+phrase_len-1]>0);
-                    //assert(text[lb]>0);
                     mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                     parse[parse_pos++] = mt_sym+1;
                     lb = rb;
@@ -222,15 +217,6 @@ namespace lz_like_strat {
 
             phrase_len = txt_pos-1-lb;
             assert(text[lb+phrase_len]==sep_sym);
-            //assert(text[lb+phrase_len-1]>0);
-            //assert(text[lb]>0);
-            //std::cout<<lb<<" "<<txt_pos<<" "<<(lb+phrase_len)<<" "<<txt_size<<std::endl;
-            //for(off_t k=lb, u=0;u<phrase_len;u++, k++){
-            //    std::cout<<text[k]<<" ";
-            //}
-            //std::cout<<" -> "<<int(text[lb+phrase_len])<<std::endl;
-            //assert((lb+phrase_len)<=txt_size);
-
             mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
             parse[parse_pos++] = mt_sym+1;
             parse[parse_pos++] = 0;
@@ -268,7 +254,8 @@ namespace lz_like_strat {
         chunk.p_gram.sep_tsym = chunk.sep_sym;
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
 
-        off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse, n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
+                                                         n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         sep_sym = 0;
         off_t size_limit = n_strings*2;
         auto * new_parse = (text_chunk::size_type *)chunk.text;
@@ -276,7 +263,8 @@ namespace lz_like_strat {
 
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
-            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings,
+                                                                     sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
             std::swap(chunk.parse, new_parse);
             p_round++;
         }
@@ -350,7 +338,9 @@ namespace lz_like_strat {
             heap_node h_node{};
             size_t next_chunk=0;
             int fd_w = open(concat_grams.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#ifdef __linux__
             off_t w_acc_bytes=0;
+#endif
             //
 
             size_t proc_syms=0;
@@ -466,8 +456,6 @@ namespace lz_like_strat {
                 memset(text_chunks[buff_id].buffer, 0, text_chunks[buff_id].buffer_bytes);
 
                 chunks_to_merge.push({text_chunks[buff_id].id, buff_id});
-                //chunks_to_reuse.push(buff_id);
-                //chunks_to_merge.push(text_chunks[buff_id].id);
             }
         };
 
@@ -515,17 +503,13 @@ namespace lz_like_strat {
         std::vector<p_gram_type> grams_to_merge(n_threads);
 
         auto gram_read_worker = [&](){
+
             if(rem_bytes==0){
                 gram_to_merge_queue.done();
             }else{
                 std::pair<size_t , off_t> proc_input;
                 while(rem_bytes > 0){
                     av_buff_queue.pop(proc_input);
-
-                    if(proc_input.second!=0){
-                    //    std::cout<<"Compressed symbols "<<report_space(proc_input.second)<<std::endl;
-                    }
-
                     read_bytes = grams_to_merge[proc_input.first].load_from_fd(fd_r);
                     gram_to_merge_queue.push(proc_input.first);
                     rem_bytes-=read_bytes;
@@ -539,6 +523,7 @@ namespace lz_like_strat {
             for(size_t i=1;i<n_threads;i++){
                 merge_two_grammars<p_gram_type>(initial_grams[0], grams_to_merge[i], p_opts.p_seeds);
             }
+
             //TODO reorder the compressed strings when using multiple threads for the merge
 
             store_to_file(mg_p_gram_file, initial_grams[0]);
