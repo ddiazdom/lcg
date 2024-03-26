@@ -538,9 +538,8 @@ namespace lz_like_strat {
 
             std::string mg_p_gram_file = tmp_ws.get_file("merged_partial_grams");
 
-            merge_data_t mg_data;
             for(size_t i=1;i<n_threads;i++){
-                merge_two_grammars<p_gram_type>(initial_grams[0], grams_to_merge[i], p_opts.p_seeds, mg_data);
+                merge_two_grammars<p_gram_type>(initial_grams[0], grams_to_merge[i], p_opts.p_seeds);
             }
             //TODO reorder the compressed strings when using multiple threads for the merge
 
@@ -554,13 +553,12 @@ namespace lz_like_strat {
 
             size_t buff_id;
             bool res;
-            merge_data_t mg_data;
 
             while (true) {
                 res = gram_to_merge_queue.pop(buff_id);
                 if (!res) break;
                 report_mem_peak();
-                merge_two_grammars<p_gram_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds, mg_data);
+                merge_two_grammars<p_gram_type>(initial_grams[idx], grams_to_merge[buff_id], p_opts.p_seeds);
                 av_buff_queue.push({buff_id, initial_grams[idx].text_size});
                 std::cout<<"whut? "<<report_space(initial_grams[idx].space_usage())<<" "<<report_space(grams_to_merge[buff_id].space_usage())<<std::endl;
                 std::cout<<"whut? "<<report_space(initial_grams[idx].gram_size_in_bytes())<<" "<<report_space(grams_to_merge[buff_id].gram_size_in_bytes())<<std::endl;
