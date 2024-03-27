@@ -140,6 +140,9 @@ namespace lz_like_strat {
         return n_cols;
     }
 
+    // this method parses the text and store the parse in the text itself.
+    // It only works for parsing rounds other than the first one because the length of symbol each
+    // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
     off_t inplace_parsing_round(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
                                 std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
@@ -166,8 +169,9 @@ namespace lz_like_strat {
                 mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                 assert(text[rb]==sep_sym);
                 if(!inserted){
+                    //we can not replace the first phrase occurrence as we use it as source for the dictionary
                     assert(text[lb]!=dummy_sym);
-                    text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                    text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
                     memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
                 }
                 text[rb] = sep_sym;
@@ -187,8 +191,9 @@ namespace lz_like_strat {
                 if(local_minimum){
                     phrase_len = rb-lb;
                     mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
-                    assert(text[lb]!=dummy_sym);
                     if(!inserted){
+                        //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                        assert(text[lb]!=dummy_sym);
                         text[lb] = mt_sym+1;
                         memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
                     }
@@ -208,6 +213,7 @@ namespace lz_like_strat {
             assert(text[lb+phrase_len]==sep_sym);
             mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
             if(!inserted){
+                //we can not replace the first phrase occurrence as we use it as source for the dictionary
                 assert(text[lb]!=dummy_sym);
                 text[lb] = mt_sym+1;//store the metabmol in the first phrase position
                 memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
@@ -225,23 +231,26 @@ namespace lz_like_strat {
         std::vector<uint32_t> perm;
         create_meta_sym<uint32_t, false>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
 
-        // replace the parts of the text that
-        // we use as sources for the phases
-        mt_sym =0;
-        while(mt_sym<map.phrase_set.size()) {
-            lb = map.phrase_set[mt_sym].source/sym_bytes;
-            phrase_len = map.phrase_set[mt_sym].len/sym_bytes;
-            text[lb] = mt_sym+1;//store the metasymol in the first phrase position
-            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-            mt_sym++;
-        }
-
+        // create the parse in place
+        map.insert_dummy_entry({uint32_t(txt_size*sym_bytes), 0});
+        size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
+        mt_sym = 0, lb = 0;
         off_t i=0, k=0;
-        while(i<txt_size){
-            assert(text[i]<perm.size());
-            text[k++] = perm[text[i]];
-            i++;
-            while(i<txt_size && text[i]==dummy_sym) i++;
+
+        while(mt_sym<tot_phrases) {
+            assert(i==lb);
+            text[k++] = perm[mt_sym+1];
+            i+= map.phrase_set[mt_sym].len/sym_bytes;//move out of the phrase boundary
+
+            mt_sym++;
+            lb = map.phrase_set[mt_sym].source/sym_bytes;//position for the next phrase
+
+            while(i<lb){//process the text area between consecutive phrases
+                assert(text[i]<perm.size());
+                text[k++] = perm[text[i]];
+                i++;
+                while(i<lb && text[i]==dummy_sym) i++;
+            }
         }
         assert(k==parse_size);
         return parse_size;
@@ -412,7 +421,7 @@ namespace lz_like_strat {
                 size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
                 text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
-                //this is enough for 4GB strings
+                //this value is enough for 4GB text chunks
                 text_chunks[chunk_id].p_gram.rules.resize(32);
 
                 buffers_to_process.push(chunk_id);
@@ -590,6 +599,7 @@ namespace lz_like_strat {
 
         n_threads = i;
         std::vector<p_gram_type> grams_to_merge(n_threads);
+        size_t prog_bytes=0;
 
         auto gram_read_worker = [&](){
 
@@ -598,11 +608,12 @@ namespace lz_like_strat {
             }else{
                 size_t buff_id;
                 while(rem_bytes > 0){
-                    std::cout<<"Processed data: "<<double(rem_bytes)/double(tot_bytes)*100<<std::endl;
                     av_buff_queue.pop(buff_id);
                     read_bytes = grams_to_merge[buff_id].load_from_fd(fd_r);
                     gram_to_merge_queue.push(buff_id);
                     rem_bytes-=read_bytes;
+                    prog_bytes+=read_bytes;
+                    std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
                 }
                 while(av_buff_queue.size()<n_threads);
                 gram_to_merge_queue.done();
@@ -613,11 +624,16 @@ namespace lz_like_strat {
                 gram.destroy_gram();
             }
 
+
             if(n_threads>1) {
                 //merge the partial grams of the different threads into one
                 size_t n_ranges=0;
                 for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
                 initial_grams[i].second.reserve(n_ranges);
+
+                //this step is incorrect as it assumes all the initial grams are the same size,
+                // but it gives us an estimate of the remaining %
+                size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
 
                 for (size_t i = 1; i < n_threads; i++) {
                     merge_two_grammars<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
@@ -625,6 +641,9 @@ namespace lz_like_strat {
                     initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
                     initial_grams[i].first.destroy_gram();
                     destroy(initial_grams[i].second);
+
+                    prog_bytes+=rem_prog_bytes;
+                    std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
                 }
                 initial_grams[0].second.shrink_to_fit();
 #ifdef __linux__
@@ -635,6 +654,8 @@ namespace lz_like_strat {
 
             store_to_file(mg_p_gram_file, initial_grams[0].first);
             initial_grams[0].first.destroy_gram();
+
+            std::cout<<"Processed data: "<<100<<std::endl;
 
 #ifdef __linux__
             malloc_trim(0);

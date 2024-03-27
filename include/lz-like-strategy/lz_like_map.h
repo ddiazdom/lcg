@@ -177,6 +177,10 @@ public:
 #endif
     }
 
+    void insert_dummy_entry(phrase_t dummy){
+        phrases.push_back(dummy);
+    }
+
     size_t mem_usage(){
         return table_mem_usage()+phrases_mem_usage();
     }
