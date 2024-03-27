@@ -474,7 +474,7 @@ namespace lz_like_strat {
 
                 buffers_to_process.push(buff_id);
 #ifdef __linux__
-                r_page_cache_bytes+=text_chunks[h_node.buff_idx].e_bytes;
+                r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
                 if(r_page_cache_bytes>p_opts.page_cache_limit){
                     std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<r_acc_bytes<<std::endl;
                     posix_fadvise(fd_r, r_acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
