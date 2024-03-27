@@ -293,7 +293,7 @@ void add_random_access_support(gram_t& gram){
 
 //TODO implement this
 /*
-void merge_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
+void merge_partial_grammars(lc_gram_t& gram_a, lc_gram_t& gram_b){
 
 }*/
 
