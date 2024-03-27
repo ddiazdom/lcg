@@ -7,6 +7,7 @@
 
 #include <random>
 #include <fcntl.h>
+#include <cstring>
 
 #include "cds/macros.h"
 #include "cds/ts_queue.h"
@@ -144,11 +145,11 @@ namespace lz_like_strat {
                         off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
                         std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
-        size_t prev_sym, curr_sym, next_sym;
+        size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
         uint64_t prev_hash=0, curr_hash=0, next_hash=0;
 
         text_chunk::size_type mt_sym;
-        off_t txt_pos = 0, parse_pos = 0, phrase_len, lb, rb;
+        off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
         lz_like_map map((uint8_t *)text);
 
         bool inserted;
@@ -165,13 +166,23 @@ namespace lz_like_strat {
             rb = txt_pos-1;
 
             if(curr_sym==sep_sym){
-                n_strings++;
                 phrase_len = rb-lb;
                 mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                 assert(text[rb]==sep_sym);
 
-                parse[parse_pos++] = mt_sym+1;
-                parse[parse_pos++] = 0;
+                if constexpr (p_round){
+                    parse[parse_size++] = mt_sym+1;
+                    parse[parse_size++] = 0;
+                }else{//replace the phase with the metasymbol in place
+                    assert(text[lb]!=dummy_sym);
+                    if(!inserted){
+                        text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                        memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                    }
+                    text[rb] = 0;
+                    parse_size+=2;//+1 for the separator symbol
+                }
+                n_strings++;
                 continue;
             }
 
@@ -197,12 +208,20 @@ namespace lz_like_strat {
                 if(local_minimum){
                     phrase_len = rb-lb;
                     mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
-                    parse[parse_pos++] = mt_sym+1;
+                    if constexpr (p_round){
+                        parse[parse_size++] = mt_sym+1;
+                    }else{//store the metasymbol in place
+                        assert(text[lb]!=dummy_sym);
+                        if(!inserted){
+                            text[lb] = mt_sym+1;
+                            memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));
+                        }
+                        parse_size++;
+                    }
                     lb = rb;
                 }
 
                 rb = txt_pos-1;
-
                 if constexpr (p_round){
                     prev_hash = curr_hash;
                     curr_hash = next_hash;
@@ -218,22 +237,57 @@ namespace lz_like_strat {
             phrase_len = txt_pos-1-lb;
             assert(text[lb+phrase_len]==sep_sym);
             mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
-            parse[parse_pos++] = mt_sym+1;
-            parse[parse_pos++] = 0;
+
+            if constexpr (p_round){
+                parse[parse_size++] = mt_sym+1;
+                parse[parse_size++] = 0;
+            } else{//replace the phase with the metasymbol in place
+                assert(text[lb]!=dummy_sym);
+                if(!inserted){
+                    text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                    memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                }
+                text[lb+phrase_len] = 0;
+                parse_size+=2;//+1 for the separator symbol
+            }
             n_strings++;
         }
 
         map.shrink_to_fit();
         map.destroy_table();
 
+        assert(map.phrase_set.size()<dummy_sym);
+
         std::vector<uint32_t> perm;
         create_meta_sym<sym_type, p_round>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
-        for(off_t i=0;i<parse_pos;i++){
-            //if(parse[i]==0) continue;
-            assert(parse[i]<perm.size());
-            parse[i] = perm[parse[i]];
+
+        if constexpr (p_round){
+            for(off_t i=0;i<parse_size;i++){
+                assert(parse[i]<perm.size());
+                parse[i] = perm[parse[i]];
+            }
+        }else{
+            // replace the parts of the text that
+            // we use as sources for the phases
+            mt_sym =0;
+            while(mt_sym<map.phrase_set.size()) {
+                lb = map.phrase_set[mt_sym].source/sizeof(sym_type);
+                phrase_len = map.phrase_set[mt_sym].len/sizeof(sym_type);
+                text[lb] = mt_sym+1;//store the metasymol in the first phrase position
+                memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                mt_sym++;
+            }
+
+            off_t i=0, k=0;
+            while(i<txt_size){
+                assert(text[i]<perm.size());
+                text[k++] = perm[text[i]];
+                i++;
+                while(i<txt_size && text[i]==dummy_sym) i++;
+            }
+            assert(k==parse_size);
         }
-        return parse_pos;
+        return parse_size;
     }
 
     template<class sym_type>
@@ -265,7 +319,7 @@ namespace lz_like_strat {
             assert(parse_size>=size_limit);
             parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings,
                                                                      sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
-            std::swap(chunk.parse, new_parse);
+            //std::swap(chunk.parse, new_parse);
             p_round++;
         }
 
@@ -505,9 +559,11 @@ namespace lz_like_strat {
 
         std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
         int fd_r = open(p_grams_file.c_str(), O_RDONLY);
-        size_t rem_bytes = file_size(p_grams_file);
+        size_t tot_bytes = file_size(p_grams_file);
+        size_t rem_bytes =  tot_bytes;
         size_t read_bytes;
         size_t i=0;
+
         while(i<n_threads && rem_bytes>0){
             read_bytes = initial_grams[i].first.load_from_fd(fd_r);
             //store the range of strings this partial gram covers
@@ -527,6 +583,7 @@ namespace lz_like_strat {
             }else{
                 std::pair<size_t , off_t> proc_input;
                 while(rem_bytes > 0){
+                    std::cout<<"Processed data: "<<double(rem_bytes)/double(tot_bytes)*100<<std::endl;
                     av_buff_queue.pop(proc_input);
                     read_bytes = grams_to_merge[proc_input.first].load_from_fd(fd_r);
                     gram_to_merge_queue.push(proc_input.first);

@@ -103,7 +103,7 @@ public:
                     inserted = false;
                     //the reference is always the rightmost occurrence
                     // in the text's scan
-                    phrase.source = source;
+                    //phrase.source = source;
                     return m_table[idx];
                 }
                 j++;
