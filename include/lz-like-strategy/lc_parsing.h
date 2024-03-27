@@ -140,21 +140,17 @@ namespace lz_like_strat {
         return n_cols;
     }
 
-    template<class sym_type, bool p_round>
-    off_t parsing_round(sym_type* text, off_t txt_size, text_chunk::size_type* parse,
-                        off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                        std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    off_t inplace_parsing_round(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
+                                std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
+        uint32_t mt_sym, sep_sym =0;
         size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
-        uint64_t prev_hash=0, curr_hash=0, next_hash=0;
-
-        text_chunk::size_type mt_sym;
         off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
         lz_like_map map((uint8_t *)text);
 
         bool inserted;
         n_strings = 0;
-        off_t sym_bytes = sizeof(sym_type);
+        off_t sym_bytes = sizeof(uint32_t);
 
         while(txt_pos<txt_size){
 
@@ -169,19 +165,118 @@ namespace lz_like_strat {
                 phrase_len = rb-lb;
                 mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                 assert(text[rb]==sep_sym);
+                if(!inserted){
+                    assert(text[lb]!=dummy_sym);
+                    text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                }
+                text[rb] = sep_sym;
+                parse_size+=2;//+1 for the separator symbol
+                n_strings++;
+                continue;
+            }
 
-                if constexpr (p_round){
-                    parse[parse_size++] = mt_sym+1;
-                    parse[parse_size++] = 0;
-                }else{//replace the phase with the metasymbol in place
+            next_sym = text[txt_pos++];
+            while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            bool local_minimum;
+
+            while(txt_pos<txt_size && next_sym!=sep_sym){
+
+                local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
+
+                if(local_minimum){
+                    phrase_len = rb-lb;
+                    mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
                     assert(text[lb]!=dummy_sym);
                     if(!inserted){
-                        text[lb] = mt_sym+1;//store the metabmol in the first phrase position
-                        memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                        text[lb] = mt_sym+1;
+                        memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
                     }
-                    text[rb] = 0;
-                    parse_size+=2;//+1 for the separator symbol
+                    parse_size++;
+                    lb = rb;
                 }
+
+                rb = txt_pos-1;
+                prev_sym = curr_sym;
+
+                curr_sym = next_sym;
+                next_sym = text[txt_pos++];
+                while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            }
+
+            phrase_len = txt_pos-1-lb;
+            assert(text[lb+phrase_len]==sep_sym);
+            mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+            if(!inserted){
+                assert(text[lb]!=dummy_sym);
+                text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+            }
+            text[lb+phrase_len] = sep_sym;
+            parse_size+=2;//+1 for the separator symbol
+            n_strings++;
+        }
+
+        map.shrink_to_fit();
+        map.destroy_table();
+
+        assert(map.phrase_set.size()<dummy_sym);
+
+        std::vector<uint32_t> perm;
+        create_meta_sym<uint32_t, false>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+
+        // replace the parts of the text that
+        // we use as sources for the phases
+        mt_sym =0;
+        while(mt_sym<map.phrase_set.size()) {
+            lb = map.phrase_set[mt_sym].source/sym_bytes;
+            phrase_len = map.phrase_set[mt_sym].len/sym_bytes;
+            text[lb] = mt_sym+1;//store the metasymol in the first phrase position
+            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+            mt_sym++;
+        }
+
+        off_t i=0, k=0;
+        while(i<txt_size){
+            assert(text[i]<perm.size());
+            text[k++] = perm[text[i]];
+            i++;
+            while(i<txt_size && text[i]==dummy_sym) i++;
+        }
+        assert(k==parse_size);
+        return parse_size;
+    }
+
+    off_t first_parsing_round(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
+                              off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                              std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+
+        size_t prev_sym, curr_sym, next_sym;
+        uint64_t prev_hash, curr_hash, next_hash;
+
+        text_chunk::size_type mt_sym;
+        off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
+        lz_like_map map((uint8_t *)text);
+
+        bool inserted;
+        n_strings = 0;
+        off_t sym_bytes = sizeof(uint8_t);
+
+        while(txt_pos<txt_size){
+
+            lb = txt_pos;
+            prev_sym = text[txt_pos++];
+
+            curr_sym = text[txt_pos++];
+            while(txt_pos<txt_size && curr_sym==prev_sym) curr_sym = text[txt_pos++];
+            rb = txt_pos-1;
+
+            if(curr_sym==sep_sym){
+                phrase_len = rb-lb;
+                mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+                assert(text[rb]==sep_sym);
+                parse[parse_size++] = mt_sym+1;
+                parse[parse_size++] = 0;
                 n_strings++;
                 continue;
             }
@@ -189,45 +284,26 @@ namespace lz_like_strat {
             next_sym = text[txt_pos++];
             while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
 
-            if constexpr (p_round) {
-                prev_hash = prev_fps[prev_sym];
-                curr_hash = prev_fps[curr_sym];
-            }
+            prev_hash = prev_fps[prev_sym];
+            curr_hash = prev_fps[curr_sym];
 
             bool local_minimum;
 
             while(txt_pos<txt_size && next_sym!=sep_sym){
 
-                if constexpr (p_round){
-                    next_hash = prev_fps[next_sym];
-                    local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
-                }else{
-                    local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
-                }
+                next_hash = prev_fps[next_sym];
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
 
                 if(local_minimum){
                     phrase_len = rb-lb;
                     mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
-                    if constexpr (p_round){
-                        parse[parse_size++] = mt_sym+1;
-                    }else{//store the metasymbol in place
-                        assert(text[lb]!=dummy_sym);
-                        if(!inserted){
-                            text[lb] = mt_sym+1;
-                            memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));
-                        }
-                        parse_size++;
-                    }
+                    parse[parse_size++] = mt_sym+1;
                     lb = rb;
                 }
 
                 rb = txt_pos-1;
-                if constexpr (p_round){
-                    prev_hash = curr_hash;
-                    curr_hash = next_hash;
-                } else {
-                    prev_sym = curr_sym;
-                }
+                prev_hash = curr_hash;
+                curr_hash = next_hash;
 
                 curr_sym = next_sym;
                 next_sym = text[txt_pos++];
@@ -238,54 +314,20 @@ namespace lz_like_strat {
             assert(text[lb+phrase_len]==sep_sym);
             mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
 
-            if constexpr (p_round){
-                parse[parse_size++] = mt_sym+1;
-                parse[parse_size++] = 0;
-            } else{//replace the phase with the metasymbol in place
-                assert(text[lb]!=dummy_sym);
-                if(!inserted){
-                    text[lb] = mt_sym+1;//store the metabmol in the first phrase position
-                    memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-                }
-                text[lb+phrase_len] = 0;
-                parse_size+=2;//+1 for the separator symbol
-            }
+            parse[parse_size++] = mt_sym+1;
+            parse[parse_size++] = 0;
             n_strings++;
         }
 
         map.shrink_to_fit();
         map.destroy_table();
 
-        assert(map.phrase_set.size()<dummy_sym);
-
         std::vector<uint32_t> perm;
-        create_meta_sym<sym_type, p_round>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+        create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
 
-        if constexpr (p_round){
-            for(off_t i=0;i<parse_size;i++){
-                assert(parse[i]<perm.size());
-                parse[i] = perm[parse[i]];
-            }
-        }else{
-            // replace the parts of the text that
-            // we use as sources for the phases
-            mt_sym =0;
-            while(mt_sym<map.phrase_set.size()) {
-                lb = map.phrase_set[mt_sym].source/sizeof(sym_type);
-                phrase_len = map.phrase_set[mt_sym].len/sizeof(sym_type);
-                text[lb] = mt_sym+1;//store the metasymol in the first phrase position
-                memset(&text[lb+1], dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-                mt_sym++;
-            }
-
-            off_t i=0, k=0;
-            while(i<txt_size){
-                assert(text[i]<perm.size());
-                text[k++] = perm[text[i]];
-                i++;
-                while(i<txt_size && text[i]==dummy_sym) i++;
-            }
-            assert(k==parse_size);
+        for(off_t i=0;i<parse_size;i++){
+            assert(parse[i]<perm.size());
+            parse[i] = perm[parse[i]];
         }
         return parse_size;
     }
@@ -308,21 +350,16 @@ namespace lz_like_strat {
         chunk.p_gram.sep_tsym = chunk.sep_sym;
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
 
-        off_t parse_size = parsing_round<sym_type, true>(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
-                                                         n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
-        sep_sym = 0;
+        off_t parse_size = first_parsing_round(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
+                                               n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         off_t size_limit = n_strings*2;
-        auto * new_parse = (text_chunk::size_type *)chunk.text;
         p_round++;
 
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
-            parse_size = parsing_round<text_chunk::size_type, false>(chunk.parse, parse_size, new_parse, n_strings,
-                                                                     sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
-            //std::swap(chunk.parse, new_parse);
+            parse_size = inplace_parsing_round(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
             p_round++;
         }
-
         chunk.p_gram.add_compressed_string(chunk.parse, parse_size);
     }
 
