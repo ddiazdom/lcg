@@ -65,6 +65,12 @@ struct lvl_metadata_type{
     }
 };
 
+struct str_perm_val{
+    size_t txt_id;
+    size_t first_str;
+    size_t last_str;
+};
+
 template<class ter_type, bool mmap_allocator=false>
 struct partial_gram {
 
@@ -72,8 +78,7 @@ struct partial_gram {
     typedef bitstream<size_t, mmap_allocator> stream_type;
 
     size_t text_size=0;
-    size_t first_string=0;
-    size_t last_string=0;
+    size_t txt_id=0;
     ter_type max_tsym = std::numeric_limits<ter_type>::max();
     ter_type sep_tsym = 0;
     size_t lvl = 0;
@@ -92,8 +97,7 @@ struct partial_gram {
 
     partial_gram& swap(partial_gram& other){
         std::swap(text_size, other.lvl);
-        std::swap(first_string, other.lvl);
-        std::swap(last_string, other.lvl);
+        std::swap(txt_id, other.lvl);
         std::swap(max_tsym, other.lvl);
         std::swap(sep_tsym, other.lvl);
         std::swap(lvl, other.lvl);
@@ -106,8 +110,7 @@ struct partial_gram {
     size_t serialize(std::ofstream &ofs){
         assert(lvl==rules.size());
         size_t written_bytes = serialize_elm(ofs, text_size);
-        written_bytes += serialize_elm(ofs, first_string);
-        written_bytes += serialize_elm(ofs, last_string);
+        written_bytes += serialize_elm(ofs, txt_id);
         written_bytes += serialize_elm(ofs, max_tsym);
         written_bytes += serialize_elm(ofs, sep_tsym);
         written_bytes += serialize_elm(ofs, lvl);
@@ -126,8 +129,7 @@ struct partial_gram {
 
     void load_metadata(std::ifstream &ifs){
         load_elm(ifs, text_size);
-        load_elm(ifs, first_string);
-        load_elm(ifs, last_string);
+        load_elm(ifs, txt_id);
         load_elm(ifs, max_tsym);
         load_elm(ifs, sep_tsym);
         load_elm(ifs, lvl);
@@ -154,13 +156,12 @@ struct partial_gram {
         assert(lvl==(metadata.size()-1));
 
         write(fd, &text_size, sizeof(size_t));
-        write(fd, &first_string, sizeof(size_t));
-        write(fd, &last_string, sizeof(size_t));
+        write(fd, &txt_id, sizeof(size_t));
         write(fd, &max_tsym, sizeof(size_t));
         write(fd, &sep_tsym, sizeof(size_t));
         write(fd, &lvl, sizeof(size_t));
         write(fd, &longest_rule, sizeof(size_t));
-        size_t written_bytes = 7*sizeof(size_t);
+        size_t written_bytes = 6*sizeof(size_t);
 
         write(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));
         written_bytes += metadata.size()*sizeof(lvl_metadata_type);
@@ -176,13 +177,12 @@ struct partial_gram {
 
     size_t load_from_fd(int fd){
         read(fd, &text_size, sizeof(size_t));
-        read(fd, &first_string, sizeof(size_t));
-        read(fd, &last_string, sizeof(size_t));
+        read(fd, &txt_id, sizeof(size_t));
         read(fd, &max_tsym, sizeof(size_t));
         read(fd, &sep_tsym, sizeof(size_t));
         read(fd, &lvl, sizeof(size_t));
         read(fd, &longest_rule, sizeof(size_t));
-        size_t read_bytes = 7*sizeof(size_t);
+        size_t read_bytes = 6*sizeof(size_t);
 
         for(size_t i=lvl;i<rules.size();i++){
             rules[i].destroy();
@@ -267,17 +267,33 @@ struct partial_gram {
         lvl++;
     }
 
-    void reorder_strings(const std::vector<std::pair<size_t, size_t>>& perm_ranges){
+    //string_ranges encodes the original order of the strings that were merged in this partial grammar
+    //the pair is (txt_chunk_id, n_str):
+    void reorder_strings(std::vector<std::pair<size_t, size_t>>& string_ranges){
+
         stream_type permuted_strings;
         permuted_strings.reserve_in_bits(metadata.back().n_bits());
+
+        std::vector<str_perm_val> sorted_str_ranges(string_ranges.size());
+        size_t acc_strings=0;
+        for(size_t i=0;i<string_ranges.size();i++){
+            sorted_str_ranges[i].txt_id = string_ranges[i].first;
+            sorted_str_ranges[i].first_str = acc_strings;
+            sorted_str_ranges[i].last_str = acc_strings+string_ranges[i].second-1;
+            acc_strings+=string_ranges[i].second;
+        }
+
+        std::sort(sorted_str_ranges.begin(), sorted_str_ranges.end(), [](auto const& a, auto const&b){
+            return a.txt_id<b.txt_id;
+        });
 
         size_t pos =0;
         size_t width = metadata.back().sym_width;
         size_t str_sym;
-        for(auto const& str_range : perm_ranges){
-            for(size_t str=str_range.first;str<=str_range.second;str++){
-                str_sym = rules[lvl-1].read(pos*width, (pos+1)*width-1);
-                permuted_strings.write(str*width, (str+1)*width-1, str_sym);
+        for(auto const& str_range : sorted_str_ranges){
+            for(size_t str=str_range.first_str;str<=str_range.last_str;str++){
+                str_sym = rules[lvl-1].read(str*width, (str+1)*width-1);
+                permuted_strings.write(pos*width, (pos+1)*width-1, str_sym);
                 pos++;
             }
         }
@@ -287,8 +303,7 @@ struct partial_gram {
 
     void reset_grammar(){
         text_size=0;
-        first_string=0;
-        last_string=0;
+        txt_id=0;
         sep_tsym=0;
         lvl=0;
         longest_rule=0;

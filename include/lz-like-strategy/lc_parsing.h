@@ -349,6 +349,7 @@ namespace lz_like_strat {
         chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
         chunk.p_gram.sep_tsym = chunk.sep_sym;
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
+        chunk.p_gram.txt_id = chunk.id;
 
         off_t parse_size = first_parsing_round(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
                                                n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
@@ -435,17 +436,11 @@ namespace lz_like_strat {
             //
 
             size_t proc_syms=0;
-            size_t acc_strings=0, n_strings;
             while (rem_bytes > 0) {
 
                 while(true) {
                     chunks_to_merge.pop(h_node);
                     if(h_node.chunk_id==next_chunk){
-
-                        n_strings = text_chunks[h_node.buff_idx].p_gram.tot_strings();
-                        text_chunks[h_node.buff_idx].p_gram.first_string = acc_strings;
-                        text_chunks[h_node.buff_idx].p_gram.last_string = acc_strings+n_strings-1;
-                        acc_strings+=n_strings;
 
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
@@ -508,11 +503,6 @@ namespace lz_like_strat {
 
                     if(h_node.chunk_id==next_chunk) {
 
-                        n_strings = text_chunks[h_node.buff_idx].p_gram.tot_strings();
-                        text_chunks[h_node.buff_idx].p_gram.first_string = acc_strings;
-                        text_chunks[h_node.buff_idx].p_gram.last_string = acc_strings+n_strings-1;
-                        acc_strings+=n_strings;
-
                         size_t g_bytes = text_chunks[h_node.buff_idx].p_gram.serialize_to_fd(fd_w);
                         std::cout<<report_space(text_chunks[h_node.buff_idx].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
@@ -557,8 +547,8 @@ namespace lz_like_strat {
                 }
 
                 compress_text_chunk<sym_type>(text_chunks[buff_id], p_opts.p_seeds);
-                memset(text_chunks[buff_id].buffer, 0, text_chunks[buff_id].buffer_bytes);
 
+                memset(text_chunks[buff_id].buffer, 0, text_chunks[buff_id].buffer_bytes);
                 chunks_to_merge.push({text_chunks[buff_id].id, buff_id});
             }
         };
@@ -604,8 +594,8 @@ namespace lz_like_strat {
         while(i<n_threads && rem_bytes>0){
             read_bytes = initial_grams[i].first.load_from_fd(fd_r);
             //store the range of strings this partial gram covers
-            initial_grams[i].second.push_back({initial_grams[i].first.first_string,
-                                               initial_grams[i].first.last_string});
+            initial_grams[i].second.push_back({initial_grams[i].first.txt_id,
+                                               initial_grams[i].first.tot_strings()});
             rem_bytes-=read_bytes;
             av_buff_queue.push({i, 0});
             i++;
@@ -646,6 +636,7 @@ namespace lz_like_strat {
                     //store the range of strings this partial gram covers
                     initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
                     initial_grams[i].first.destroy_gram();
+                    destroy(initial_grams[i].second);
                 }
                 initial_grams[0].second.shrink_to_fit();
 #ifdef __linux__
@@ -675,13 +666,11 @@ namespace lz_like_strat {
             while (true) {
                 res = gram_to_merge_queue.pop(buff_id);
                 if (!res) break;
-                //report_mem_peak();
-                //std::cout<<grams_to_merge[buff_id].first_string<<" --- "<<grams_to_merge[buff_id].last_string<<std::endl;
                 merge_two_grammars<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_opts.p_seeds);
 
                 if(n_threads>1){
-                    initial_grams[idx].second.push_back({grams_to_merge[buff_id].first_string,
-                                                         grams_to_merge[buff_id].last_string});
+                    initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
+                                                         grams_to_merge[buff_id].tot_strings()});
                 }
                 av_buff_queue.push({buff_id, initial_grams[idx].first.text_size});
             }
