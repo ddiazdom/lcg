@@ -19,6 +19,7 @@
 #include "lz_like_map.h"
 #include "grammar.h"
 #include "cds/mmap_allocator.h"
+#include "cds/vbyte_encoding.h"
 
 namespace lz_like_strat {
 
@@ -31,7 +32,7 @@ namespace lz_like_strat {
         std::vector<uint64_t> p_seeds;
     };
 
-    struct heap_node{
+    /*struct heap_node{
         size_t chunk_id;
         size_t buff_idx;
     };
@@ -40,11 +41,11 @@ namespace lz_like_strat {
             return a.chunk_id>b.chunk_id;
         }
     };
-    typedef ts_priority_queue<heap_node, std::vector<heap_node>, heap_node_compare> min_heap_type;
+    typedef ts_priority_queue<heap_node, std::vector<heap_node>, heap_node_compare> min_heap_type;*/
 
     template<class sym_type, bool p_round>
     off_t create_meta_sym(std::vector<uint32_t>& mt_perm, uint64_t pf_seed,
-                         const lz_like_map::phrase_list_t & phrase_set,
+                         const typename lz_like_map<sym_type>::phrase_list_t& phrase_set,
                          sym_type * text, off_t txt_size,
                          std::vector<uint64_t>& prev_fps,
                          partial_gram<uint8_t>& p_gram){
@@ -55,8 +56,8 @@ namespace lz_like_strat {
 
         for(size_t i=0;i<phrase_set.size();i++) {
             perm[i].first = i;
-            source = phrase_set[i].source/sizeof(sym_type);
-            end = source + (phrase_set[i].len/sizeof(sym_type));
+            source = phrase_set[i].source;
+            end = source + phrase_set[i].len;
             for(size_t j=source;j<end;j++){
                 assert(text[j]>0);
                 assert(text[j]<prev_fps.size());
@@ -83,9 +84,9 @@ namespace lz_like_strat {
                     std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     //TODO testing
                     for(off_t k=prev_pos;k<i;k++) {
-                        std::cout<<"sorted pos: "<<k<<" orig pos: "<<perm[k].first<<" len "<<phrase_set[perm[k].first].len/sizeof(sym_type)<< " source " << phrase_set[perm[k].first].source/sizeof(sym_type)<< " -> ";
-                        off_t s = phrase_set[perm[k].first].source/sizeof(sym_type);
-                        off_t len = phrase_set[perm[k].first].len/sizeof(sym_type);
+                        std::cout<<"sorted pos: "<<k<<" orig pos: "<<perm[k].first<<" len "<<phrase_set[perm[k].first].len<< " source " << phrase_set[perm[k].first].source<< " -> ";
+                        off_t s = phrase_set[perm[k].first].source;
+                        off_t len = phrase_set[perm[k].first].len;
                         assert(s<txt_size);
 
                         fp_sequence.clear();
@@ -100,13 +101,13 @@ namespace lz_like_strat {
                     //sort the range [prev_pos..i-1]
                     std::sort(perm.begin()+prev_pos, perm.begin()+i, [&](auto a, auto b) -> bool{
 
-                        lz_like_map::phrase_t phrase_a = phrase_set[a.first];
-                        auto data_a = (sym_type *)&text[phrase_a.source/sizeof(sym_type)];
-                        off_t len_a = phrase_a.len/sizeof(sym_type);
+                        typename lz_like_map<sym_type>::phrase_t phrase_a = phrase_set[a.first];
+                        sym_type * data_a = &text[phrase_a.source];
+                        off_t len_a = phrase_a.len;
 
-                        lz_like_map::phrase_t phrase_b = phrase_set[b.first];
-                        auto data_b = (sym_type *)&text[phrase_b.source/sizeof(sym_type)];
-                        off_t len_b = phrase_b.len/sizeof(sym_type);
+                        typename lz_like_map<sym_type>::phrase_t phrase_b = phrase_set[b.first];
+                        sym_type * data_b = &text[phrase_b.source];
+                        off_t len_b = phrase_b.len;
 
                         size_t len = std::min(len_a, len_b);
                         size_t j=0;
@@ -120,6 +121,7 @@ namespace lz_like_strat {
                         }
                     });
                 }
+
                 prev_pos = i;
                 prev_hash = perm[i].second;
             }
@@ -149,7 +151,7 @@ namespace lz_like_strat {
         uint32_t mt_sym, sep_sym =0;
         size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
         off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
-        lz_like_map map((uint8_t *)text);
+        lz_like_map<uint32_t> map(text);
 
         bool inserted;
         n_strings = 0;
@@ -166,7 +168,7 @@ namespace lz_like_strat {
 
             if(curr_sym==sep_sym){
                 phrase_len = rb-lb;
-                mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+                mt_sym = map.insert(lb, phrase_len, inserted);
                 assert(text[rb]==sep_sym);
                 if(!inserted){
                     //we can not replace the first phrase occurrence as we use it as source for the dictionary
@@ -190,7 +192,7 @@ namespace lz_like_strat {
 
                 if(local_minimum){
                     phrase_len = rb-lb;
-                    mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+                    mt_sym = map.insert(lb, phrase_len, inserted);
                     if(!inserted){
                         //we can not replace the first phrase occurrence as we use it as source for the dictionary
                         assert(text[lb]!=dummy_sym);
@@ -211,7 +213,7 @@ namespace lz_like_strat {
 
             phrase_len = txt_pos-1-lb;
             assert(text[lb+phrase_len]==sep_sym);
-            mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+            mt_sym = map.insert(lb, phrase_len, inserted);
             if(!inserted){
                 //we can not replace the first phrase occurrence as we use it as source for the dictionary
                 assert(text[lb]!=dummy_sym);
@@ -232,7 +234,7 @@ namespace lz_like_strat {
         create_meta_sym<uint32_t, false>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
 
         // create the parse in place
-        map.insert_dummy_entry({uint32_t(txt_size*sym_bytes), 0});
+        map.insert_dummy_entry({uint32_t(txt_size), 0});
         size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
         mt_sym = 0, lb = 0;
         off_t i=0, k=0;
@@ -240,10 +242,126 @@ namespace lz_like_strat {
         while(mt_sym<tot_phrases) {
             assert(i==lb);
             text[k++] = perm[mt_sym+1];
-            i+= map.phrase_set[mt_sym].len/sym_bytes;//move out of the phrase boundary
+            i+= map.phrase_set[mt_sym].len;//move out of the phrase boundary
 
             mt_sym++;
-            lb = map.phrase_set[mt_sym].source/sym_bytes;//position for the next phrase
+            lb = map.phrase_set[mt_sym].source;//position for the next phrase
+
+            while(i<lb){//process the text area between consecutive phrases
+                assert(text[i]<perm.size());
+                text[k++] = perm[text[i]];
+                i++;
+                while(i<lb && text[i]==dummy_sym) i++;
+            }
+        }
+        assert(k==parse_size);
+        return parse_size;
+    }
+
+    // this method parses the text and store the parse in the text itself.
+    // It only works for parsing rounds other than the first one because the length of symbol each
+    // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
+    off_t inplace_first_par_round(uint8_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
+                                  std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+
+        uint32_t mt_sym, sep_sym =0;
+        size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
+        off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
+        lz_like_map<uint8_t> map(text);
+
+        bool inserted;
+        n_strings = 0;
+        off_t sym_bytes = sizeof(uint32_t);
+
+        while(txt_pos<txt_size){
+
+            lb = txt_pos;
+            prev_sym = text[txt_pos++];
+
+            curr_sym = text[txt_pos++];
+            while(txt_pos<txt_size && curr_sym==prev_sym) curr_sym = text[txt_pos++];
+            rb = txt_pos-1;
+
+            if(curr_sym==sep_sym){
+                phrase_len = rb-lb;
+                mt_sym = map.insert(lb, phrase_len, inserted);
+                assert(text[rb]==sep_sym);
+                if(!inserted){
+                    //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                    assert(text[lb]!=dummy_sym);
+                    text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
+                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+                }
+                text[rb] = sep_sym;
+                parse_size+=2;//+1 for the separator symbol
+                n_strings++;
+                continue;
+            }
+
+            next_sym = text[txt_pos++];
+            while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            bool local_minimum;
+
+            while(txt_pos<txt_size && next_sym!=sep_sym){
+
+                local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
+
+                if(local_minimum){
+                    phrase_len = rb-lb;
+                    mt_sym = map.insert(lb, phrase_len, inserted);
+                    if(!inserted){
+                        //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                        assert(text[lb]!=dummy_sym);
+                        text[lb] = mt_sym+1;
+                        memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
+                    }
+                    parse_size++;
+                    lb = rb;
+                }
+
+                rb = txt_pos-1;
+                prev_sym = curr_sym;
+
+                curr_sym = next_sym;
+                next_sym = text[txt_pos++];
+                while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            }
+
+            phrase_len = txt_pos-1-lb;
+            assert(text[lb+phrase_len]==sep_sym);
+            mt_sym = map.insert(lb, phrase_len, inserted);
+            if(!inserted){
+                //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                assert(text[lb]!=dummy_sym);
+                text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+            }
+            text[lb+phrase_len] = sep_sym;
+            parse_size+=2;//+1 for the separator symbol
+            n_strings++;
+        }
+
+        map.shrink_to_fit();
+        map.destroy_table();
+
+        assert(map.phrase_set.size()<dummy_sym);
+
+        std::vector<uint32_t> perm;
+        create_meta_sym<uint8_t, false>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+
+        // create the parse in place
+        map.insert_dummy_entry({uint32_t(txt_size), 0});
+        size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
+        mt_sym = 0, lb = 0;
+        off_t i=0, k=0;
+
+        while(mt_sym<tot_phrases) {
+            assert(i==lb);
+            text[k++] = perm[mt_sym+1];
+            i+= map.phrase_set[mt_sym].len;//move out of the phrase boundary
+
+            mt_sym++;
+            lb = map.phrase_set[mt_sym].source;//position for the next phrase
 
             while(i<lb){//process the text area between consecutive phrases
                 assert(text[i]<perm.size());
@@ -265,25 +383,26 @@ namespace lz_like_strat {
 
         text_chunk::size_type mt_sym;
         off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
-        lz_like_map map((uint8_t *)text);
+        lz_like_map map(text);
 
         bool inserted;
         n_strings = 0;
-        off_t sym_bytes = sizeof(uint8_t);
 
+        auto start = std::chrono::steady_clock::now();
         while(txt_pos<txt_size){
 
             lb = txt_pos;
             prev_sym = text[txt_pos++];
 
             curr_sym = text[txt_pos++];
-            while(txt_pos<txt_size && curr_sym==prev_sym) curr_sym = text[txt_pos++];
+            while(curr_sym==prev_sym && txt_pos<txt_size) curr_sym = text[txt_pos++];
             rb = txt_pos-1;
 
             if(curr_sym==sep_sym){
                 phrase_len = rb-lb;
-                mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
-                assert(text[rb]==sep_sym);
+                mt_sym = map.insert(lb, phrase_len, inserted);
+                //assert(text[rb]==sep_sym);
+
                 parse[parse_size++] = mt_sym+1;
                 parse[parse_size++] = 0;
                 n_strings++;
@@ -291,21 +410,22 @@ namespace lz_like_strat {
             }
 
             next_sym = text[txt_pos++];
-            while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            while(next_sym==curr_sym && txt_pos<txt_size) next_sym = text[txt_pos++];
 
             prev_hash = prev_fps[prev_sym];
             curr_hash = prev_fps[curr_sym];
 
             bool local_minimum;
 
-            while(txt_pos<txt_size && next_sym!=sep_sym){
+            while(next_sym!=sep_sym && txt_pos<txt_size){
 
                 next_hash = prev_fps[next_sym];
                 local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
 
                 if(local_minimum){
                     phrase_len = rb-lb;
-                    mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+                    mt_sym = map.insert(lb, phrase_len, inserted);
+
                     parse[parse_size++] = mt_sym+1;
                     lb = rb;
                 }
@@ -316,12 +436,12 @@ namespace lz_like_strat {
 
                 curr_sym = next_sym;
                 next_sym = text[txt_pos++];
-                while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+                while(next_sym==curr_sym && txt_pos<txt_size) next_sym = text[txt_pos++];
             }
 
             phrase_len = txt_pos-1-lb;
             assert(text[lb+phrase_len]==sep_sym);
-            mt_sym = map.insert(lb*sym_bytes, phrase_len*sym_bytes, inserted);
+            mt_sym = map.insert(lb, phrase_len, inserted);
 
             parse[parse_size++] = mt_sym+1;
             parse[parse_size++] = 0;

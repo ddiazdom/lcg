@@ -205,7 +205,7 @@ struct partial_gram {
     }
 
     template<class sym_type>
-    void append_new_lvl(sym_type* text, const lz_like_map::phrase_list_t &phrase_set, size_t tot_symbols,
+    void append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols,
                         std::vector<std::pair<uint32_t, uint64_t>>& perm){
 
         lvl_metadata_type lvl_met{};
@@ -220,8 +220,8 @@ struct partial_gram {
         size_t acc_bits=0;
         for(size_t i=0;i<phrase_set.size();i++){
             size_t idx = perm[i].first;
-            uint32_t source = phrase_set[idx].source/sizeof(sym_type);
-            uint32_t len = (phrase_set[idx].len/sizeof(sym_type));
+            uint32_t source = phrase_set[idx].source;
+            uint32_t len = phrase_set[idx].len;
             if(len>longest_rule) longest_rule = len;
             uint32_t last = source + len-1;
             for(size_t j=source;j<last;j++){
