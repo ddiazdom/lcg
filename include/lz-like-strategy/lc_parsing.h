@@ -374,9 +374,142 @@ namespace lz_like_strat {
         return parse_size;
     }
 
-    off_t first_parsing_round(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
-                              off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                              std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    off_t first_p_round_bck(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
+                            off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                            std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+
+        size_t prev_sym, curr_sym, next_sym;
+        uint64_t prev_hash, curr_hash, next_hash;
+
+        text_chunk::size_type mt_sym;
+        off_t txt_pos = txt_size-1, parse_size = 0, phrase_len, lb, rb;
+        lz_like_map map(text);
+
+        off_t parse_distance, offset;
+        std::vector<uint32_t> delim_positions;
+
+        bool inserted;
+        n_strings = 0;
+
+        while(txt_pos>0){
+
+            assert(text[txt_pos]==sep_sym);
+            delim_positions.push_back(txt_pos);
+
+            rb = txt_pos;
+            prev_sym = text[--txt_pos];
+
+            curr_sym = text[--txt_pos];
+            while(curr_sym==prev_sym && txt_pos>0) curr_sym = text[--txt_pos];
+
+            if(curr_sym==sep_sym){
+                lb = txt_pos+1;
+                phrase_len = rb-lb;
+
+                offset = rb+(parse_size*4);
+                parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+                mt_sym = map.insert(lb, phrase_len, inserted);
+                parse[parse_size++] = mt_sym+1;
+
+                parse[parse_size++] = 0;
+                continue;
+            }
+
+            next_sym = text[--txt_pos];
+            while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
+
+            prev_hash = prev_fps[prev_sym];
+            curr_hash = prev_fps[curr_sym];
+
+            bool local_minimum;
+
+            while(next_sym!=sep_sym && txt_pos>0){
+
+                next_hash = prev_fps[next_sym];
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
+                if(local_minimum){
+                    lb = txt_pos+1;
+                    phrase_len = rb-lb;
+
+                    offset = rb+(parse_size*4);
+                    parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+                    mt_sym = map.insert(lb, phrase_len, inserted);
+                    parse[parse_size++] = mt_sym+1;
+                    rb = lb;
+                }
+
+                prev_hash = curr_hash;
+                curr_hash = next_hash;
+
+                curr_sym = next_sym;
+                next_sym = text[--txt_pos];
+                while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
+            }
+
+            if(txt_pos==0){
+                next_hash = prev_fps[next_sym];
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
+                if(local_minimum){
+                    lb = txt_pos+1;
+                    phrase_len = rb-lb;
+
+                    offset = rb+(parse_size*4);
+                    parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+                    mt_sym = map.insert(lb, phrase_len, inserted);
+                    parse[parse_size++] = mt_sym+1;
+                    rb = lb;
+                }
+                lb = 0;
+            }else{
+                lb=txt_pos+1;
+            }
+
+            phrase_len = rb-lb;
+
+            offset = rb+(parse_size*4);
+            parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+            mt_sym = map.insert(lb, phrase_len, inserted);
+            parse[parse_size++] = mt_sym+1;
+            parse[parse_size++] = 0;
+        }
+
+        map.shrink_to_fit();
+        map.destroy_table();
+        delim_positions.shrink_to_fit();
+
+        n_strings = (off_t)delim_positions.size();
+
+        std::vector<uint32_t> perm;
+        create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+
+        size_t i=0;
+        size_t j=parse_size-2;
+        while(i<j){
+            std::swap(parse[i], parse[j]);
+
+            assert(parse[i]<perm.size());
+            parse[i] = perm[parse[i]];
+
+            assert(parse[j]<perm.size());
+            parse[j] = perm[parse[j]];
+            i++;
+            j--;
+        }
+        if(i==j){
+            assert(parse[i]<perm.size());
+            parse[i] = perm[parse[i]];
+        }
+
+        return parse_size;
+    }
+
+    off_t first_p_round_fwd(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
+                            off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                            std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
         size_t prev_sym, curr_sym, next_sym;
         uint64_t prev_hash, curr_hash, next_hash;
@@ -385,10 +518,10 @@ namespace lz_like_strat {
         off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
         lz_like_map map(text);
 
+
         bool inserted;
         n_strings = 0;
 
-        auto start = std::chrono::steady_clock::now();
         while(txt_pos<txt_size){
 
             lb = txt_pos;
@@ -425,7 +558,6 @@ namespace lz_like_strat {
                 if(local_minimum){
                     phrase_len = rb-lb;
                     mt_sym = map.insert(lb, phrase_len, inserted);
-
                     parse[parse_size++] = mt_sym+1;
                     lb = rb;
                 }
@@ -480,17 +612,30 @@ namespace lz_like_strat {
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
         chunk.p_gram.txt_id = chunk.id;
 
-        off_t parse_size = first_parsing_round(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
-                                               n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        auto start = std::chrono::steady_clock::now();
+        off_t parse_size = first_p_round_bck(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
+                                             n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        auto end = std::chrono::steady_clock::now();
+        report_time(start, end , 2);
+
         off_t size_limit = n_strings*2;
         p_round++;
 
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
+
+            start = std::chrono::steady_clock::now();
             parse_size = inplace_parsing_round(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+            end = std::chrono::steady_clock::now();
+            report_time(start, end , 2);
+
             p_round++;
         }
+        start = std::chrono::steady_clock::now();
         chunk.p_gram.add_compressed_string(chunk.parse, parse_size);
+        end = std::chrono::steady_clock::now();
+        report_time(start, end , 2);
+        std::cout<<"fin"<<std::endl;
     }
 
     template<class sym_type>
@@ -821,8 +966,9 @@ namespace lz_like_strat {
         p_opts.n_threads = n_threads;
         p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
         p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
-        p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
+        //p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
         //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
+        //p_opts.chunk_size = file_size(i_file);
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = 10;
 

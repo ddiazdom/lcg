@@ -923,7 +923,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     //report_time(start, end, 2);
 
     //optional check
-    check_plain_grammar(gram, i_file);
+    //check_plain_grammar(gram, i_file);
     //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;
