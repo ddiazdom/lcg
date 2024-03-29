@@ -418,7 +418,7 @@ struct vbyte_decoder{
 
     //this assumes ptr points to the rightmost byte of a symbol in the stream
     //notice this function changes the memory address
-    inline static off_t read_backwards(uint8_t *&ptr, const uint8_t *& l_boundary, sym_type& sym) {
+    inline static off_t read_backwards(uint8_t *&ptr, uint8_t *& l_boundary, sym_type& sym) {
         assert(ptr!=l_boundary);
         assert(*ptr>=128);
 
