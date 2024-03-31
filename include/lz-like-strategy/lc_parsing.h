@@ -36,6 +36,10 @@ namespace lz_like_strat {
         uint32_t position;
         uint32_t length;
         uint32_t metasymbol;
+
+        [[nodiscard]] inline uint32_t right_end() const {
+            return position+length-1;
+        }
     };
 
     /*struct heap_node{
@@ -381,7 +385,7 @@ namespace lz_like_strat {
         return parse_size;
     }*/
 
-    off_t first_p_round_bck(uint8_t* text, off_t txt_size, off_t buffer_size,
+    off_t first_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
                             off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
                             std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
@@ -394,9 +398,11 @@ namespace lz_like_strat {
         uint32_t phrase_len;
 
         off_t parse_distance=0, offset;
-        std::vector<uint32_t> delim_positions;
-        std::vector<phrase_overflow> phrases_with_overflow;
+        std::vector<phrase_overflow> phr_with_ovf;
         uint8_t v_len;
+
+        //std::vector<std::pair<uint32_t, uint32_t>> breaks;
+        //std::cout<<int(text[txt_pos])<<std::endl;
 
         bool inserted;
         n_strings = 0;
@@ -404,7 +410,15 @@ namespace lz_like_strat {
         while(txt_pos>0){
 
             assert(text[txt_pos]==sep_sym);
-            delim_positions.push_back(txt_pos);
+
+            offset = txt_pos+1+(parse_size*4);
+            parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+            text[txt_pos] = 128;//vbyte code for 0 (the separator symbol in the next levels)
+            //breaks.emplace_back(txt_pos, parse_size);
+
+            parse_size++;
+            n_strings++;
 
             rb = txt_pos;
             prev_sym = text[--txt_pos];
@@ -420,15 +434,21 @@ namespace lz_like_strat {
                 parse_distance = offset>parse_distance ? offset : parse_distance ;
 
                 mt_sym = map.insert(lb, phrase_len, inserted)+1;
+
                 v_len = vbyte_len(mt_sym);
                 if(v_len>phrase_len){
-                    phrases_with_overflow.push_back({uint32_t(lb), phrase_len, mt_sym});
+                    phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                 }else if(!inserted){
-                    vbyte_decoder<uint32_t>::write_forward(&text[lb], mt_sym);
+                    vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
                     memset(&text[lb+v_len], 0, phrase_len-v_len);
+                    //test
+                    //uint32_t tmp;
+                    //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                    //assert(tmp==mt_sym);
+                    //breaks.emplace_back(lb+v_len-1, parse_size);
+                    //
                 }
-
-                parse_size+=2;
+                parse_size++;
                 continue;
             }
 
@@ -454,12 +474,17 @@ namespace lz_like_strat {
                     mt_sym = map.insert(lb, phrase_len, inserted)+1;
                     v_len = vbyte_len(mt_sym);
                     if(v_len>phrase_len){
-                        phrases_with_overflow.push_back({uint32_t(lb), phrase_len, mt_sym});
+                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                     }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_forward(&text[lb], mt_sym);
+                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                        //test
+                        //uint32_t tmp;
+                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                        //assert(tmp==mt_sym);
+                        //breaks.emplace_back(lb+v_len-1, parse_size);
+                        //
                         memset(&text[lb+v_len], 0, phrase_len-v_len);
                     }
-
                     parse_size++;
                     rb = lb;
                 }
@@ -485,12 +510,17 @@ namespace lz_like_strat {
                     mt_sym = map.insert(lb, phrase_len, inserted)+1;
                     v_len = vbyte_len(mt_sym);
                     if(v_len>phrase_len){
-                        phrases_with_overflow.push_back({uint32_t(lb), phrase_len, mt_sym});
+                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                     }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_forward(&text[lb], mt_sym);
+                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
                         memset(&text[lb+v_len], 0, phrase_len-v_len);
+                        //test
+                        //uint32_t tmp;
+                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                        //assert(tmp==mt_sym);
+                        //breaks.emplace_back(lb+v_len-1, parse_size);
+                        //
                     }
-
                     parse_size++;
                     rb = lb;
                 }
@@ -507,92 +537,100 @@ namespace lz_like_strat {
             mt_sym = map.insert(lb, phrase_len, inserted)+1;
             v_len = vbyte_len(mt_sym);
             if(v_len>phrase_len){
-                phrases_with_overflow.push_back({uint32_t(lb), phrase_len, mt_sym});
+                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
             }else if(!inserted){
-                vbyte_decoder<uint32_t>::write_forward(&text[lb], mt_sym);
+                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
                 memset(&text[lb+v_len], 0, phrase_len-v_len);
+                //test
+                //uint32_t tmp;
+                //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                //assert(tmp==mt_sym);
+                //breaks.emplace_back(lb+v_len-1, parse_size);
+                //
             }
-
-            parse_size+=2;
+            parse_size++;
         }
 
         map.shrink_to_fit();
         map.destroy_table();
-        delim_positions.shrink_to_fit();
-
-        n_strings = (off_t)delim_positions.size();
 
         std::vector<uint32_t> perm;
         create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
 
-        size_t mt=1;
+        mt_sym=1;
         for(auto const& phrase : map.phrase_set){
-            v_len = vbyte_len(mt);
+            v_len = vbyte_len(mt_sym);
             if(v_len<=phrase.len){
-                vbyte_decoder<uint32_t>::write_forward(&text[phrase.source], mt_sym);
+                vbyte_decoder<uint32_t>::write_right2left(&text[phrase.source], mt_sym, v_len);
                 memset(&text[phrase.source+v_len], 0, phrase.len-v_len);
+                //test
+                //uint32_t tmp;
+                //vbyte_decoder<uint32_t>::read_right2left(&text[phrase.source+v_len-1], tmp);
+                //assert(tmp==mt_sym);
+                //breaks.emplace_back(phrase.source+v_len-1, 0);
+                //
             }
-            mt++;
+            mt_sym++;
         }
 
-        std::cout<<parse_size<<" "<<n_strings<<" "<<phrases_with_overflow.size()<<" "<<report_space(txt_size)<<" "<<report_space(parse_distance)<<std::endl;
+        //std::sort(breaks.begin(), breaks.end(), std::greater<>());
+
         parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
         if(parse_distance>buffer_size){
-            exit(0);
+            mmap_reallocate(text, buffer_size, parse_distance);
+            buffer_size = parse_distance;
         }
 
-        size_t ovf_idx=0;
-        size_t dlim_idx=0;
-        off_t next_dlim_pos=delim_positions[dlim_idx];
+        off_t ovf_idx=0, next_ovf;
+        if(!phr_with_ovf.empty()){
+            next_ovf = phr_with_ovf[ovf_idx].right_end();
+        }else{
+            next_ovf=-1;
+        }
 
-        off_t next_ovf_pos = phrases_with_overflow[ovf_idx].position+phrases_with_overflow[ovf_idx].length-1;
-        uint32_t ovf_mt_sym = phrases_with_overflow[ovf_idx].metasymbol;
-
-        off_t pos = txt_pos-1;
-        while(text[pos]==0) pos--;
-        auto *parse = (uint32_t *) &text[parse_distance];
+        off_t pos = txt_size-1;
+        parse = (uint32_t *)(text+parse_distance);
         parse--;
 
-        while(pos>0){
-            if(pos==next_ovf_pos){
-                *parse = ovf_mt_sym;
-                pos-=phrases_with_overflow[ovf_idx].length;
+        //size_t br_pos=0;
+        //size_t p_pos=0;
 
-                ovf_idx++;
-                next_ovf_pos = phrases_with_overflow[ovf_idx].position+phrases_with_overflow[ovf_idx].length-1;
-                ovf_mt_sym = phrases_with_overflow[ovf_idx].metasymbol;
-            } if (pos==next_dlim_pos) {
-                *parse=0;
-                pos--;
-                next_dlim_pos = delim_positions[++dlim_idx];
-            } else{
-                *parse = mt_sym;
-                uint8_t *tmp = &text[pos];
-                pos-=vbyte_decoder<uint32_t>::read_backwards(tmp, text, mt_sym);
+        while(pos>=0){
+            if(pos==next_ovf){
+                pos -= phr_with_ovf[ovf_idx].length;
+                *parse =  perm[phr_with_ovf[ovf_idx].metasymbol];
+
+                if(ovf_idx<off_t(phr_with_ovf.size()-1)){
+                    next_ovf = phr_with_ovf[++ovf_idx].right_end();
+                }else{
+                    next_ovf=-1;
+                }
+                //std::cout<<*parse<<std::endl;
+            }  else {
+                //std::cout<<pos<<"=="<<breaks[br_pos].first<<std::endl;//" "<<(parse_distance-(p_pos*sizeof(uint32_t)))<<" "<<parse_size-p_pos<<" "<<p_pos<<"=="<<breaks[br_pos].second<<std::endl;
+                //if(breaks[br_pos].second!=0){
+                //    assert(p_pos==breaks[br_pos].second);
+                //}
+                //assert(pos==breaks[br_pos].first);
+                //br_pos++;
+                pos-=vbyte_decoder<uint32_t>::read_right2left(&text[pos], mt_sym);
+                assert(mt_sym<perm.size());
+                *parse = perm[mt_sym];
+                //std::cout<<*parse<<std::endl;
             }
+            //p_pos++;
             parse--;
-            while(text[pos]==0) pos--;
+            while(pos>next_ovf && text[pos]==0) pos--;
         }
-
+        assert(pos==-1);
         parse++;
-        /*size_t i=0;
-        size_t j=parse_size-2;
-        while(i<j){
-            std::swap(parse[i], parse[j]);
-
-            assert(parse[i]<perm.size());
-            parse[i] = perm[parse[i]];
-
-            assert(parse[j]<perm.size());
-            parse[j] = perm[parse[j]];
-            i++;
-            j--;
+        /*for(size_t i=0;i<20;i++){
+            std::cout<<parse[i]<<" ";
         }
-        if(i==j){
-            assert(parse[i]<perm.size());
-            parse[i] = perm[parse[i]];
-        }*/
-
+        std::cout<<" "<<std::endl;*/
+        assert(parse[parse_size-1]==0);
+        //std::cout<<(uintptr_t)text<<" --- "<<(uintptr_t)parse<<" --- "<<(uintptr_t)&text[txt_size-1]<<std::endl;
+        assert((uintptr_t)text<= (uintptr_t)parse && (uintptr_t)parse<= (uintptr_t)&text[txt_size-1]);
         return parse_size;
     }
 
@@ -702,11 +740,12 @@ namespace lz_like_strat {
         chunk.p_gram.txt_id = chunk.id;
 
         auto start = std::chrono::steady_clock::now();
-        off_t parse_size = first_p_round_bck(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.buffer_bytes,
+        off_t parse_size = first_p_round_bck(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.buffer_bytes, chunk.parse,
                                              n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        //off_t parse_size = first_p_round_fwd(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
+        //                                    n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         auto end = std::chrono::steady_clock::now();
         report_time(start, end , 2);
-        exit(0);
 
         off_t size_limit = n_strings*2;
         p_round++;
@@ -771,6 +810,7 @@ namespace lz_like_strat {
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
+                //std::cout<<"el final "<<int(text_chunks[chunk_id].text[text_chunks[chunk_id].text_bytes-1])<<std::endl;
 
                 //next aligned position within the buffer
                 size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);

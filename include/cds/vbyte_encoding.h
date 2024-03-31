@@ -346,6 +346,64 @@ struct vbyte_decoder{
         return len;
     }
 
+    /*inline static size_t write_right2left(uint8_t * stream, sym_type x){
+        size_t len, b=8, c= (x & 127)+128;
+        x>>=7;
+        while(x>0){
+            c += (x & 127)<<b;
+            b+=8;
+            x>>=7;
+        }
+        len = b>>3UL;//in bytes
+        memcpy(stream, &c, len);
+        return len;
+    }*/
+
+    inline static void write_right2left(uint8_t * stream, sym_type x, uint8_t vb_len){
+        size_t c;
+        switch (vb_len) {
+            case 1:
+                c = (x & 127)+128;
+            case 2:
+                c = (x & 127)+128;
+                x>>=7;
+                c += (x & 127)<<8;
+                break;
+            case 3:
+                c = (x & 127)+128;
+                x>>=7;
+                c += (x & 127)<<8;
+                x>>=7;
+                c += (x & 127)<<16;
+                break;
+            case 4:
+                c = (x & 127)+128;
+                x>>=7;
+                c += (x & 127)<<8;
+                x>>=7;
+                c += (x & 127)<<16;
+                x>>=7;
+                c += (x & 127)<<24;
+                break;
+            default:
+                exit(1);
+        }
+        memcpy(stream, &c, vb_len);
+    }
+
+    //this assumes ptr points to the rightmost byte of a vbyte-encoded symbol in the stream
+    inline static off_t read_right2left(uint8_t *ptr,  sym_type& sym) {
+        uint8_t * tmp = ptr;
+        sym=0;
+        while(*ptr<128){
+            sym = (sym<<7) + *ptr;
+            --ptr;
+        }
+        sym = (sym<<7) + (*ptr-128);
+
+        return tmp-ptr+1;
+    }
+
     static off_t read_forward(const uint8_t * ptr, sym_type& x){
         off_t i=0;
         uint8_t max_code_len = 8;
@@ -418,7 +476,7 @@ struct vbyte_decoder{
 
     //this assumes ptr points to the rightmost byte of a symbol in the stream
     //notice this function changes the memory address
-    inline static off_t read_backwards(uint8_t *&ptr, uint8_t *& l_boundary, sym_type& sym) {
+    inline static off_t read_backwards(uint8_t *&ptr, const uint8_t *& l_boundary, sym_type& sym) {
         assert(ptr!=l_boundary);
         assert(*ptr>=128);
 
