@@ -285,11 +285,10 @@ struct vbyte_reverse_iterator{
 };
 */
 
-uint8_t vbyte_len(size_t value){
-    if(value==0) return 1;
-    uint8_t n_bits = sym_width(value);
-    n_bits+=((n_bits+7)/8);
-    return (n_bits+7)/8;
+inline uint8_t vbyte_len(size_t value){
+    uint8_t n_bits = (sizeof(unsigned long)<<3) - __builtin_clzl(value | 1);
+    n_bits+=((n_bits+7)>>3);
+    return (n_bits+7)>>3;
 }
 
 template<class sym_t>

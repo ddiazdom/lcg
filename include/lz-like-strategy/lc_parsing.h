@@ -8,6 +8,7 @@
 #include <random>
 #include <fcntl.h>
 #include <cstring>
+#include "../external/xxHash-dev/xxhash.h"
 
 #include "cds/macros.h"
 #include "cds/ts_queue.h"
@@ -155,8 +156,8 @@ namespace lz_like_strat {
     // this method parses the text and store the parse in the text itself.
     // It only works for parsing rounds other than the first one because the length of symbol each
     // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
-    off_t inplace_parsing_round(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
-                                std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    off_t int_p_round_fwd(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
+                          std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
 
         uint32_t mt_sym, sep_sym =0;
         size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
@@ -167,13 +168,13 @@ namespace lz_like_strat {
         n_strings = 0;
         off_t sym_bytes = sizeof(uint32_t);
 
-        while(txt_pos<txt_size){
+        while(txt_pos<txt_size) {
 
             lb = txt_pos;
             prev_sym = text[txt_pos++];
 
             curr_sym = text[txt_pos++];
-            while(txt_pos<txt_size && curr_sym==prev_sym) curr_sym = text[txt_pos++];
+            while(curr_sym==prev_sym && txt_pos<txt_size) curr_sym = text[txt_pos++];
             rb = txt_pos-1;
 
             if(curr_sym==sep_sym){
@@ -193,10 +194,10 @@ namespace lz_like_strat {
             }
 
             next_sym = text[txt_pos++];
-            while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+            while(next_sym==curr_sym && txt_pos<txt_size) next_sym = text[txt_pos++];
             bool local_minimum;
 
-            while(txt_pos<txt_size && next_sym!=sep_sym){
+            while(next_sym!=sep_sym && txt_pos<txt_size){
 
                 local_minimum = prev_sym>curr_sym && curr_sym<next_sym;
 
@@ -218,7 +219,7 @@ namespace lz_like_strat {
 
                 curr_sym = next_sym;
                 next_sym = text[txt_pos++];
-                while(txt_pos<txt_size && next_sym==curr_sym) next_sym = text[txt_pos++];
+                while(next_sym==curr_sym && txt_pos<txt_size) next_sym = text[txt_pos++];
             }
 
             phrase_len = txt_pos-1-lb;
@@ -227,7 +228,7 @@ namespace lz_like_strat {
             if(!inserted){
                 //we can not replace the first phrase occurrence as we use it as source for the dictionary
                 assert(text[lb]!=dummy_sym);
-                text[lb] = mt_sym+1;//store the metabmol in the first phrase position
+                text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
                 memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
             }
             text[lb+phrase_len] = sep_sym;
@@ -261,9 +262,10 @@ namespace lz_like_strat {
                 assert(text[i]<perm.size());
                 text[k++] = perm[text[i]];
                 i++;
-                while(i<lb && text[i]==dummy_sym) i++;
+                while(text[i]==dummy_sym && i<lb) i++;
             }
         }
+
         assert(k==parse_size);
         return parse_size;
     }
@@ -385,9 +387,9 @@ namespace lz_like_strat {
         return parse_size;
     }*/
 
-    off_t first_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
-                            off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                            std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    off_t byte_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
+                           off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                           std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
         size_t prev_sym, curr_sym, next_sym;
         uint64_t prev_hash, curr_hash, next_hash;
@@ -436,7 +438,7 @@ namespace lz_like_strat {
                 mt_sym = map.insert(lb, phrase_len, inserted)+1;
 
                 v_len = vbyte_len(mt_sym);
-                if(v_len>phrase_len){
+                if(__builtin_expect(v_len>phrase_len, 0)){
                     phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                 }else if(!inserted){
                     vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
@@ -473,7 +475,7 @@ namespace lz_like_strat {
 
                     mt_sym = map.insert(lb, phrase_len, inserted)+1;
                     v_len = vbyte_len(mt_sym);
-                    if(v_len>phrase_len){
+                    if(__builtin_expect(v_len>phrase_len, 0)){
                         phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                     }else if(!inserted){
                         vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
@@ -509,7 +511,7 @@ namespace lz_like_strat {
 
                     mt_sym = map.insert(lb, phrase_len, inserted)+1;
                     v_len = vbyte_len(mt_sym);
-                    if(v_len>phrase_len){
+                    if(__builtin_expect(v_len>phrase_len, 0)){
                         phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
                     }else if(!inserted){
                         vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
@@ -536,7 +538,7 @@ namespace lz_like_strat {
 
             mt_sym = map.insert(lb, phrase_len, inserted)+1;
             v_len = vbyte_len(mt_sym);
-            if(v_len>phrase_len){
+            if(__builtin_expect(v_len>phrase_len, 0)){
                 phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
             }else if(!inserted){
                 vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
@@ -620,7 +622,7 @@ namespace lz_like_strat {
             }
             //p_pos++;
             parse--;
-            while(pos>next_ovf && text[pos]==0) pos--;
+            while(text[pos]==0 && pos>next_ovf) pos--;
         }
         assert(pos==-1);
         parse++;
@@ -634,9 +636,9 @@ namespace lz_like_strat {
         return parse_size;
     }
 
-    off_t first_p_round_fwd(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
-                            off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                            std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    off_t byte_p_round_fwd(uint8_t* text, off_t txt_size, text_chunk::size_type* parse,
+                           off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                           std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
         size_t prev_sym, curr_sym, next_sym;
         uint64_t prev_hash, curr_hash, next_hash;
@@ -740,8 +742,9 @@ namespace lz_like_strat {
         chunk.p_gram.txt_id = chunk.id;
 
         //auto start = std::chrono::steady_clock::now();
-        off_t parse_size = first_p_round_bck(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.buffer_bytes, chunk.parse,
-                                             n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        off_t parse_size = byte_p_round_bck(chunk.text, chunk.text_bytes / sizeof(sym_type), chunk.buffer_bytes,
+                                            chunk.parse,
+                                            n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps, chunk.p_gram);
         //off_t parse_size = first_p_round_fwd(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
         //                                    n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         //auto end = std::chrono::steady_clock::now();
@@ -754,7 +757,7 @@ namespace lz_like_strat {
             assert(parse_size>=size_limit);
 
             //start = std::chrono::steady_clock::now();
-            parse_size = inplace_parsing_round(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+            parse_size = int_p_round_fwd(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
             //end = std::chrono::steady_clock::now();
             //report_time(start, end , 2);
 
@@ -809,7 +812,6 @@ namespace lz_like_strat {
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
-                //std::cout<<"el final "<<int(text_chunks[chunk_id].text[text_chunks[chunk_id].text_bytes-1])<<std::endl;
 
                 //next aligned position within the buffer
                 //size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
