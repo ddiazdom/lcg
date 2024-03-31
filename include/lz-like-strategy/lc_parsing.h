@@ -1095,7 +1095,7 @@ namespace lz_like_strat {
         p_opts.n_threads = n_threads;
         p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
         p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
-        //p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
+        p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
         //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
         //p_opts.chunk_size = file_size(i_file);
         p_opts.page_cache_limit = 1024*1024*1024;
