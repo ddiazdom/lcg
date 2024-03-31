@@ -85,10 +85,10 @@ namespace lz_like_strat {
 
            //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
            // where ``text_len'' is the number of input symbols that fits the buffer
-           off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
+           //off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
 
            size_t old_byte_size = chunk.buffer_bytes;
-           chunk.buffer_bytes = off_t(tmp_ck_size + parse_bytes);
+           chunk.buffer_bytes = tmp_ck_size;
            //chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
            chunk.buffer = (text_chunk::size_type *) mmap_reallocate(chunk.buffer, old_byte_size, chunk.buffer_bytes);
            chunk.text = (sym_type *)chunk.buffer;

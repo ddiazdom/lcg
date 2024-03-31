@@ -739,13 +739,13 @@ namespace lz_like_strat {
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
         chunk.p_gram.txt_id = chunk.id;
 
-        auto start = std::chrono::steady_clock::now();
+        //auto start = std::chrono::steady_clock::now();
         off_t parse_size = first_p_round_bck(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.buffer_bytes, chunk.parse,
                                              n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
         //off_t parse_size = first_p_round_fwd(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
         //                                    n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
-        auto end = std::chrono::steady_clock::now();
-        report_time(start, end , 2);
+        //auto end = std::chrono::steady_clock::now();
+        //report_time(start, end , 2);
 
         off_t size_limit = n_strings*2;
         p_round++;
@@ -753,18 +753,17 @@ namespace lz_like_strat {
         while(parse_size!=size_limit){
             assert(parse_size>=size_limit);
 
-            start = std::chrono::steady_clock::now();
+            //start = std::chrono::steady_clock::now();
             parse_size = inplace_parsing_round(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
-            end = std::chrono::steady_clock::now();
-            report_time(start, end , 2);
+            //end = std::chrono::steady_clock::now();
+            //report_time(start, end , 2);
 
             p_round++;
         }
-        start = std::chrono::steady_clock::now();
+        //start = std::chrono::steady_clock::now();
         chunk.p_gram.add_compressed_string(chunk.parse, parse_size);
-        end = std::chrono::steady_clock::now();
-        report_time(start, end , 2);
-        std::cout<<"fin"<<std::endl;
+        //end = std::chrono::steady_clock::now();
+        //report_time(start, end , 2);
     }
 
     template<class sym_type>
@@ -802,9 +801,9 @@ namespace lz_like_strat {
 
                 //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
                 // where ``text_len'' is the number of input symbols that fits the buffer
-                off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
+                //off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
 
-                text_chunks[chunk_id].buffer_bytes = off_t(tmp_ck_size + parse_bytes);
+                text_chunks[chunk_id].buffer_bytes = (tmp_ck_size*115)/100;
                 //text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
                 text_chunks[chunk_id].buffer = (text_chunk::size_type *) mmap_allocate(text_chunks[chunk_id].buffer_bytes);
                 text_chunks[chunk_id].id = chunk_id;
@@ -813,8 +812,8 @@ namespace lz_like_strat {
                 //std::cout<<"el final "<<int(text_chunks[chunk_id].text[text_chunks[chunk_id].text_bytes-1])<<std::endl;
 
                 //next aligned position within the buffer
-                size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
-                text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
+                //size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
+                //text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
                 //this value is enough for 4GB text chunks
                 text_chunks[chunk_id].p_gram.rules.resize(32);
@@ -864,8 +863,8 @@ namespace lz_like_strat {
                 read_chunk_from_file<sym_type>(fd_r, rem_bytes, r_acc_bytes, text_chunks[buff_id]);
 
                 //next aligned position
-                size_t parse_start =  INT_CEIL(text_chunks[buff_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
-                text_chunks[buff_id].parse = (text_chunk::size_type *) &text_chunks[buff_id].text[parse_start/sizeof(sym_type)];
+                //size_t parse_start =  INT_CEIL(text_chunks[buff_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
+                //text_chunks[buff_id].parse = (text_chunk::size_type *) &text_chunks[buff_id].text[parse_start/sizeof(sym_type)];
 
                 buffers_to_process.push(buff_id);
 #ifdef __linux__
@@ -1126,7 +1125,7 @@ namespace lz_like_strat {
         std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
         std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
         std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
-        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(p_opts.chunk_size*p_opts.n_chunks*3))<<"\n"<<std::endl;
+        std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;
 
         std::string ct_p_grams_file = tmp_ws.get_file("concat_p_grams");
         build_partial_grammars<sym_type>(p_opts, i_file, ct_p_grams_file);
