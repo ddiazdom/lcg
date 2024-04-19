@@ -10,100 +10,9 @@
 #include "cds/cdt_common.hpp"
 #include "cds/int_array.h"
 #include "cds/file_streams.hpp"
-#include "hashing.h"
 #include "cds/utils.h"
-#include "lz-like-strategy/partial_gram.h"
 
-struct lc_gram_buffer_t{
-
-    size_t                             n{}; //n: number of symbols
-    size_t                             r{}; //r: number of grammar symbols (nter + ter)
-    size_t                             prev_r{}; //r: number of grammar symbols (nter + ter)
-
-    size_t                             c{}; //c: length of the right-hand of the start symbol
-    size_t                             g{}; //g: sum of the rules' right-hand sides
-    size_t                             max_tsym{}; //highest terminal symbol
-    size_t                             long_str{};
-    uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
-    std::pair<size_t, size_t>          rl_rules={0,0}; //mark the range of run-length compressed rules
-
-    std::string                        rules_file; // rules are concatenated in this array
-    std::vector<uint8_t>               terminals;
-    std::vector<hashing>               par_functions;
-
-    o_file_stream<size_t>              rules_buffer;
-    std::vector<off_t>&                str_boundaries;//
-    std::vector<size_t>                lvl_rules;     // number of rules generated in every parsing round
-    std::vector<size_t>                lvl_size;      // number of rules generated in every parsing round
-
-
-    lc_gram_buffer_t(std::string& rules_f,
-                     std::vector<uint8_t>& alphabet,
-                     std::vector<off_t>& str_bd_,
-                     size_t long_str_,
-                     uint8_t sep_symbol_): sep_tsym(sep_symbol_),
-                                           rules_file(rules_f),
-                                           rules_buffer(rules_file, BUFFER_SIZE, std::ios::out),
-                                           str_boundaries(str_bd_){
-
-        terminals = alphabet;
-        n = str_boundaries.back();
-        max_tsym = terminals.back();
-        prev_r = 0;
-        r = max_tsym + 1;
-        g = r;
-        long_str = long_str_;
-
-        for(size_t i=0;i<=max_tsym; i++){
-            rules_buffer.push_back((i<<1UL) | 1UL);
-        }
-    }
-
-    ~lc_gram_buffer_t(){
-        rules_buffer.close();
-    }
-
-    template<class vector_type>
-    void create_lc_rules(std::vector<rand_order>& str_orders, vector_type& parsing_set){
-        size_t sym, tot_syms=0, len;
-        bool first;
-        for(auto & str : str_orders){
-            first = true;
-            len = str.str_len;
-            for(size_t j=0;j<len;j++){
-                sym = prev_r+parsing_set[str.str_ptr+j];
-                //assert(sym>0);
-                sym = (sym<<1UL) | first;
-                rules_buffer.push_back(sym);
-                first = false;
-            }
-            tot_syms+=len;
-        }
-        prev_r = r;
-        r += str_orders.size();
-        g += tot_syms;
-        lvl_rules.push_back(str_orders.size());
-        lvl_size.push_back(tot_syms);
-    }
-
-    template<class sym_type>
-    void insert_comp_string(std::string& input_file){
-
-        i_file_stream<sym_type> ifs(input_file, BUFFER_SIZE);
-        for(size_t i=0;i<ifs.size();i++){
-            str_boundaries[i] = i;
-            size_t sym = prev_r+ifs.read(i);
-            sym = sym<<1UL | (i==0);
-            rules_buffer.push_back(sym);
-        }
-        str_boundaries.back() = ifs.size();
-        r++;
-        g+=ifs.size();
-        c=ifs.size();
-        ifs.close();
-        assert(g==rules_buffer.size());
-    }
-};
+#include "lz-like-par-strat/partial_gram.h"
 
 template<bool is_cg=false, bool is_rl=false>
 struct lc_gram_t {
@@ -113,11 +22,12 @@ struct lc_gram_t {
     size_t                             c{}; //c: length of the right-hand of the start symbol
     size_t                             g{}; //g: sum of the rules' right-hand sides
     size_t                             s{}; //s: number of strings
-    size_t                             longest_str{}; //length of the longest string encoded in the grammar
+    //size_t                             longest_str{}; //length of the longest string encoded in the grammar
     size_t                             max_tsym{}; //highest terminal symbol
     size_t                             min_nter{}; //smallest nonterminal symbol
     size_t                             cg_mark{};
     size_t                             n_cg_rules{};
+    uint64_t                           par_seed{}; //list of hash functions from which the grammar was constructed
 
     uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
     bool                               is_simplified=false;
@@ -126,7 +36,6 @@ struct lc_gram_t {
     bool                               has_rand_access=false;
 
     std::vector<uint8_t>               terminals; //set of terminals
-    std::vector<hashing>               par_functions; //list of hash functions from which the grammar was constructed
     std::vector<size_t>                str_boundaries; // start position of every string in the compressed string
     std::vector<size_t>                lvl_rules; //number of rules generated in every round of locally-consistent parsing
 
@@ -141,155 +50,7 @@ struct lc_gram_t {
 
     lc_gram_t()= default;
 
-    explicit lc_gram_t(std::string& p_gram_file, std::vector<uint64_t>& fp_seeds_){
 
-        partial_gram<uint8_t> p_gram;
-        std::ifstream ifs(p_gram_file, std::ios::binary);
-
-        p_gram.load_metadata(ifs);
-
-        n = p_gram.txt_size();
-        r = p_gram.tot_gram_symbols();
-        g = p_gram.gram_size();
-        s = p_gram.tot_strings();
-        c = p_gram.tot_strings();
-
-        max_tsym = size_t(p_gram.max_terminal_symbol());
-        sep_tsym = p_gram.separator_symbol();
-
-        //add the set of seeds we use for the hash function
-        //TODO add the set of seeds we used for the hash functions
-        //fp_seeds = p_gram.par_functions;
-
-        lvl_rules.reserve(p_gram.metadata.size());
-        size_t acc=max_tsym+1, tmp;
-        for(size_t i=1;i<p_gram.metadata.size();i++){
-            tmp = p_gram.metadata[i].n_rules;
-            lvl_rules.push_back(acc);
-            acc+=tmp;
-        }
-        lvl_rules.push_back(acc);
-
-        rules.set_width(sym_width(r));
-        rules.resize(g);
-
-        rl_ptr.set_width(sym_width(g));
-        rl_ptr.resize(r-max_tsym);
-
-        terminals.resize(max_tsym+1);
-        for(size_t j=0;j<=max_tsym;j++){
-            rules.write(j, j);
-            terminals[j] = j;
-        }
-
-        bool last;
-        size_t rule=0, pos, width, n_bits, j=max_tsym+1, rule_start_ptr=j, sym, min_sym=0, max_sym=max_tsym;
-        bitstream<size_t> rules_buffer;
-
-        for(size_t i=0;i<p_gram.lvl;i++){
-
-            p_gram.load_next_rule_set(ifs, i, rules_buffer);
-            pos = 0;
-            width = p_gram.metadata[i+1].sym_width;
-            n_bits = p_gram.metadata[i+1].n_bits();
-
-            while(pos<n_bits){
-                sym = rules_buffer.read(pos, pos+width-1);
-                last = sym & 1UL;
-                sym = min_sym+(sym>>1);//sym is one-based
-                rules.write(j, sym);
-                pos+=width;
-                j++;
-
-                if(last){
-                    rl_ptr.write(rule, rule_start_ptr);
-                    rule_start_ptr = j;
-                    rule++;
-                }
-            }
-            min_sym = max_sym;
-            max_sym+=p_gram.metadata[i+1].n_rules;
-            assert((max_sym-max_tsym)==rule);
-            assert(pos==n_bits);
-        }
-        rules_buffer.destroy();
-        assert(rules.size()==g);
-        assert(rule==(r-(max_tsym+1)));
-        rl_ptr.write(rule, g);
-
-        size_t offset = g-c;
-        str_boundaries.resize(s+1);
-        for(size_t str=0;str<=s;str++){
-            str_boundaries[str] = offset+str;
-        }
-        assert(str_boundaries[0]==offset);
-        assert(str_boundaries.back()==rules.size());
-    }
-
-    explicit lc_gram_t(lc_gram_buffer_t& gram_buff) {
-
-        i_file_stream<size_t> rules_buffer(gram_buff.rules_file, BUFFER_SIZE);
-
-        n = gram_buff.n;
-        r = gram_buff.r;
-        g = gram_buff.g;
-        c = gram_buff.c;
-        s = gram_buff.str_boundaries.size()-1;
-        longest_str = gram_buff.long_str;
-
-        max_tsym = gram_buff.max_tsym;
-        sep_tsym = gram_buff.sep_tsym;
-
-        terminals = gram_buff.terminals;
-        par_functions = gram_buff.par_functions;
-        lvl_rules = gram_buff.lvl_rules;
-
-        run_len_nt = gram_buff.rl_rules;
-
-        rules.set_width(sym_width(r));
-        rules.resize(g);
-
-        rl_ptr.set_width(sym_width(g));
-        rl_ptr.resize(r-max_tsym);
-
-        for(size_t i=0;i<=max_tsym;i++){
-            rules.write(i, rules_buffer.read(i)>>1UL);
-        }
-
-        size_t rule=0;
-        for(size_t i=max_tsym+1;i<rules.size();i++){
-            size_t sym = rules_buffer.read(i);
-            bool first = sym & 1UL;
-
-            rules.write(i, sym>>1UL);
-            if(first){
-                rl_ptr.write(rule, i);
-                rule++;
-            }
-        }
-        assert(rules.size()==g);
-        assert(rule==(r-(max_tsym+1)));
-
-        rl_ptr.write(rule, g);
-
-        size_t offset = g-c;
-        str_boundaries.resize(gram_buff.str_boundaries.size());
-        size_t str=0;
-        for(off_t & str_boundary : gram_buff.str_boundaries){
-            str_boundaries[str++] = str_boundary + offset;
-        }
-        assert(str_boundaries[0]==offset);
-        assert(str_boundaries.back()==rules.size());
-
-        size_t acc=max_tsym+1, tmp;
-        for(unsigned long & lvl_rule : lvl_rules){
-            tmp = lvl_rule;
-            lvl_rule = acc;
-            acc+=tmp;
-        }
-        lvl_rules.push_back(acc);
-        rules_buffer.close();
-    }
 
     size_t serialize(std::ofstream &ofs){
         size_t written_bytes=0;
@@ -299,7 +60,7 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, c);
         written_bytes +=serialize_elm(ofs, s);
         written_bytes +=serialize_elm(ofs, samp_rate);
-        written_bytes +=serialize_elm(ofs, longest_str);
+        //written_bytes +=serialize_elm(ofs, longest_str);
         written_bytes +=serialize_elm(ofs, max_tsym);
         written_bytes +=serialize_elm(ofs, min_nter);
         written_bytes +=serialize_elm(ofs, sep_tsym);
@@ -311,8 +72,9 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, has_rand_access);
         written_bytes +=serialize_elm(ofs, run_len_nt.first);
         written_bytes +=serialize_elm(ofs, run_len_nt.second);
+        written_bytes +=serialize_elm(ofs, par_seed);
+
         written_bytes +=serialize_plain_vector(ofs, lvl_rules);
-        written_bytes +=serialize_plain_vector(ofs, par_functions);
 
         written_bytes +=serialize_plain_vector(ofs, terminals);
         written_bytes +=serialize_plain_vector(ofs, str_boundaries);
@@ -331,7 +93,7 @@ struct lc_gram_t {
         load_elm(ifs, c);
         load_elm(ifs, s);
         load_elm(ifs, samp_rate);
-        load_elm(ifs, longest_str);
+        //load_elm(ifs, longest_str);
         load_elm(ifs, max_tsym);
         load_elm(ifs, min_nter);
         load_elm(ifs, sep_tsym);
@@ -346,8 +108,8 @@ struct lc_gram_t {
         load_elm(ifs, has_rand_access);
         load_elm(ifs, run_len_nt.first);
         load_elm(ifs, run_len_nt.second);
+        load_elm(ifs, par_seed);
         load_plain_vector(ifs, lvl_rules);
-        load_plain_vector(ifs, par_functions);
     }
 
     void load(std::ifstream &ifs){
@@ -449,7 +211,7 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<std::endl;
         std::cout<<pad_string<<"Number of compressed strings:   "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
         std::cout<<pad_string<<"Separator symbol:               "<<(int)sep_tsym<<std::endl;
-        std::cout<<pad_string<<"Longest string:                 "<<longest_str<<std::endl;
+        //std::cout<<pad_string<<"Longest string:                 "<<longest_str<<std::endl;
         std::cout<<pad_string<<"Number of terminals:            "<<n_ter<<std::endl;
         std::cout<<pad_string<<"Number of non-terminals:        "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
         std::cout<<pad_string<<"Grammar size:                   "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;

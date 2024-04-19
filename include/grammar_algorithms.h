@@ -5,8 +5,8 @@
 #ifndef LCG_GRAMMAR_ALGORITHMS_H
 #define LCG_GRAMMAR_ALGORITHMS_H
 
-#include "semi-external-strategy/lc_parsing.h"
-#include "lz-like-strategy/lc_parsing.h"
+#include "se-par-strat/lc_parsing.h"
+#include "lz-like-par-strat/lc_parsing.h"
 #include "grammar.h"
 #include "build_collage_system.h"
 
@@ -568,10 +568,7 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
 
         for(char sym : decompression){
             if(sym!=(char)if_stream.read(idx)){
-                std::string rand_file = "error_pf_functions.pf";
-                store_pl_vector(rand_file, gram.par_functions);
                 std::cout<<"Error: decomp sym: "<<(int)sym<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", position: "<<idx<<std::endl;
-                std::cout<<"The parsing functions were stored in the file "<<rand_file<<" for debugging"<<std::endl;
                 assert(sym==(char)if_stream.read(idx));
             }
             idx++;
@@ -860,14 +857,12 @@ void print_metadata(std::string& gram_file){
     gram.stats(2);
 }
 
-void get_par_functions(std::string& gram_file, std::string& output_file){
+void get_par_seed(std::string& gram_file){
     std::cout<<"Extracting the parsing functions from "<<gram_file<<std::endl;
     lc_gram_t gram;
     std::ifstream ifs(gram_file, std::ios::binary);
     gram.load_metadata(ifs);
-    store_pl_vector(output_file, gram.par_functions);
-    std::cout<<gram.par_functions.size()<<" functions were extracted from the grammar"<<std::endl;
-    std::cout<<"The functions (PF format) are in "<<gram_file<<std::endl;
+    std::cout<<"This grammar was built using the seed "<<gram.par_seed<<std::endl;
 }
 
 /***
@@ -876,14 +871,14 @@ void get_par_functions(std::string& gram_file, std::string& output_file){
  * @param n_threads : number of working threads
  */
 template<class sym_type, class gram_type>
-void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, bool se_p_rounds){
+void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads, size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_p_rounds){
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
     if(se_p_rounds){
-        lc_parsing_algo<sym_type, gram_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
+        lc_parsing_algo<sym_type, gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed);
     }else{
-        lz_like_strat::lc_parsing_algo<sym_type>(i_file, pf_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size);
+        lz_like_strat::lc_parsing_algo<sym_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed);
     }
 
     gram_type gram;
@@ -923,7 +918,7 @@ void gram_algo(std::string &i_file, std::string& pf_file, std::string& o_file, t
     //report_time(start, end, 2);
 
     //optional check
-    //check_plain_grammar(gram, i_file);
+    check_plain_grammar(gram, i_file);
     //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;

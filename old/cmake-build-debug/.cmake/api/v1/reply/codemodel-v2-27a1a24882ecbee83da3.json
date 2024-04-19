@@ -1,0 +1,111 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1
+					],
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						1,
+						2
+					]
+				},
+				{
+					"build" : "external/cdt",
+					"jsonFile" : "directory-external.cdt-Debug-99e5f10b55c0c3a30329.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.7"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "external/cdt",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "lcg",
+					"targetIndexes" : 
+					[
+						1,
+						2
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1
+					],
+					"name" : "CDT",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 1,
+					"id" : "cdt::@ada049b8aa891b25c0a4",
+					"jsonFile" : "target-cdt-Debug-0ef0f410b93443b3909f.json",
+					"name" : "cdt",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "lcg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-lcg-Debug-eb1f5a60bae3c45d22ff.json",
+					"name" : "lcg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "lcg-cli::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-lcg-cli-Debug-62e970980e783cba28f6.json",
+					"name" : "lcg-cli",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug",
+		"source" : "/Users/ddiaz/CLionProjects/lcg-2023"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 5
+	}
+}

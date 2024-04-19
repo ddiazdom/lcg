@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6"/>
+	<Project>
+		<Option title="CDT"/>
+		<Option makefile_is_custom="1"/>
+		<Option compiler="gcc"/>
+		<Option virtualFolders="CMake Files\;CMake Files\external\;CMake Files\external\cdt\;"/>
+		<Build>
+			<Target title="all">
+				<Option working_dir="/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt"/>
+				<Option type="4"/>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 all"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="cdt">
+				<Option output="/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/libcdt.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add directory="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/include"/>
+					<Add directory="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/external"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../include/c++/v1"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include"/>
+					<Add directory="/System/Library/Frameworks"/>
+					<Add directory="/Library/Frameworks"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 cdt"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+			<Target title="cdt/fast">
+				<Option output="/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/libcdt.a" prefix_auto="0" extension_auto="0"/>
+				<Option working_dir="/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt"/>
+				<Option object_output="./"/>
+				<Option type="2"/>
+				<Option compiler="gcc"/>
+				<Compiler>
+					<Add directory="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/include"/>
+					<Add directory="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/external"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../include/c++/v1"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/13.0.0/include"/>
+					<Add directory="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include"/>
+					<Add directory="/System/Library/Frameworks"/>
+					<Add directory="/Library/Frameworks"/>
+				</Compiler>
+				<MakeCommands>
+					<Build command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 cdt/fast"/>
+					<CompileFile command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 &quot;$file&quot;"/>
+					<Clean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+					<DistClean command="/usr/bin/make -j8 -f &quot;/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/Makefile&quot;  VERBOSE=1 clean"/>
+				</MakeCommands>
+			</Target>
+		</Build>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/include/xxHash-dev/xxhash.c">
+			<Option target="cdt"/>
+		</Unit>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/include/xxHash-dev/xxhash.h">
+			<Option target="cdt"/>
+		</Unit>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/lib/cdt_common.cpp">
+			<Option target="cdt"/>
+		</Unit>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/lib/utils.cpp">
+			<Option target="cdt"/>
+		</Unit>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\"/>
+		</Unit>
+		<Unit filename="/Users/ddiaz/CLionProjects/lcg-2023/external/cdt/CMakeLists.txt">
+			<Option virtualFolder="CMake Files\external\cdt\"/>
+		</Unit>
+	</Project>
+</CodeBlocks_project_file>

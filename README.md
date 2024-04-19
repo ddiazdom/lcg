@@ -54,11 +54,8 @@ work just fine.
 
 The compression algorithm of **LCG** is optimized to work with collections of strings that do not exceed the 4 GBs in length.
 This cap in enough for most practical applications. However, if your collection contains strings longer than 
-that value, you can pass the flag ``-l/--long-strings``.
-
-**NOTE**: The current implementation only works in "long-string mode". Please, always use the ``-l`` flag regardless
-if the strings are short. The output should be the same.
-
+that value, you can pass the flag ``-l/--long-strings``. Note the 4GB cap is on the string length, not the collection size. For instance,
+you can have a 1TB-size collection, but if all the strings are less than 4GB in length, then the ``-l`` flag is not necessary. 
 
 # Bugs
 

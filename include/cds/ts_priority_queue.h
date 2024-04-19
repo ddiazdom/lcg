@@ -4,6 +4,9 @@
 
 #ifndef SIMPLE_EXAMPLE_TS_PRIORITY_QUEUE_H
 #define SIMPLE_EXAMPLE_TS_PRIORITY_QUEUE_H
+
+#include <queue>
+
 template<typename value_type,
          typename container_type,
          typename comparator_type>

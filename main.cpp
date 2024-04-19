@@ -12,9 +12,7 @@ struct arguments{
     size_t n_chunks{};
     off_t chunk_size{};
     bool ver=false;
-    bool det=false;//deterministic (i.e., always the same grammar)
-
-    uint8_t alph_bytes=1;
+    size_t seed=0;
 
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
@@ -60,9 +58,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
 
     //grammar options
-    comp->add_option("-a,--alphabet", args.alph_bytes, "Number of bytes of the input alphabet (def. 1)")->check(CLI::Range(1, 4))->default_val(1)->check(ValidCellWidth);
-    comp->add_flag("-d,--deterministic", args.det, "The resulting grammar is always the same");
-    comp->add_option("-p,--parsing-functions", args.p_file, "File with the hash functions (PF format) to parse the text")->check(CLI::ExistingFile);
+    comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
     comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
 
     //other options
@@ -97,7 +93,8 @@ template<class sym_type>
 void run_int(std::string& input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
-    gram_algo<uint8_t, lc_gram_t<true, false>>(input_file, args.p_file, args.output_file, tmp_ws, args.n_threads, args.n_chunks, args.chunk_size, args.se_par_rounds);
+    build_gram<uint8_t, lc_gram_t<true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds);
 }
 
 int main(int argc, char** argv) {
@@ -118,28 +115,10 @@ int main(int argc, char** argv) {
     if(app.got_subcommand("comp")) {
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
-
         std::string input_collection = args.input_file;
-
-        if (args.alph_bytes > 1) {
-            std::cout << "Alphabet type:    integer" << std::endl;
-        } else {
-            std::cout << "Alphabet type:    byte" << std::endl;
-        }
-
-        if (args.alph_bytes == 1) {
-            run_int<uint8_t>(input_collection, args);
-        } else if (args.alph_bytes == 2) {
-            run_int<uint16_t>(input_collection, args);
-        } else if (args.alph_bytes == 4) {
-            run_int<uint32_t>(input_collection, args);
-        } else if (args.alph_bytes == 8) {
-            run_int<uint64_t>(input_collection, args);
-        }
+        run_int<uint8_t>(input_collection, args);
     } else if(app.got_subcommand("par")){
-        if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
-        args.output_file = std::filesystem::path(args.output_file).replace_extension(".pf");
-        get_par_functions(args.input_file, args.output_file);
+        get_par_seed(args.input_file);
     } else if(app.got_subcommand("meta")){
         print_metadata(args.input_file);
     } else if(app.got_subcommand("access")){

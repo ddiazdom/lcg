@@ -1,0 +1,2 @@
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar qc libcdt.a CMakeFiles/cdt.dir/lib/cdt_common.cpp.o CMakeFiles/cdt.dir/lib/utils.cpp.o "CMakeFiles/cdt.dir/include/xxHash-dev/xxhash.c.o"
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib libcdt.a
