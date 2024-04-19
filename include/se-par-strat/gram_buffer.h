@@ -100,69 +100,70 @@ struct lc_gram_buffer_t{
     }
 
     template<class gram_type>
-    void make_gram(gram_type& new_gram, lc_gram_buffer_t& gram_buff, uint64_t par_seed_) {
+    void make_gram(gram_type& new_gram, uint64_t par_seed_) {
 
-        i_file_stream<size_t> rules_buffer(gram_buff.rules_file, BUFFER_SIZE);
+        rules_buffer.close();
+        i_file_stream<size_t> r_buffer(rules_file, BUFFER_SIZE);
 
-        n = gram_buff.n;
-        r = gram_buff.r;
-        g = gram_buff.g;
-        c = gram_buff.c;
-        s = gram_buff.str_boundaries.size()-1;
+        new_gram.n = n;
+        new_gram.r = r;
+        new_gram.g = g;
+        new_gram.c = c;
+        new_gram.s = str_boundaries.size()-1;
         //longest_str = gram_buff.long_str;
 
-        max_tsym = gram_buff.max_tsym;
-        sep_tsym = gram_buff.sep_tsym;
+        new_gram.max_tsym = max_tsym;
+        new_gram.sep_tsym = sep_tsym;
 
-        terminals = gram_buff.terminals;
-        par_seed = par_seed_;
-        lvl_rules = gram_buff.lvl_rules;
+        new_gram.terminals = terminals;
+        new_gram.par_seed = par_seed_;
+        new_gram.lvl_rules = lvl_rules;
 
-        run_len_nt = gram_buff.rl_rules;
+        new_gram.run_len_nt = rl_rules;
 
-        rules.set_width(sym_width(r));
-        rules.resize(g);
+        new_gram.rules.set_width(sym_width(new_gram.r));
+        new_gram.rules.resize(new_gram.g);
 
-        rl_ptr.set_width(sym_width(g));
-        rl_ptr.resize(r-max_tsym);
+        new_gram.rl_ptr.set_width(sym_width(new_gram.g));
+        new_gram.rl_ptr.resize(new_gram.r-new_gram.max_tsym);
 
-        for(size_t i=0;i<=max_tsym;i++){
-            rules.write(i, rules_buffer.read(i)>>1UL);
+        for(size_t i=0;i<=new_gram.max_tsym;i++){
+            new_gram.rules.write(i, r_buffer.read(i)>>1UL);
         }
 
         size_t rule=0;
-        for(size_t i=max_tsym+1;i<rules.size();i++){
-            size_t sym = rules_buffer.read(i);
+        for(size_t i=new_gram.max_tsym+1;i<new_gram.rules.size();i++){
+            size_t sym = r_buffer.read(i);
             bool first = sym & 1UL;
 
-            rules.write(i, sym>>1UL);
+            new_gram.rules.write(i, sym>>1UL);
             if(first){
-                rl_ptr.write(rule, i);
+                new_gram.rl_ptr.write(rule, i);
                 rule++;
             }
         }
-        assert(rules.size()==g);
-        assert(rule==(r-(max_tsym+1)));
+        assert(new_gram.rules.size()==new_gram.g);
+        assert(rule==(new_gram.r-(new_gram.max_tsym+1)));
 
-        rl_ptr.write(rule, g);
+        new_gram.rl_ptr.write(rule, new_gram.g);
 
-        size_t offset = g-c;
-        str_boundaries.resize(gram_buff.str_boundaries.size());
+        size_t offset = new_gram.g-new_gram.c;
+        new_gram.str_boundaries.resize(str_boundaries.size());
         size_t str=0;
-        for(off_t & str_boundary : gram_buff.str_boundaries){
-            str_boundaries[str++] = str_boundary + offset;
+        for(off_t & str_boundary : str_boundaries){
+            new_gram.str_boundaries[str++] = str_boundary + offset;
         }
-        assert(str_boundaries[0]==offset);
-        assert(str_boundaries.back()==rules.size());
+        assert(new_gram.str_boundaries[0]==offset);
+        assert(new_gram.str_boundaries.back()==new_gram.rules.size());
 
-        size_t acc=max_tsym+1, tmp;
-        for(unsigned long & lvl_rule : lvl_rules){
+        size_t acc=new_gram.max_tsym+1, tmp;
+        for(unsigned long & lvl_rule : new_gram.lvl_rules){
             tmp = lvl_rule;
             lvl_rule = acc;
             acc+=tmp;
         }
-        lvl_rules.push_back(acc);
-        rules_buffer.close();
+        new_gram.lvl_rules.push_back(acc);
+        r_buffer.close();
     }
 };
 

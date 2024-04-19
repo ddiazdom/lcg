@@ -203,9 +203,9 @@ void lc_parsing_algo(std::string& i_file, std::string& gram_file, tmp_workspace&
     } else if(p_opts.p_alph_bytes<=8){
         gram_buff.insert_comp_string<uint64_t>(tmp_i_file);
     }
-    gram_buff.rules_buffer.close();
 
-    gram_type lc_gram(gram_buff, par_seed);
+    gram_type lc_gram;
+    gram_buff.make_gram(lc_gram, par_seed);
 
     std::cout<<"  Breakdown of the resulting locally-consistent grammar:"<<std::endl;
     lc_gram.breakdown(4);

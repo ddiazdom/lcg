@@ -9,10 +9,7 @@
 
 #include "cds/cdt_common.hpp"
 #include "cds/int_array.h"
-#include "cds/file_streams.hpp"
 #include "cds/utils.h"
-
-#include "lz-like-par-strat/partial_gram.h"
 
 template<bool is_cg=false, bool is_rl=false>
 struct lc_gram_t {
@@ -49,8 +46,6 @@ struct lc_gram_t {
     std::pair<size_t, size_t>          run_len_nt{0,0};//first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
-
-
 
     size_t serialize(std::ofstream &ofs){
         size_t written_bytes=0;
@@ -179,7 +174,7 @@ struct lc_gram_t {
         return -1;
     }
 
-    [[nodiscard]] inline size_t pos2symbol(size_t idx) const{
+    [[nodiscard]] inline size_t pos2symbol(size_t idx) const {
         assert(idx<rules.size());
         return rules.read(idx);
     }
