@@ -121,40 +121,50 @@ struct lc_gram_buffer_t{
 
         new_gram.run_len_nt = rl_rules;
 
-        new_gram.rules.set_width(sym_width(new_gram.r));
-        new_gram.rules.resize(new_gram.g);
+        uint8_t r_bits = sym_width(new_gram.r);
+        new_gram.r_bits = r_bits;
+        //new_gram.rules.set_width(sym_width(new_gram.r));
+        //new_gram.rules.resize(new_gram.g);
+        new_gram.rule_stream.reserve_in_bits(new_gram.r_bits*new_gram.g);
 
-        new_gram.rl_ptr.set_width(sym_width(new_gram.g));
+
+        new_gram.rl_ptr.set_width(sym_width(new_gram.g*new_gram.r_bits));
         new_gram.rl_ptr.resize(new_gram.r-new_gram.max_tsym);
 
-        for(size_t i=0;i<=new_gram.max_tsym;i++){
-            new_gram.rules.write(i, r_buffer.read(i)>>1UL);
+        size_t bit_pos = 0;
+        for(size_t ter=0;ter<=new_gram.max_tsym;ter++){
+            //new_gram.rules.write(i, r_buffer.read(i)>>1UL);
+            new_gram.rule_stream.write(bit_pos, bit_pos+r_bits, r_buffer.read(ter)>>1UL);
+            bit_pos+=r_bits;
         }
 
         size_t rule=0;
-        for(size_t i=new_gram.max_tsym+1;i<new_gram.rules.size();i++){
+        for(size_t i=new_gram.max_tsym+1;i<r_buffer.size();i++){
             size_t sym = r_buffer.read(i);
             bool first = sym & 1UL;
 
-            new_gram.rules.write(i, sym>>1UL);
+            //new_gram.rules.write(i, sym>>1UL);
+            new_gram.rule_stream.write(bit_pos, bit_pos+r_bits-1, sym>>1UL);
             if(first){
-                new_gram.rl_ptr.write(rule, i);
+                new_gram.rl_ptr.write(rule, bit_pos);
                 rule++;
             }
+            bit_pos+=r_bits;
         }
-        assert(new_gram.rules.size()==new_gram.g);
+        assert((bit_pos/new_gram.r_bits)==new_gram.g);
         assert(rule==(new_gram.r-(new_gram.max_tsym+1)));
 
-        new_gram.rl_ptr.write(rule, new_gram.g);
+        new_gram.rl_ptr.write(rule, bit_pos);
 
-        size_t offset = new_gram.g-new_gram.c;
+        size_t offset = new_gram.r_bits*(new_gram.g-new_gram.c);
         new_gram.str_boundaries.resize(str_boundaries.size());
         size_t str=0;
         for(off_t & str_boundary : str_boundaries){
-            new_gram.str_boundaries[str++] = str_boundary + offset;
+            new_gram.str_boundaries[str++] = (str_boundary*r_bits) + offset;
         }
         assert(new_gram.str_boundaries[0]==offset);
-        assert(new_gram.str_boundaries.back()==new_gram.rules.size());
+        assert(new_gram.str_boundaries.back()==bit_pos);
+
 
         size_t acc=new_gram.max_tsym+1, tmp;
         for(unsigned long & lvl_rule : new_gram.lvl_rules){

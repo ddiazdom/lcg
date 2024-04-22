@@ -846,10 +846,6 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     new_gram.max_tsym = size_t(p_gram.max_terminal_symbol());
     new_gram.sep_tsym = p_gram.separator_symbol();
 
-    //add the set of seeds we use for the hash function
-    //TODO add the set of seeds we used for the hash functions
-    //fp_seeds = p_gram.par_functions;
-
     new_gram.lvl_rules.reserve(p_gram.metadata.size()-1);
     size_t acc=new_gram.max_tsym+1, tmp;
     //-1 because the last element of lvl_rules is the compressed string
@@ -860,20 +856,23 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     }
     new_gram.lvl_rules.push_back(acc);
 
-    new_gram.rules.set_width(sym_width(new_gram.r));
-    new_gram.rules.resize(new_gram.g);
+    off_t r_bits = sym_width(new_gram.r);
+    new_gram.r_bits = r_bits;
+    new_gram.rule_stream.reserve_in_bits(new_gram.r_bits*new_gram.g);
 
-    new_gram.rl_ptr.set_width(sym_width(new_gram.g));
+    new_gram.rl_ptr.set_width(sym_width(new_gram.r_bits*new_gram.g));
     new_gram.rl_ptr.resize(new_gram.r-new_gram.max_tsym);
 
+    size_t bit_pos =0;
     new_gram.terminals.resize(new_gram.max_tsym+1);
-    for(size_t j=0;j<=new_gram.max_tsym;j++){
-        new_gram.rules.write(j, j);
-        new_gram.terminals[j] = j;
+    for(size_t ter=0;ter<=new_gram.max_tsym;ter++){
+        new_gram.rule_stream.write(bit_pos, bit_pos+r_bits-1, ter);
+        bit_pos+=r_bits;
+        new_gram.terminals[ter] = ter;
     }
 
     bool last;
-    size_t rule=0, pos, width, n_bits, j=new_gram.max_tsym+1, rule_start_ptr=j, sym, min_sym=0, max_sym=new_gram.max_tsym;
+    size_t rule=0, pos, width, n_bits, /*j=new_gram.max_tsym+1,*/ rule_start_ptr=bit_pos, sym, min_sym=0, max_sym=new_gram.max_tsym;
     bitstream<size_t> rules_buffer;
 
     for(size_t i=0;i<p_gram.lvl;i++) {
@@ -884,19 +883,20 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
         n_bits = p_gram.metadata[i+1].n_bits();
 
         while(pos<n_bits){
-        sym = rules_buffer.read(pos, pos+width-1);
-        //std::cout<<(sym>>1)<<" ";
-        last = sym & 1UL;
-        sym = min_sym+(sym>>1);//sym is one-based
-        new_gram.rules.write(j, sym);
-        pos+=width;
-        j++;
+            sym = rules_buffer.read(pos, pos+width-1);
+            //std::cout<<(sym>>1)<<" ";
+            last = sym & 1UL;
+            sym = min_sym+(sym>>1);//sym is one-based
+            //new_gram.rules.write(j, sym);
+            new_gram.rule_stream.write(bit_pos, bit_pos+r_bits-1, sym);
+            bit_pos+=r_bits;
+            pos+=width;
 
-        if(last){
-            new_gram.rl_ptr.write(rule, rule_start_ptr);
-            rule_start_ptr = j;
-            rule++;
-            //std::cout<<""<<std::endl;
+            if(last){
+                new_gram.rl_ptr.write(rule, rule_start_ptr);
+                rule_start_ptr = bit_pos;
+                rule++;
+                //std::cout<<""<<std::endl;
             }
         }
         min_sym = max_sym;
@@ -906,17 +906,17 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     }
 
     rules_buffer.destroy();
-    assert(new_gram.rules.size()==new_gram.g);
+    assert((bit_pos/r_bits)==new_gram.g);
     assert(rule==(new_gram.r-(new_gram.max_tsym+1)));
-    new_gram.rl_ptr.write(rule, new_gram.g);
+    new_gram.rl_ptr.write(rule, bit_pos);
 
-    size_t offset = new_gram.g-new_gram.c;
+    size_t offset = r_bits*(new_gram.g-new_gram.c);
     new_gram.str_boundaries.resize(new_gram.s+1);
     for(size_t str=0;str<=new_gram.s;str++){
-        new_gram.str_boundaries[str] = offset+str;
+        new_gram.str_boundaries[str] = offset+(str*r_bits);
     }
     assert(new_gram.str_boundaries[0]==offset);
-    assert(new_gram.str_boundaries.back()==new_gram.rules.size());
+    assert(new_gram.str_boundaries.back()==bit_pos);
 }
 
 #endif //LCG_PARTIAL_GRAM_H

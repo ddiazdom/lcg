@@ -145,59 +145,57 @@ void make_gram_fix_free(gram_t& gram){
 }
 
 template<class gram_t>
-void compute_exp_len(gram_t& gram){
+std::pair<size_t, uint8_t> compute_exp_info(gram_t& gram, std::vector<uint64_t>& exp_len, std::vector<uint64_t>& str_len){
 
-    int_array<size_t> exp(gram.r, sym_width(gram.longest_str));
     size_t tmp_sym, len, exp_size;
-    size_t last_sym;
+    for(size_t i=0;i<=gram.max_tsym;i++) exp_len[i] = 1;
 
-    for(size_t i=0;i<=gram.max_tsym;i++){
-        exp[i] = 1;
-    }
-
-    if constexpr (gram_t::has_rl_rules){
-        last_sym = gram.first_rl_sym();
-    }else{
-        last_sym = gram.r-1;
-    }
-
+    size_t last_sym = gram.first_rl_sym(), rule_len, n_samples=0;
     //get the expansion length of each nonterminal in the grammar
     for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
         auto range = gram.nt2phrase(sym);
         exp_size = 0;
-        for(size_t i=range.first;i<=range.second;i++){
-            tmp_sym = gram.rules.read(i);
+        rule_len = (range.second-range.first+gram.r_bits)/gram.r_bits;
+        n_samples += (rule_len/gram.samp_rate)+1;
+
+        for(size_t i=range.first;i<=range.second;i+=gram.r_bits){
+            tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
             len = 1;
+
             if(gram.is_rl_sym(tmp_sym)) {
                 auto range2 = gram.nt2phrase(tmp_sym);
-                tmp_sym = gram.rules.read(range2.first);
-                len = gram.rules.read(range2.second);
+                tmp_sym = gram.rule_stream.read(range2.first, range2.first + gram.r_bits-1);
+                len = gram.rule_stream.read(range2.second, range2.second + gram.r_bits-1);
             }
-
-            if(gram.is_terminal(tmp_sym)){
-                exp_size += len;
-            } else{
-                exp_size += exp.read(tmp_sym)*len;
-            }
+            exp_size += exp_len[tmp_sym]*len;
         }
-        exp.write(sym, exp_size);
+        exp_len[sym] = exp_size;
     }
 
-    if constexpr (gram_t::has_rl_rules){
-        last_sym = gram.last_rl_sym();
-        for(size_t sym=gram.first_rl_sym();sym<=last_sym; sym++) {
-            auto range = gram.nt2phrase(sym);
-            tmp_sym = gram.rules.read(range.first);
-            len = gram.rules.read(range.second);
-            if(gram.is_terminal(tmp_sym)){
-                exp_size = len;
-            }else{
-                exp_size = exp.read(tmp_sym)*len;
-            }
-            exp.write(sym, exp_size);
-        }
+    last_sym = gram.last_rl_sym();
+    for(size_t sym=gram.first_rl_sym();sym<=last_sym; sym++) {
+        auto range = gram.nt2phrase(sym);
+        tmp_sym = gram.rule_stream.read(range.first, range.first + gram.r_bits-1);
+        len = gram.rule_stream.read(range.second, range.second + gram.r_bits-1);
+        exp_size = exp_len[tmp_sym]*len;
+        exp_len[sym] = exp_size;
     }
-    gram.rule_exp.swap(exp);
+
+    //compute the length of the strings
+    size_t max_exp = 0;
+    for(size_t str=0;str<gram.n_strings();str++){
+        auto range = gram.str2phrase(str);
+        exp_size = 0;
+        rule_len = (range.second-range.first+gram.r_bits)/gram.r_bits;
+        n_samples += rule_len/gram.samp_rate;
+        for(size_t i=range.first;i<=range.second;i+=gram.r_bits){
+            tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
+            exp_size+=exp_len[tmp_sym];
+        }
+        str_len[str] = exp_size;
+        if(exp_size>max_exp) max_exp = exp_size;
+    }
+    return {n_samples, sym_width(max_exp)};
 }
 
 template<class gram_t>
@@ -205,95 +203,88 @@ void add_random_access_support(gram_t& gram){
     assert(!gram.has_cg_rules);
 
     std::vector<uint64_t> exp_tmp(gram.r, 0);
-    size_t tmp_sym, len, exp_size;
-    for(size_t i=0;i<=gram.max_tsym;i++) exp_tmp[i] = 1;
+    std::vector<uint64_t> str_len(gram.s, 0);
 
-    size_t last_sym = gram.first_rl_sym();
+    size_t n_samples;
+    uint8_t ra_bits;
+    std::tie(n_samples, ra_bits) = compute_exp_info(gram, exp_tmp, str_len);
 
-    //get the expansion length of each nonterminal in the grammar
-    size_t max_exp_size=0;
-    for(size_t sym=gram.max_tsym+1;sym<last_sym;sym++) {
+    bitstream<size_t> new_rule_stream;
+    new_rule_stream.reserve_in_bits(gram.g*gram.r_bits+n_samples*ra_bits);
+    int_array<size_t> new_rl_ptrs(gram.rl_ptr.size(), sym_width(gram.g*gram.r_bits+n_samples*ra_bits));
+
+    //insert the terminals
+    size_t bit_pos=0;
+    for(size_t ter=0;ter<=gram.max_tsym;ter++){
+        new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, ter);
+        bit_pos+=gram.r_bits;
+    }
+
+    //store the sampled elements
+    size_t exp_acc, last_sym = gram.first_rl_sym(), tmp_sym, offset;
+    for(size_t sym = gram.max_tsym+1; sym<last_sym; sym++){
+
+        new_rl_ptrs.push_back(bit_pos);
         auto range = gram.nt2phrase(sym);
-        exp_size = 0;
-        for(size_t i=range.first;i<=range.second;i++){
-            tmp_sym = gram.rules.read(i);
-            len = 1;
-            if(gram.is_rl_sym(tmp_sym)) {
-                auto range2 = gram.nt2phrase(tmp_sym);
-                tmp_sym = gram.rules.read(range2.first);
-                len = gram.rules.read(range2.second);
+        exp_acc = 0;
+        offset = bit_pos+range.second-range.first+gram.r_bits;
+
+        for(size_t i=range.first, j=1;i<=range.second;i+=gram.r_bits,j++){
+            if(j%gram.samp_rate==0){
+                new_rule_stream.write(offset, offset+ra_bits-1, exp_acc);
+                offset+=ra_bits;
             }
-            if(gram.is_terminal(tmp_sym)){
-                exp_size += len;
-            } else{
-                exp_size += exp_tmp[tmp_sym]*len;
-            }
+            tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
+            new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_sym);
+            bit_pos+=gram.r_bits;
+            exp_acc+=exp_tmp[tmp_sym];
         }
-        exp_tmp[sym] = exp_size;
-        if(exp_size>max_exp_size) max_exp_size = exp_size;
+
+        new_rule_stream.write(offset, offset+ra_bits-1, exp_acc);
+        offset+=ra_bits;
+        assert(exp_acc==exp_tmp[sym]);
+        bit_pos=offset;
     }
 
     last_sym = gram.last_rl_sym();
+    size_t tmp_len;
     for(size_t sym=gram.first_rl_sym();sym<=last_sym; sym++) {
+        new_rl_ptrs.push_back(bit_pos);
         auto range = gram.nt2phrase(sym);
-        tmp_sym = gram.rules.read(range.first);
-        len = gram.rules.read(range.second);
-        if(gram.is_terminal(tmp_sym)){
-            exp_size = len;
-        }else{
-            exp_size = exp_tmp[tmp_sym]*len;
-        }
-        exp_tmp[sym] = exp_size;
-    }
-    gram.rule_exp.set_width(sym_width(max_exp_size));
-    gram.rule_exp.resize(exp_tmp.size());
-    for(size_t i=0;i<exp_tmp.size();i++){
-        gram.rule_exp.write(i, exp_tmp[i]);
+        tmp_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
+        tmp_len = gram.rule_stream.read(range.second, range.second+gram.r_bits-1);
+        new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_sym);
+        bit_pos+=gram.r_bits;
+        new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_len);
+        bit_pos+=gram.r_bits;
     }
 
-    std::vector<uint64_t> samp_exp_tmp;
-    samp_exp_tmp.reserve(gram.g/gram.samp_rate);
-
-    //store the sampled elements
-    size_t exp_acc;
-    last_sym = gram.first_rl_sym();
-    for(size_t sym = gram.max_tsym+1; sym<last_sym; sym++){
-        auto range = gram.nt2phrase(sym);
-        exp_acc = 0;
-        for(size_t i=range.first, j=1;i<=range.second;i++,j++){
-            if(j%gram.samp_rate==0){
-                samp_exp_tmp.push_back(exp_acc);
-            }
-            tmp_sym = gram.rules.read(i);
-            exp_acc+=exp_tmp[tmp_sym];
-        }
-        assert(exp_acc==exp_tmp[sym]);
-    }
-
-    max_exp_size=0;
     for(size_t str=0;str<gram.n_strings();str++){
         auto range = gram.str2phrase(str);
+        gram.str_boundaries[str] = bit_pos;
+
         exp_acc = 0;
-        for(size_t i=range.first, j=1;i<range.second;i++,j++){
+        for(size_t i=range.first, j=1;i<=range.second;i+=gram.r_bits,j++){
+
             if(j%gram.samp_rate==0){
-                samp_exp_tmp.push_back(exp_acc);
+                new_rule_stream.write(offset, offset+ra_bits-1, exp_acc);
+                offset+=ra_bits;
             }
-            tmp_sym = gram.rules.read(i);
+
+            tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
+            new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_sym);
+            bit_pos+=gram.r_bits;
             exp_acc+=exp_tmp[tmp_sym];
         }
-        if(exp_acc>max_exp_size) max_exp_size = exp_acc;
+        new_rule_stream.write(offset, offset+ra_bits-1, exp_acc);
+        offset+=ra_bits;
+        assert(exp_acc==str_len[str]);
+        bit_pos=offset;
     }
 
-    destroy(exp_tmp);
-    gram.sampled_exp.set_width(sym_width(max_exp_size));
-    gram.sampled_exp.resize(samp_exp_tmp.size());
-    for(size_t i=0;i<samp_exp_tmp.size();i++){
-        gram.sampled_exp.write(i, samp_exp_tmp[i]);
-    }
-    gram.has_rand_access = true;
-
-    std::cout<<gram.sampled_exp.size()<<" "<<gram.sampled_exp.width()<<std::endl;
-    std::cout<<gram.rule_exp.size()<<" "<<gram.rule_exp.width()<<std::endl;
+    gram.ra_bits = ra_bits;
+    new_rule_stream.swap(gram.rule_stream);
+    new_rl_ptrs.swap(gram.rl_ptr);
 }
 
 //TODO implement this
@@ -313,11 +304,13 @@ size_t get_new_rl_rules(gram_t& gram, par_string_map<size_t>& ht) {
 
     for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++){
         auto range = gram.nt2phrase(sym);
-        prev_sym = gram.rules[range.first];
+        //prev_sym = gram.rules[range.first];
+        prev_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
         run_len = 1;
 
-        for(size_t j=range.first+1;j<=range.second;j++) {
-            curr_sym = gram.rules[j];
+        for(size_t j=range.first+gram.r_bits;j<=range.second;j+=gram.r_bits) {
+            //curr_sym = gram.rules[j];
+            curr_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
             if(curr_sym!=prev_sym){
                 if(run_len>1){
                     pair[0] = prev_sym;
@@ -351,11 +344,13 @@ size_t get_new_rl_rules(gram_t& gram, par_string_map<size_t>& ht) {
     //deal with the strings
     for(size_t str=0;str<gram.n_strings();str++){
         auto range = gram.str2phrase(str);
-        prev_sym = gram.rules[range.first];
+        //prev_sym = gram.rules[range.first];
+        prev_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
         run_len = 1;
 
-        for(size_t j=range.first+1;j<=range.second;j++){
-            curr_sym = gram.rules[j];
+        for(size_t j=range.first+gram.r_bits;j<=range.second;j+=gram.r_bits){
+            //curr_sym = gram.rules[j];
+            curr_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
             if(curr_sym!=prev_sym){
 
                 if(run_len>1){
@@ -395,29 +390,36 @@ void run_length_compress(gram_t& gram) {
     assert(gram.run_len_nt.second==0);
     par_string_map<size_t> ht(4, 0.6, 1);
     size_t new_size = get_new_rl_rules(gram, ht);
+    uint8_t new_r_bits = sym_width(gram.r+ht.size());
+    bitstream<size_t> new_rule_stream;
+    new_rule_stream.reserve_in_bits(new_size*new_r_bits);
 
-    int_array<size_t> new_rules(new_size, sym_width(gram.r+ht.size()));
-    int_array<size_t> new_rl_ptrs(sym_width(gram.r+ht.size()), sym_width(new_size));
+    int_array<size_t> new_rl_ptrs(gram.r+ht.size()+1, sym_width(new_size*new_r_bits));
     size_t start_sym = gram.start_symbol(), prev_sym, run_len, curr_sym;
     size_t pair[2]={0};
 
     //insert terminals
+    size_t new_bit_pos=0;
     for(size_t i=0;i<gram.n_terminals();i++){
-        new_rules.push_back(i);
+        //new_rules.push_back(i);
+        new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, i);
+        new_bit_pos+=new_r_bits;
     }
 
     //insert regular rules
     for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
 
-        new_rl_ptrs.push_back(new_rules.size());
+        new_rl_ptrs.push_back(new_bit_pos);
 
         auto range = gram.nt2phrase(sym);
-        prev_sym = gram.rules[range.first];
+        //prev_sym = gram.rules[range.first];
+        prev_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
         run_len = 1;
 
-        for(size_t j=range.first+1;j<=range.second;j++){
+        for(size_t j=range.first+gram.r_bits;j<=range.second;j+=gram.r_bits){
 
-            curr_sym = gram.rules[j];
+            //curr_sym = gram.rules[j];
+            curr_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
             if(curr_sym!=prev_sym){
                 if(run_len>1){
                     pair[0] = prev_sym;
@@ -427,7 +429,9 @@ void run_length_compress(gram_t& gram) {
                     assert(res);
                 }
 
-                new_rules.push_back(prev_sym);
+                //new_rule_stream.push_back(prev_sym);
+                new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, prev_sym);
+                new_bit_pos+=new_r_bits;
                 prev_sym = curr_sym;
                 run_len=0;
             }
@@ -442,31 +446,45 @@ void run_length_compress(gram_t& gram) {
             assert(res);
             assert(prev_sym>=start_sym);
         }
-        new_rules.push_back(prev_sym);
+
+        //new_rules.push_back(prev_sym);
+        new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, prev_sym);
+        new_bit_pos+=new_r_bits;
     }
     assert(new_rl_ptrs.size()==gram.n_nonterminals()-1);
 
     //insert the new rl rules
     for(auto const& phrase : ht){
         assert(phrase.first.second==sizeof(size_t)*2);
-        new_rl_ptrs.push_back(new_rules.size());
+        //new_rl_ptrs.push_back(new_rules.size());
+        new_rl_ptrs.push_back(new_bit_pos);
         memcpy((char *)&pair, phrase.first.first, phrase.first.second);
         assert(pair[0]<start_sym);
-        new_rules.push_back(pair[0]);
-        new_rules.push_back(pair[1]);
+        //new_rules.push_back(pair[0]);
+        //new_rules.push_back(pair[1]);
+        new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, pair[0]);
+        new_bit_pos+=new_r_bits;
+        new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, pair[1]);
+        new_bit_pos+=new_r_bits;
     }
 
     //insert the compressed strings
-    new_rl_ptrs.push_back(new_rules.size());
-    for(size_t str=0;str<gram.n_strings();str++){
-        auto range = gram.str2phrase(str);
-        gram.str_boundaries[str] = new_rules.size();
+    //new_rl_ptrs.push_back(new_rules.size());
+    new_rl_ptrs.push_back(new_bit_pos);
 
-        prev_sym = gram.rules[range.first];
+    for(size_t str=0;str<gram.n_strings();str++){
+
+        auto range = gram.str2phrase(str);
+        //gram.str_boundaries[str] = new_rules.size();
+        gram.str_boundaries[str] = new_bit_pos;
+
+        //prev_sym = gram.rules[range.first];
+        prev_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
         run_len = 1;
 
-        for(size_t j=range.first+1;j<=range.second;j++){
-            curr_sym = gram.rules[j];
+        for(size_t j=range.first+gram.r_bits;j<=range.second;j+=gram.r_bits){
+            //curr_sym = gram.rules[j];
+            curr_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
             if(curr_sym!=prev_sym){
                 if(run_len>1){
                     pair[0] = prev_sym;
@@ -475,7 +493,9 @@ void run_length_compress(gram_t& gram) {
                     auto res = ht.find((uint8_t *)&pair, sizeof(size_t)*2, prev_sym);
                     assert(res);
                 }
-                new_rules.push_back(prev_sym);
+                //new_rules.push_back(prev_sym);
+                new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, prev_sym);
+                new_bit_pos+=new_r_bits;
                 prev_sym = curr_sym;
                 run_len=0;
             }
@@ -489,33 +509,33 @@ void run_length_compress(gram_t& gram) {
             auto res = ht.find((uint8_t *)&pair, sizeof(size_t)*2, prev_sym);
             assert(res);
         }
-        new_rules.push_back(prev_sym);
+        //new_rules.push_back(prev_sym);
+        new_rule_stream.write(new_bit_pos, new_bit_pos+new_r_bits-1, prev_sym);
+        new_bit_pos+=new_r_bits;
     }
-    new_rl_ptrs.push_back(new_rules.size());
-    gram.str_boundaries[gram.n_strings()]=new_rules.size();
+    new_rl_ptrs.push_back(new_bit_pos);
+    gram.str_boundaries[gram.n_strings()]=new_bit_pos;
+    gram.r_bits = new_r_bits;
 
-    assert(gram.str2phrase(gram.n_strings()-1).second==new_rules.size()-1);
-    assert(new_rules.size()==new_size);
+    //std::cout<<gram.str2phrase(gram.n_strings()-1).first<<" "<<gram.str2phrase(gram.n_strings()-1).second<<" "<<new_bit_pos-new_r_bits<<std::endl;
+    assert(gram.str2phrase(gram.n_strings()-1).second==(new_bit_pos-new_r_bits));
+    assert((new_bit_pos/new_r_bits)==new_size);
     assert(new_rl_ptrs.size()==(gram.rl_ptr.size()+ht.size()));
 
     std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:        "<<gram.rules.size()<<std::endl;
-    std::cout<<"    Grammar size after:         "<<new_rules.size()<<std::endl;
+    std::cout<<"    Grammar size before:        "<<gram.g<<std::endl;
+    std::cout<<"    Grammar size after:         "<<new_size<<std::endl;
     std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
-    std::cout<<"    Compression ratio:          "<<float(new_rules.size())/float(gram.rules.size())<<std::endl;
+    std::cout<<"    Compression ratio:          "<<float(new_size)/float(gram.g)<<std::endl;
 
     gram.run_len_nt.first = start_sym;
     gram.run_len_nt.second = ht.size();
     gram.r += ht.size();
-    gram.g  = new_rules.size();
-    gram.c = gram.g - gram.str_boundaries[0];
+    gram.g  = new_size;
+    gram.c = gram.g - (gram.str_boundaries[0]/gram.r_bits);
 
-    new_rules.swap(gram.rules);
+    new_rule_stream.swap(gram.rule_stream);
     new_rl_ptrs.swap(gram.rl_ptr);
-
-    if(gram.has_rand_access){
-        //add_random_access_support(gram);
-    }
 }
 
 template<class gram_t>
@@ -541,9 +561,9 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
     std::string decompression;
     size_t str=0;
 
-    for(size_t i=f; i <= l; i++) {
+    for(size_t i=f; i <= l; i+=gram.r_bits) {
 
-        stack.emplace(gram.pos2symbol(i));
+        stack.emplace(gram.bitpos2symbol(i));
         assert(stack.size()<=if_stream.size());
 
         while(!stack.empty()){
@@ -556,16 +576,15 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
                 decompression.push_back((char)gram.get_byte_ter(curr_sym));
             }else{
                 auto res2 = gram.nt2phrase(curr_sym);
-                if(gram.is_rl_sym(curr_sym)){
-                    assert(res2.second-res2.first+1==2);
-                    size_t len = gram.pos2symbol(res2.second);
 
-                    for(size_t j=0;j<len;j++){
-                        stack.emplace(gram.pos2symbol(res2.first));
-                    }
+                if(gram.is_rl_sym(curr_sym)){
+                    assert((res2.second-res2.first)==gram.r_bits);
+                    size_t sym = gram.bitpos2symbol(res2.first);
+                    size_t len = gram.bitpos2symbol(res2.second);
+                    for(size_t j=0;j<len;j++) stack.emplace(sym);
                 }else{
-                    for(size_t j=res2.second+1; j-->res2.first;){
-                        stack.emplace(gram.pos2symbol(j));
+                    for(off_t j=res2.second; j>=res2.first;j-=gram.r_bits){
+                        stack.emplace(gram.bitpos2symbol(j));
                     }
                 }
             }
@@ -578,7 +597,7 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
             }
             idx++;
         }
-        if(gram.str_boundaries[str+1]==(i+1)){
+        if(gram.str_boundaries[str+1]==(i+gram.r_bits)){
             idx++;
             str++;
         }
@@ -609,20 +628,6 @@ void estimate_alt_encodings(gram_t& gram){
             h0 += (f_c/f)*log2(f/f_c);
         }
     }
-
-    /*auto res1 = gram.nt2phrase(gram.first_rl_sym());
-    auto res2 = gram.nt2phrase(gram.last_rl_sym());
-    for(size_t i=0;i<res1.first;i++){
-        freqs[gram.rules[i]]++;
-    }
-
-    for(size_t i=res1.first;i<=res2.second;i+=2){
-        freqs[gram.rules[i]]++;
-    }
-
-    for(size_t i=res2.second+1;i<gram.rules.size();i++){
-        freqs[gram.rules[i]]++;
-    }*/
 
     size_t lb_bytes= INT_CEIL(size_t(ceil(f*h0)), 8);
     std::cout<<"nH_0(G): "<<report_space((off_t)lb_bytes)<<std::endl;
@@ -681,13 +686,16 @@ std::pair<std::vector<uint8_t>, size_t> mark_disposable_symbols(const gram_t& gr
     //compute which nonterminals are repeated and
     // which have a replacement of length 1
     std::vector<uint8_t> rep_nts(gram.r + 1, 0);
+    size_t nt;
     for(size_t rule=gram.max_tsym+1;rule<gram.r;rule++){
         auto range = gram.nt2phrase(rule);
         if(gram.is_rl_sym((rule))){
-            rep_nts[gram.rules[range.first]] = 2;
+            nt = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
+            rep_nts[nt] = 2;
         }else{
-            for(size_t i=range.first;i<=range.second;i++){
-                rep_nts[gram.rules[i]]+=rep_nts[gram.rules[i]]<2;
+            for(size_t i=range.first;i<=range.second;i+=gram.r_bits){
+                nt = gram.rule_stream.read(i, i+gram.r_bits-1);
+                rep_nts[nt]+=rep_nts[nt]<2;
             }
         }
     }
@@ -736,8 +744,13 @@ void simplify_grammar(gram_t& gram) {
     assert(!gram.is_simplified);
 
     auto rem_syms = mark_disposable_symbols(gram);
-    int_array<size_t> new_rules(gram.g-rem_syms.second, sym_width(gram.r-rem_syms.second));
-    int_array<size_t> new_rl_ptrs(gram.r-rem_syms.second, sym_width((gram.g+1)-rem_syms.second));
+    //bitstream<size_t> new_rules(gram.g-rem_syms.second, sym_width(gram.r-rem_syms.second));
+
+    uint8_t new_r_bits = sym_width(gram.r-rem_syms.second);
+    bitstream<size_t> new_rules;
+    new_rules.reserve_in_bits((gram.g-rem_syms.second)*new_r_bits);
+
+    int_array<size_t> new_rl_ptrs(gram.r-rem_syms.second, sym_width((gram.g-rem_syms.second+1)*new_r_bits));
     int_array<size_t> offsets(gram.r, sym_width(gram.r));
 
     size_t del_syms=0;
@@ -746,48 +759,68 @@ void simplify_grammar(gram_t& gram) {
         del_syms+=rem_syms.first[sym];
     }
 
-    size_t n_ter=0, new_ter;
+    size_t n_ter=0, new_ter, bit_pos=0;
     for(size_t ter=0;ter<=gram.max_tsym;ter++){
         if(!rem_syms.first[ter]){
             new_ter = ter-offsets[ter];
             gram.terminals[new_ter] = ter;
-            new_rules.push_back(new_ter);
+
+            new_rules.write(bit_pos, bit_pos+new_r_bits-1, new_ter);
+            bit_pos+=new_r_bits;
             n_ter++;
         }
     }
 
     std::stack<size_t> stack;
     size_t start_sym = gram.start_symbol();
+    auto tmp = gram.nt2phrase(start_sym);
     for(size_t sym=gram.max_tsym+1;sym<start_sym;sym++) {
 
         if(!rem_syms.first[sym]) {
 
             auto range = gram.nt2phrase(sym);
-            new_rl_ptrs.push_back(new_rules.size());
+            new_rl_ptrs.push_back(bit_pos);
 
             if(gram.is_rl_sym(sym)){
-                new_rules.push_back(gram.rules[range.first]-offsets[gram.rules[range.first]]);
-                new_rules.push_back(gram.rules[range.second]);
+                //new_rules.push_back(gram.rules[range.first]-offsets[gram.rules[range.first]]);
+                //new_rules.push_back(gram.rules[range.second]);
+
+                size_t rl_sym = gram.rule_stream.read(range.first, range.first+gram.r_bits-1);
+                size_t rl_len = gram.rule_stream.read(range.second, range.second+gram.r_bits-1);
+
+                new_rules.write(bit_pos, bit_pos+new_r_bits-1, rl_sym-offsets[rl_sym]);
+                bit_pos+=new_r_bits;
+                new_rules.write(bit_pos, bit_pos+new_r_bits-1, rl_len);
+                bit_pos+=new_r_bits;
             }else{
-                for(size_t j=range.first;j<=range.second;j++){
-                    if(rem_syms.first[gram.rules[j]]) {
-                        stack.push(gram.rules[j]);
+
+                for(size_t j=range.first;j<=range.second;j+=gram.r_bits){
+
+                    size_t old_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
+
+                    if(rem_syms.first[old_sym]) {
+                        stack.push(old_sym);
                         while(!stack.empty()){
                             auto nt = stack.top();
                             stack.pop();
                             if(rem_syms.first[nt]){
                                 assert(nt>gram.max_tsym);
                                 assert(!gram.is_rl_sym(nt));
+
                                 auto range2 = gram.nt2phrase(nt);
-                                for(size_t k=range2.second+1;k-->range2.first;){
-                                    stack.push(gram.rules[k]);
+                                for(off_t k=range2.second;k>=range2.first;k-=gram.r_bits){
+                                    stack.push(gram.rule_stream.read(k, k+gram.r_bits-1));
                                 }
                             }else{
-                                new_rules.push_back(nt - offsets[nt]);
+                                //new_rules.push_back(nt - offsets[nt]);
+                                new_rules.write(bit_pos, bit_pos+new_r_bits-1, nt - offsets[nt]);
+                                bit_pos+=new_r_bits;
                             }
                         }
                     }else{
-                        new_rules.push_back(gram.rules[j] - offsets[gram.rules[j]]);
+                        //new_rules.push_back(gram.rules[j] - offsets[gram.rules[j]]);
+                        new_rules.write(bit_pos, bit_pos+new_r_bits-1, old_sym - offsets[old_sym]);
+                        bit_pos+=new_r_bits;
                     }
                 }
             }
@@ -797,48 +830,65 @@ void simplify_grammar(gram_t& gram) {
     //deal with the compressed strings
     auto range = gram.nt2phrase(start_sym);
     size_t str=0;
-    new_rl_ptrs.push_back(new_rules.size());
-    for(size_t j=range.first;j<=range.second;j++){
-        gram.str_boundaries[str++] = new_rules.size();
-        if(rem_syms.first[gram.rules[j]]) {
-            stack.push(gram.rules[j]);
+
+    new_rl_ptrs.push_back(bit_pos);
+    for(size_t j=range.first;j<=range.second;j+=gram.r_bits){
+
+        gram.str_boundaries[str++] = bit_pos;
+
+        size_t old_sym = gram.rule_stream.read(j, j+gram.r_bits-1);
+        if(rem_syms.first[old_sym]) {
+            stack.push(old_sym);
+
             while(!stack.empty()){
                 auto nt = stack.top();
                 stack.pop();
                 if(rem_syms.first[nt]){
                     auto range2 = gram.nt2phrase(nt);
-                    for(size_t k=range2.second+1;k-->range2.first;){
-                        stack.push(gram.rules[k]);
+
+                    for(off_t k=range2.second;k>=range2.first;k-=gram.r_bits){
+                        stack.push(gram.rule_stream.read(k, k+gram.r_bits-1));
                     }
                 }else{
-                    new_rules.push_back(nt - offsets[nt]);
+                    //new_rules.push_back(nt - offsets[nt]);
+                    new_rules.write(bit_pos, bit_pos+new_r_bits-1, nt - offsets[nt]);
+                    bit_pos+=new_r_bits;
                 }
             }
         }else{
-            new_rules.push_back(gram.rules[j] - offsets[gram.rules[j]]);
+            //new_rules.push_back(gram.rules[j] - offsets[gram.rules[j]]);
+            new_rules.write(bit_pos, bit_pos+new_r_bits-1, old_sym - offsets[old_sym]);
+            bit_pos+=new_r_bits;
         }
     }
-    new_rl_ptrs.push_back(new_rules.size());
-    gram.str_boundaries[gram.n_strings()]=new_rules.size();
+
+    new_rl_ptrs.push_back(bit_pos);
+    gram.str_boundaries[gram.n_strings()]=bit_pos;
+
 
     size_t del_nt = (rem_syms.second-(gram.max_tsym+1-n_ter));
-    assert(new_rules.size()==gram.rules.size()-rem_syms.second);
-    assert(new_rl_ptrs.size()==(gram.rl_ptr.size()-del_nt));
-    assert(gram.str2phrase(gram.n_strings()-1).second==new_rules.size()-1);
+    gram.r_bits = new_r_bits;
 
+
+    assert((bit_pos/new_r_bits)==(gram.g-rem_syms.second));
+    assert(new_rl_ptrs.size()==(gram.rl_ptr.size()-del_nt));
+    assert(gram.str2phrase(gram.n_strings()-1).second==bit_pos-new_r_bits);
+
+    size_t new_size = bit_pos/new_r_bits;
     float rm_per = float(rem_syms.second)/float(gram.r)*100;
-    float comp_rat = float(new_rules.size())/float(gram.rules.size());
+    float comp_rat = float(new_size)/float(gram.g);
+
     std::cout<<"  Stats:"<<std::endl;
     std::cout<<"    Grammar size before:  "<<gram.g<<std::endl;
-    std::cout<<"    Grammar size after:   "<<new_rules.size()<<std::endl;
+    std::cout<<"    Grammar size after:   "<<new_size<<std::endl;
     std::cout<<"    Deleted nonterminals: "<<rem_syms.second<<" ("<<rm_per<<"%)"<<std::endl;
     std::cout<<"    Compression ratio:    "<<comp_rat<<std::endl;
 
-    gram.c = new_rules.size()-gram.str_boundaries[0];
+    gram.g = new_size;
     gram.r -= rem_syms.second;
-    gram.g = new_rules.size();
+    gram.c = gram.g - (gram.str_boundaries[0]/gram.r_bits);
 
-    gram.rules.swap(new_rules);
+    gram.rule_stream.swap(new_rules);
     gram.rl_ptr.swap(new_rl_ptrs);
 
     for(auto &sym : gram.lvl_rules){
@@ -849,10 +899,6 @@ void simplify_grammar(gram_t& gram) {
 
     gram.max_tsym = n_ter-1;
     gram.is_simplified = true;
-
-    if(gram.has_rand_access){
-        //add_random_access_support(gram);
-    }
 }
 
 void print_metadata(std::string& gram_file){
@@ -878,7 +924,7 @@ void get_par_seed(std::string& gram_file){
  */
 template<class sym_type, class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads,
-                size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_build, bool skip_simp, bool add_ra){
+                size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_build, bool skip_simp){
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
@@ -919,18 +965,17 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
         report_time(start, end, 2);
     }
 
-    //optional check
-    //check_plain_grammar(gram, i_file);
-    //
-
-    //estimate_alt_encodings(gram);
-    if(add_ra){
+    if(gram_type::has_rand_access){
         std::cout<<"Adding random access support"<<std::endl;
         start = std::chrono::steady_clock::now();
         add_random_access_support(gram);
         end = std::chrono::steady_clock::now();
         report_time(start, end, 2);
     }
+
+    //optional check
+    //check_plain_grammar(gram, i_file);
+    //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;
     gram.breakdown(2);

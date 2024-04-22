@@ -11,39 +11,42 @@
 #include "cds/int_array.h"
 #include "cds/utils.h"
 
-template<bool is_cg=false, bool is_rl=false>
+template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
-    size_t                             n{}; //n: number of symbols in the original text
-    size_t                             r{}; //r: number of grammar symbols (nter + ter)
-    size_t                             c{}; //c: length of the right-hand of the start symbol
-    size_t                             g{}; //g: sum of the rules' right-hand sides
-    size_t                             s{}; //s: number of strings
-    //size_t                             longest_str{}; //length of the longest string encoded in the grammar
-    size_t                             max_tsym{}; //highest terminal symbol
-    size_t                             min_nter{}; //smallest nonterminal symbol
-    size_t                             cg_mark{};
-    size_t                             n_cg_rules{};
-    uint64_t                           par_seed{}; //list of hash functions from which the grammar was constructed
+    size_t                                 n{}; //n: number of symbols in the original text
+    size_t                                 r{}; //r: number of grammar symbols (nter + ter)
+    size_t                                 c{}; //c: length of the right-hand of the start symbol
+    size_t                                 g{}; //g: sum of the rules' right-hand sides
+    size_t                                 s{}; //s: number of strings
+    //size_t                               longest_str{}; //length of the longest string encoded in the grammar
+    size_t                                 max_tsym{}; //highest terminal symbol
+    size_t                                 min_nter{}; //smallest nonterminal symbol
+    size_t                                 cg_mark{};
+    size_t                                 n_cg_rules{};
+    uint64_t                               par_seed{}; //list of hash functions from which the grammar was constructed
+    uint8_t                                r_bits;
+    uint8_t                                ra_bits;
 
-    uint8_t                            sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
-    bool                               is_simplified=false;
-    const static bool                  has_rl_rules=is_rl;
-    const static bool                  has_cg_rules=is_cg;
-    bool                               has_rand_access=false;
+    uint8_t                                sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
+    bool                                   is_simplified=false;
+    const static bool                      has_rl_rules=is_rl;
+    const static bool                      has_cg_rules=is_cg;
+    const static bool                      has_rand_access=has_ra;
 
-    std::vector<uint8_t>               terminals; //set of terminals
-    std::vector<size_t>                str_boundaries; // start position of every string in the compressed string
-    std::vector<size_t>                lvl_rules; //number of rules generated in every round of locally-consistent parsing
+    std::vector<uint8_t>                   terminals; //set of terminals
+    std::vector<size_t>                    str_boundaries; // start position of every string in the compressed string
+    std::vector<size_t>                    lvl_rules; //number of rules generated in every round of locally-consistent parsing
 
-    int_array<size_t>                  rules; //concatenated set of grammar rules
-    int_array<size_t>                  rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
+    //int_array<size_t>                    rules; //concatenated set of grammar rules
+    bitstream<size_t>                      rule_stream;
+    int_array<size_t>                      rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
 
-    int_array<size_t>                  rule_exp;// length of the nt expansions
-    int_array<size_t>                  sampled_exp;// sampled nt expansions in "rules"
-    size_t                             samp_rate=4;//sampling rate to sample nt expansions in "rules"
+    //int_array<size_t>                      rule_exp;// length of the nt expansions
+    //int_array<size_t>                      sampled_exp;// sampled nt expansions in "rules"
+    size_t                                 samp_rate=4;//sampling rate to sample nt expansions in "rules"
 
-    std::pair<size_t, size_t>          run_len_nt{0,0};//first run-length rule and total number of run-length rules
+    std::pair<size_t, size_t>              run_len_nt{0,0};//first run-length rule and total number of run-length rules
 
     lc_gram_t()= default;
 
@@ -55,6 +58,8 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, c);
         written_bytes +=serialize_elm(ofs, s);
         written_bytes +=serialize_elm(ofs, samp_rate);
+        written_bytes +=serialize_elm(ofs, r_bits);
+        written_bytes +=serialize_elm(ofs, ra_bits);
         //written_bytes +=serialize_elm(ofs, longest_str);
         written_bytes +=serialize_elm(ofs, max_tsym);
         written_bytes +=serialize_elm(ofs, min_nter);
@@ -62,9 +67,9 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, is_simplified);
         written_bytes +=serialize_elm(ofs, has_rl_rules);
         written_bytes +=serialize_elm(ofs, has_cg_rules);
+        written_bytes +=serialize_elm(ofs, has_rand_access);
         written_bytes +=serialize_elm(ofs, cg_mark);
         written_bytes +=serialize_elm(ofs, n_cg_rules);
-        written_bytes +=serialize_elm(ofs, has_rand_access);
         written_bytes +=serialize_elm(ofs, run_len_nt.first);
         written_bytes +=serialize_elm(ofs, run_len_nt.second);
         written_bytes +=serialize_elm(ofs, par_seed);
@@ -73,10 +78,7 @@ struct lc_gram_t {
         written_bytes +=serialize_plain_vector(ofs, terminals);
         written_bytes +=serialize_plain_vector(ofs, str_boundaries);
         written_bytes +=rl_ptr.serialize(ofs);
-        //written_bytes +=rule_exp.serialize(ofs);
-        //written_bytes +=sampled_exp.serialize(ofs);
-
-        written_bytes +=rules.serialize(ofs);
+        written_bytes +=rule_stream.serialize(ofs);
 
         return written_bytes;
     }
@@ -88,6 +90,8 @@ struct lc_gram_t {
         load_elm(ifs, c);
         load_elm(ifs, s);
         load_elm(ifs, samp_rate);
+        load_elm(ifs, r_bits);
+        load_elm(ifs, ra_bits);
         //load_elm(ifs, longest_str);
         load_elm(ifs, max_tsym);
         load_elm(ifs, min_nter);
@@ -95,16 +99,18 @@ struct lc_gram_t {
         load_elm(ifs, is_simplified);
         bool tmp;
         load_elm(ifs, tmp);
-        assert(has_rl_rules==is_rl);
+        assert(tmp==has_rl_rules);
         load_elm(ifs, tmp);
-        assert(has_cg_rules==is_cg);
+        assert(tmp==has_cg_rules);
+        load_elm(ifs, tmp);
+        assert(tmp==has_rand_access);
         load_elm(ifs, cg_mark);
         load_elm(ifs, n_cg_rules);
-        load_elm(ifs, has_rand_access);
         load_elm(ifs, run_len_nt.first);
         load_elm(ifs, run_len_nt.second);
         load_elm(ifs, par_seed);
         load_plain_vector(ifs, lvl_rules);
+
     }
 
     void load_pointers(std::ifstream &ifs){
@@ -117,13 +123,13 @@ struct lc_gram_t {
     void load(std::ifstream &ifs){
         load_metadata(ifs);
         load_pointers(ifs);
-        rules.load(ifs);
+        rule_stream.load(ifs);
     }
 
     [[nodiscard]] inline std::pair<size_t, size_t> nt2phrase(size_t sym) const {
         assert(sym>max_tsym);
-        size_t pos = sym - max_tsym-1;
-        return {rl_ptr[pos], rl_ptr[pos+1]-1};
+        size_t nt = sym - max_tsym-1;
+        return {rl_ptr.read(nt), rl_ptr.read(nt+1)-r_bits};
     }
 
     [[nodiscard]] inline bool is_terminal(size_t sym) const {
@@ -136,7 +142,7 @@ struct lc_gram_t {
 
     [[nodiscard]] inline bool is_cg_nt(size_t sym) const{
         auto res = nt2phrase(sym);
-        return rules[res.first]>=cg_mark;
+        return rule_stream.read(res.first, res.first+r_bits-1)>=cg_mark;
     }
 
     [[nodiscard]] inline size_t first_rl_sym() const{
@@ -178,9 +184,8 @@ struct lc_gram_t {
         return -1;
     }
 
-    [[nodiscard]] inline size_t pos2symbol(size_t idx) const {
-        assert(idx<rules.size());
-        return rules.read(idx);
+    [[nodiscard]] inline size_t bitpos2symbol(size_t bit_pos) const {
+        return rule_stream.read(bit_pos, bit_pos+r_bits-1);
     }
 
     [[nodiscard]] inline size_t start_symbol() const {
@@ -192,7 +197,7 @@ struct lc_gram_t {
     }
 
     [[nodiscard]] inline std::pair<size_t, size_t> str2phrase(size_t str) const {
-        return {str_boundaries[str], str_boundaries[str+1]-1};
+        return {str_boundaries[str], str_boundaries[str+1]-r_bits};
     }
 
     void stats(size_t pad) const {
@@ -200,8 +205,8 @@ struct lc_gram_t {
         size_t n_ter = n_terminals();
         size_t n_nter = n_nonterminals();
 
-        auto pt_bytes = INT_CEIL((r-n_ter)*sym_width(g), 8);//space of the pointers for the nonterminals
-        auto g_bytes = INT_CEIL(g*sym_width(r), 8); //space of the expansions
+        auto pt_bytes = INT_CEIL(rl_ptr.n_bits(), 8);//space of the pointers for the nonterminals
+        auto g_bytes = INT_CEIL(g*r_bits, 8); //space of the expansions
         auto pt_str_bytes = (s+1)*sizeof(size_t);  //space of the pointers to the strings
 
         float comp_ratio = float(n)/float(pt_bytes+g_bytes+pt_str_bytes);
@@ -211,7 +216,6 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<" ("<<report_space((off_t)n)<<")"<<std::endl;
         std::cout<<pad_string<<"Number of compressed strings:   "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
         std::cout<<pad_string<<"Separator symbol:               "<<(int)sep_tsym<<std::endl;
-        //std::cout<<pad_string<<"Longest string:                 "<<longest_str<<std::endl;
         std::cout<<pad_string<<"Number of terminals:            "<<n_ter<<std::endl;
         std::cout<<pad_string<<"Number of non-terminals:        "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
         std::cout<<pad_string<<"Grammar size:                   "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;
@@ -222,8 +226,8 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Collage system rules:           "<<(has_cg_rules ? "yes" : "no")<<std::endl;
         std::cout<<pad_string<<"Random access support:          "<<(has_rand_access? "yes" : "no");
         if(has_rand_access){
-            auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
-            std::cout<<" ("<<report_space((off_t)ras_bytes)<<" in data)"<<std::endl;
+            //auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
+            //std::cout<<" ("<<report_space((off_t)ras_bytes)<<" in data)"<<std::endl;
             std::cout<<pad_string<<"  Samp. rate for non.ter exps: 1/"<<samp_rate<<std::endl;
         }else{
             std::cout<<""<<std::endl;
@@ -231,22 +235,19 @@ struct lc_gram_t {
     }
 
     void breakdown(size_t pad) {
-        assert(g==rules.size());
+        //assert(g==rules.size());
         assert(r-(max_tsym+1)==(rl_ptr.size()-1));
         assert(s==str_boundaries.size()-1);
         stats(pad);
 
         std::string pad_string(pad,' ');
 
-        size_t tot_sym, n_rules;
+        size_t n_rules;
         std::cout<<pad_string<<"Grammar rules per level"<<std::endl;
         for(size_t i=0;i<lvl_rules.size()-1; i++){
             n_rules = lvl_rules[i+1]-lvl_rules[i];//number of rules in the level
             if(n_rules>0){
-                auto res1 = nt2phrase(lvl_rules[i]);
-                auto res2 = nt2phrase(lvl_rules[i + 1] - 1);
-                tot_sym = res2.second-res1.first+1;
-                std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules << ",  number of symbols: " << tot_sym << std::endl;
+                std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules <<std::endl;
             }
         }
 
@@ -260,6 +261,7 @@ struct lc_gram_t {
         std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
     }
 
+    /*
     [[nodiscard]] uint8_t access_pos(size_t sym, size_t idx) const {
 
         std::stack<size_t> stack;
@@ -466,6 +468,7 @@ struct lc_gram_t {
         }
         return rule_exp[sym_a]<rule_exp[sym_b];
     }
+     */
 
     void print_parse_tree(size_t sym) const {
 
@@ -493,8 +496,8 @@ struct lc_gram_t {
 
             if(!is_terminal(sym)){
                 auto range = nt2phrase(sym);
-                for(size_t j=range.first; j<=range.second;j++){
-                    queue.emplace(pos2symbol(j), j==range.second, (j==range.second && is_left_branch));
+                for(size_t j=range.first; j<=range.second;j+=r_bits){
+                    queue.emplace(bitpos2symbol(j), j==range.second, (j==range.second && is_left_branch));
                 }
             }
         }
@@ -540,15 +543,15 @@ struct lc_gram_t {
                     }
                 }*/
 
-                for(size_t j=range.second+1; j-->range.first;){
-                    stack.emplace(pos2symbol(j));
+                for(off_t j=range.second; j>=range.first;j-=r_bits){
+                    stack.emplace(bitpos2symbol(j));
                 }
             }
         }
         return exp_len;
     }
 
-    [[nodiscard]] size_t exp_size(size_t sym) const {
+    /*[[nodiscard]] size_t exp_size(size_t sym) const {
         if(is_terminal(sym)) return 1;
 
         auto range = nt2phrase(sym);
@@ -560,7 +563,7 @@ struct lc_gram_t {
             exp += exp_size(rules.read(i));
         }
         return exp;
-    }
+    }*/
 
     [[nodiscard]] size_t in_memory_rand_access(size_t str_id, size_t start, size_t end) const {
         assert(has_rand_access);
