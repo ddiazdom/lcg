@@ -68,16 +68,16 @@ struct lc_gram_t {
         written_bytes +=serialize_elm(ofs, run_len_nt.first);
         written_bytes +=serialize_elm(ofs, run_len_nt.second);
         written_bytes +=serialize_elm(ofs, par_seed);
-
         written_bytes +=serialize_plain_vector(ofs, lvl_rules);
 
         written_bytes +=serialize_plain_vector(ofs, terminals);
         written_bytes +=serialize_plain_vector(ofs, str_boundaries);
-        written_bytes +=rules.serialize(ofs);
         written_bytes +=rl_ptr.serialize(ofs);
-
         //written_bytes +=rule_exp.serialize(ofs);
         //written_bytes +=sampled_exp.serialize(ofs);
+
+        written_bytes +=rules.serialize(ofs);
+
         return written_bytes;
     }
 
@@ -107,13 +107,17 @@ struct lc_gram_t {
         load_plain_vector(ifs, lvl_rules);
     }
 
-    void load(std::ifstream &ifs){
-        load_metadata(ifs);
+    void load_pointers(std::ifstream &ifs){
         load_plain_vector(ifs, terminals);
         load_plain_vector(ifs, str_boundaries);
-        rules.load(ifs);
         rl_ptr.load(ifs);
         //rule_exp.load(ifs);
+    }
+
+    void load(std::ifstream &ifs){
+        load_metadata(ifs);
+        load_pointers(ifs);
+        rules.load(ifs);
     }
 
     [[nodiscard]] inline std::pair<size_t, size_t> nt2phrase(size_t sym) const {
@@ -192,6 +196,7 @@ struct lc_gram_t {
     }
 
     void stats(size_t pad) const {
+
         size_t n_ter = n_terminals();
         size_t n_nter = n_nonterminals();
 
@@ -202,8 +207,8 @@ struct lc_gram_t {
         float comp_ratio = float(n)/float(pt_bytes+g_bytes+pt_str_bytes);
 
         std::string pad_string(pad,' ');
-
-        std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<std::endl;
+        std::cout<<pad_string<<"Seed for the parsing:           "<<par_seed<<std::endl;
+        std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<" ("<<report_space((off_t)n)<<")"<<std::endl;
         std::cout<<pad_string<<"Number of compressed strings:   "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
         std::cout<<pad_string<<"Separator symbol:               "<<(int)sep_tsym<<std::endl;
         //std::cout<<pad_string<<"Longest string:                 "<<longest_str<<std::endl;
@@ -213,8 +218,8 @@ struct lc_gram_t {
         std::cout<<pad_string<<"Length of the comp. collection: "<<c<<std::endl;
         std::cout<<pad_string<<"Approx. compression ratio:      "<<comp_ratio<<std::endl;
         std::cout<<pad_string<<"Simplified:                     "<<(is_simplified ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Run-len rules:                  "<<(has_rl_rules ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Collage rules:                  "<<(has_cg_rules ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Run-length rules:               "<<(has_rl_rules ? "yes" : "no")<<std::endl;
+        std::cout<<pad_string<<"Collage system rules:           "<<(has_cg_rules ? "yes" : "no")<<std::endl;
         std::cout<<pad_string<<"Random access support:          "<<(has_rand_access? "yes" : "no");
         if(has_rand_access){
             auto ras_bytes = INT_CEIL((rule_exp.size()*rule_exp.width()+ sampled_exp.size()+sampled_exp.width()), 8);
@@ -225,7 +230,7 @@ struct lc_gram_t {
         }
     }
 
-    void breakdown(size_t pad){
+    void breakdown(size_t pad) {
         assert(g==rules.size());
         assert(r-(max_tsym+1)==(rl_ptr.size()-1));
         assert(s==str_boundaries.size()-1);
@@ -252,22 +257,7 @@ struct lc_gram_t {
         if(has_rl_rules){
             std::cout <<pad_string<<"Number of run-length rules: " << run_len_nt.second <<std::endl;
         }
-
         std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
-    }
-
-    void set_samp_rate(size_t new_samp_rate){
-        samp_rate = new_samp_rate;
-        if(has_rand_access){
-        }
-    }
-
-    void get_prefix(size_t sym, size_t len, std::vector<size_t>& dc_string){
-
-    }
-
-    void get_suffix(size_t sym, size_t len, std::vector<size_t>& dc_string){
-
     }
 
     [[nodiscard]] uint8_t access_pos(size_t sym, size_t idx) const {
@@ -560,8 +550,8 @@ struct lc_gram_t {
 
     [[nodiscard]] size_t exp_size(size_t sym) const {
         if(is_terminal(sym)) return 1;
-        auto range = nt2phrase(sym);
 
+        auto range = nt2phrase(sym);
         size_t pos = range.second/samp_rate;
         size_t exp = sampled_exp.read(pos);
         size_t last_sampled = pos*samp_rate;
@@ -570,6 +560,10 @@ struct lc_gram_t {
             exp += exp_size(rules.read(i));
         }
         return exp;
+    }
+
+    [[nodiscard]] size_t in_memory_rand_access(size_t str_id, size_t start, size_t end) const {
+        assert(has_rand_access);
     }
 };
 

@@ -12,6 +12,9 @@ struct arguments{
     size_t n_chunks{};
     off_t chunk_size{};
     bool ver=false;
+    bool rand_acc=false;
+    bool skip_simp=false;
+    bool skip_rl=false;
     size_t seed=0;
 
     std::string p_file;
@@ -19,7 +22,6 @@ struct arguments{
     std::vector<std::string> position_list;
 
     std::string coord_file;
-    std::string rand_acc;
     std::string version= "v1.0.1 alpha";
     bool se_par_rounds = false;
 };
@@ -60,15 +62,14 @@ static void parse_app(CLI::App& app, struct arguments& args){
     //grammar options
     comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
     comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
+    comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
+    comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
+    comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support to the grammar");
 
     //other options
     comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
     comp->add_option("-C,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
     comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
-
-    CLI::App* par_func = app.add_subcommand("par", "extract parsing functions from a grammar");
-    par_func->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
-    par_func->add_option("-o,--output-file", args.output_file, "Output file (PF format) with the hash functions")->type_name("");
 
     CLI::App* meta = app.add_subcommand("meta", "get the metadata of a grammar");
     meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
@@ -79,6 +80,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
 
     CLI::App* access = app.add_subcommand("access", "random access");
     access->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
+
     CLI::App* group = access->add_option_group("asdas");
     group->add_option("-p,--position", args.position_list, "Area to access in format str_idx:start-end (0-based)");
     group->add_option("-f,--pos-file", args.coord_file, "File with the list of positions to access");
@@ -93,8 +95,15 @@ template<class sym_type>
 void run_int(std::string& input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
-    build_gram<uint8_t, lc_gram_t<true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds);
+    if(args.skip_rl){
+        build_gram<uint8_t, lc_gram_t<false, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                    args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                    args.skip_simp, args.rand_acc);
+    }else{
+        build_gram<uint8_t, lc_gram_t<false, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                   args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                   args.skip_simp, args.rand_acc);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -111,20 +120,24 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    std::cout << "Input file:       " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
     if(app.got_subcommand("comp")) {
+        std::cout << "Input file:       " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;
         run_int<uint8_t>(input_collection, args);
-    } else if(app.got_subcommand("par")){
-        get_par_seed(args.input_file);
-    } else if(app.got_subcommand("meta")){
+    } if(app.got_subcommand("meta")){
         print_metadata(args.input_file);
+    } else if(app.got_subcommand("merge")){
+        //lc_gram_t gram;
+        //load_from_file(args.input_file, gram);
+        //estimate_alt_encodings(gram);
+        std::cout<<"merge"<<std::endl;
     } else if(app.got_subcommand("access")){
-        lc_gram_t gram;
-        load_from_file(args.input_file, gram);
-        estimate_alt_encodings(gram);
+        std::cout<<"access"<<std::endl;
+        //lc_gram_t gram;
+        //load_from_file(args.input_file, gram);
+        //estimate_alt_encodings(gram);
     }
     return 0;
 }

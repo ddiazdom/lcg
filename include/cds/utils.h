@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <utility>
 #include <vector>
 #include <unordered_set>
 #include <filesystem>
@@ -67,8 +68,8 @@ struct tmp_workspace{
 
     explicit tmp_workspace(std::string folder,
                            std::string ext_,
-                           bool rem_all) : tmp_folder(folder),
-                                           ext(ext_),
+                           bool rem_all) : tmp_folder(std::move(folder)),
+                                           ext(std::move(ext_)),
                                            remove_all(rem_all){
         assert(file_exists(tmp_folder));
     }

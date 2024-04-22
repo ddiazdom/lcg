@@ -175,7 +175,8 @@ std::pair<size_t, size_t> compute_cg_rules(gram_t& gram, std::unordered_map<size
 template<class gram_t>
 size_t get_cs_left_rules_new(std::vector<collage_data>& level_rules,  const gram_t& gram,
                              std::vector<uint32_t>& g_lcp, std::vector<uint32_t>& sym_perm,
-                             size_t& lvl_offset, size_t first_lvl_nt, size_t lvl, std::unordered_set<size_t>& suff_nts) {
+                             size_t& lvl_offset, size_t first_lvl_nt/*, size_t lvl*/,
+                             std::unordered_set<size_t>& suff_nts) {
 
     std::sort(level_rules.begin(), level_rules.end(), [&](auto const& a, auto const& b){
         size_t len = std::min(a.rule_size, b.rule_size);
@@ -287,7 +288,9 @@ size_t get_cs_left_rules_new(std::vector<collage_data>& level_rules,  const gram
 }
 
 template<class gram_t>
-std::pair<size_t, size_t> compute_cg_rules_new(gram_t& gram, std::unordered_map<size_t, std::tuple<size_t, size_t, bool>>& ht){
+std::pair<size_t, size_t> compute_cg_rules_new(gram_t& gram
+                                               /*, std::unordered_map<size_t, std::tuple<size_t, size_t, bool>>& ht*/
+                                               ){
 
     size_t max_len = 0, new_g_size=0, lvl_offset=0;
     std::vector<uint32_t> g_lcp(gram.max_tsym+1, 0);
@@ -380,7 +383,7 @@ void make_collage_system(gram_t& gram){
         if(res!=ht.end()){
 
             //TODO test
-            /*auto r1 = gram.nt2phrase(sym);
+            / *auto r1 = gram.nt2phrase(sym);
             auto r2 = gram.nt2phrase(std::get<0>(res->second));
 
             size_t matches=0;
