@@ -1017,7 +1017,6 @@ namespace lz_like_strat {
                 gram.destroy_gram();
             }
 
-
             if(n_threads>1) {
                 //merge the partial grams of the different threads into one
                 size_t n_ranges=0;
@@ -1085,7 +1084,7 @@ namespace lz_like_strat {
         }
     }
 
-    template<class sym_type>
+    template<class sym_type, class gram_type>
     void lc_parsing_algo(std::string& i_file, std::string& o_file,
                          tmp_workspace& tmp_ws, size_t n_threads,
                          size_t n_chunks, size_t chunk_size, size_t par_seed) {
@@ -1130,7 +1129,7 @@ namespace lz_like_strat {
         std::string mg_p_gram_file = tmp_ws.get_file("merged_p_grams");
         merge_partial_grammars<sym_type>(ct_p_grams_file, mg_p_gram_file, p_opts.p_seeds, p_opts.n_threads);
 
-        lc_gram_t final_grammar;
+        gram_type final_grammar;
         make_gram(final_grammar, mg_p_gram_file, par_seed);
         store_to_file(o_file, final_grammar);
     }

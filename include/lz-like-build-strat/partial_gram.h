@@ -860,7 +860,7 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     new_gram.r_bits = r_bits;
     new_gram.rule_stream.reserve_in_bits(new_gram.r_bits*new_gram.g);
 
-    new_gram.rl_ptr.set_width(sym_width(new_gram.r_bits*new_gram.g));
+    new_gram.rl_ptr.set_width(sym_width(new_gram.g));
     new_gram.rl_ptr.resize(new_gram.r-new_gram.max_tsym);
 
     size_t bit_pos =0;
@@ -872,7 +872,7 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     }
 
     bool last;
-    size_t rule=0, pos, width, n_bits, /*j=new_gram.max_tsym+1,*/ rule_start_ptr=bit_pos, sym, min_sym=0, max_sym=new_gram.max_tsym;
+    size_t rule=0, pos, width, n_bits, rule_start_ptr=bit_pos, sym, min_sym=0, max_sym=new_gram.max_tsym;
     bitstream<size_t> rules_buffer;
 
     for(size_t i=0;i<p_gram.lvl;i++) {
@@ -893,7 +893,7 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
             pos+=width;
 
             if(last){
-                new_gram.rl_ptr.write(rule, rule_start_ptr);
+                new_gram.rl_ptr.write(rule, rule_start_ptr/r_bits);
                 rule_start_ptr = bit_pos;
                 rule++;
                 //std::cout<<""<<std::endl;
@@ -908,15 +908,15 @@ void make_gram(gram_type& new_gram, std::string& p_gram_file, uint64_t par_seed_
     rules_buffer.destroy();
     assert((bit_pos/r_bits)==new_gram.g);
     assert(rule==(new_gram.r-(new_gram.max_tsym+1)));
-    new_gram.rl_ptr.write(rule, bit_pos);
+    new_gram.rl_ptr.write(rule, bit_pos/r_bits);
 
-    size_t offset = r_bits*(new_gram.g-new_gram.c);
+    size_t offset = new_gram.g-new_gram.c;
     new_gram.str_boundaries.resize(new_gram.s+1);
     for(size_t str=0;str<=new_gram.s;str++){
-        new_gram.str_boundaries[str] = offset+(str*r_bits);
+        new_gram.str_boundaries[str] = offset+str;
     }
     assert(new_gram.str_boundaries[0]==offset);
-    assert(new_gram.str_boundaries.back()==bit_pos);
+    assert(new_gram.str_boundaries.back()==bit_pos/r_bits);
 }
 
 #endif //LCG_PARTIAL_GRAM_H
