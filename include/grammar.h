@@ -11,6 +11,9 @@
 #include "cds/int_array.h"
 #include "cds/utils.h"
 
+#define STR_EXP true
+#define RULE_EXP false
+
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
@@ -555,7 +558,7 @@ struct lc_gram_t {
             sym = stack.top();
             stack.pop();
 
-            if(is_terminal(sym)){
+            if(sym<=max_tsym){
                 dc_string.push_back((char)sym);
                 exp_len++;
             }else{
@@ -592,62 +595,122 @@ struct lc_gram_t {
         return exp_len;
     }
 
-    /*[[nodiscard]] size_t exp_size(size_t sym) const {
-        if(is_terminal(sym)) return 1;
-
-        auto range = nt2phrase(sym);
-        size_t pos = range.second/samp_rate;
-        size_t exp = sampled_exp.read(pos);
-        size_t last_sampled = pos*samp_rate;
-
-        for(size_t i=last_sampled;i<=range.second;i++){
-            exp += exp_size(rules.read(i));
-        }
-        return exp;
-    }*/
-
-    [[nodiscard]] size_t in_memory_rand_access(size_t str, off_t pos) const {
-
+    [[nodiscard]] size_t in_memory_rand_access(size_t sym, off_t pos) const {
         assert(has_rand_access);
+        exp_search<STR_EXP>(pos, sym);
+        while(sym>max_tsym){
+            exp_search<RULE_EXP>(pos, sym);
+        }
+        return terminals[sym];
+    }
 
-        auto res = str2bitrange(str);
-        size_t rule_len = res.second-res.first+r_bits;
-        size_t n_samples = rule_len/str_samp_rate;
+    template<bool is_str>
+    inline void exp_search(off_t& exp_pos, size_t& sym) const {
 
-        size_t samp_exp = 0;
-        size_t samp_start = 0;
+        off_t rhs_start, exp_start, ra_bits, rule_len, n_samples, acc_exp, rhs_idx, bps;
 
-        if(n_samples>0){
-            size_t samp_s = res.second+1;//first sample expansion
-            off_t left = 0, exp_m, exp_n, bit_pos, middle;
-            auto right = (off_t)n_samples-1;
+        if constexpr(is_str){
+            rhs_start = str_boundaries[sym];
+            exp_start = str_boundaries[sym+1];
+            ra_bits = rule_stream.read(exp_start-str_samp_bits, exp_start-1);
+            exp_start -= str_samp_bits+ra_bits;
+            rule_len = (exp_start-rhs_start)/r_bits;
+            n_samples = rule_len/str_samp_rate;
+            bps = ra_bits/n_samples;
+        } else{
+            bool is_rl_rule = is_rl_sym(sym);
+            sym -= max_tsym+1;
 
-            while (left <= right) {
-                middle = left + (right - left) / 2;
-                bit_pos = samp_s + middle*str_samp_bits;
-                exp_m = rule_stream.read(bit_pos, bit_pos+str_samp_bits-1);
-                if(exp_m>pos){
-                    right = middle - 1;
-                    continue;
-                }
+            rhs_start = rl_ptr.read(sym);
+            exp_start = rl_ptr.read(sym+1);
+            ra_bits = rule_stream.read(exp_start-r_samp_bits, exp_start-1);
+            exp_start -= r_samp_bits+ra_bits;
 
-                //exp_m<=pos
-                bit_pos += str_samp_bits;
-                exp_n = rule_stream.read(bit_pos, bit_pos+str_samp_bits-1);
-                if((left+1)==n_samples || pos<exp_n){
-                    //exp_m<=pos && pos<exp_n
-                    break;
-                }
-                //exp_n=<pos
-                left = middle + 1;
+            if(is_rl_rule){
+                sym = rule_stream.read(rhs_start, rhs_start+r_bits-1);
+                rhs_start+=r_bits;
+                off_t rl_len = rule_stream.read(rhs_start, rhs_start+r_bits-1);
+                acc_exp = rule_stream.read(exp_start, exp_start+ra_bits-1);
+                acc_exp /= rl_len;
+                exp_pos %=acc_exp;
+                return;
             }
 
-            samp_exp = exp_m;
-            samp_start = middle;
+            rule_len = (exp_start-rhs_start)/r_bits;
+            n_samples = rule_len/rl_samp_rate;
+            bps = ra_bits/(n_samples+1);// the rules also include the expansion size as a sample
         }
 
-        //while(samp_exp<pos){
-        //}
+        off_t left = 0, exp_m=0, exp_n, bit_pos, middle=-1;
+
+        /*for(size_t j=samp_s;j<samp_s+(bps*n_samples);j+=bps){
+            std::cout<<rule_stream.read(j, j+bps-1)<<" ";
+        }
+        std::cout<<""<<std::endl;*/
+
+        auto right = (off_t)n_samples-1;
+
+        while (left <= right) {
+            middle = left + (right - left) / 2;
+            bit_pos = exp_start + middle*bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if(exp_m>exp_pos){
+                right = middle - 1;
+                middle = -1;
+                exp_m = 0;
+                continue;
+            }
+
+            //exp_m<=pos
+            bit_pos += bps;
+            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if((middle+1)==n_samples || exp_pos<exp_n){
+                //exp_m<=pos && pos<exp_n
+                break;
+            }
+            //exp_n=<pos
+            left = middle + 1;
+        }
+
+        acc_exp = exp_m;
+        if constexpr (is_str){
+            rhs_idx = (middle+1)*str_samp_rate;
+        }else{
+            rhs_idx = (middle+1)*rl_samp_rate;
+        }
+
+        size_t rhs_bit_pos = rhs_start + rhs_idx*r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        off_t e_len = exp_len(sym);
+        acc_exp+=e_len;
+
+        while(rhs_idx<rule_len && acc_exp<=exp_pos){
+            rhs_idx++;
+            rhs_bit_pos+=r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            e_len = exp_len(sym);
+            acc_exp+=e_len;
+        }
+        exp_pos-=acc_exp-e_len;
+    }
+
+    [[nodiscard]] inline size_t exp_len(size_t sym) const {
+        assert(has_rand_access);
+
+        if(sym<=max_tsym) return 1;
+
+        sym-= max_tsym+1;
+        size_t rl_start = rl_ptr.read(sym);
+        size_t end = rl_ptr.read(sym+1);
+        size_t ra_bits = rule_stream.read(end-r_samp_bits, end-1);
+        end -=r_samp_bits;
+        size_t rl_end = end - ra_bits;
+
+        size_t rule_len = (rl_end-rl_start)/r_bits;
+        size_t n_samples = (rule_len/rl_samp_rate)+1;
+        size_t bps = ra_bits/n_samples;
+
+        return rule_stream.read(end-bps, end-1);
     }
 };
 
