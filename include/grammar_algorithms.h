@@ -1052,10 +1052,15 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     // encoding with random access support works differently
     gram_type final_gram;
     final_gram.swap(gram);
+    std::string dc_string;
 
+    final_gram.print_parse_tree(10930);
+    //final_gram.in_memory_rand_access_range(192, 2, 20, dc_string);
+    final_gram.in_memory_rand_access_range(192, 4, 10, dc_string);
     //final_gram.in_memory_rand_access(192, 16);
+
     //optional check
-    check_plain_grammar(final_gram, i_file);
+    //check_plain_grammar(final_gram, i_file);
     //
 
 
@@ -1066,11 +1071,11 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
 }
 
 
-template<class gram_type>
-void se_rand_access(std::string& gram_file, size_t str_id, size_t start, size_t end){
-    gram_type gram;
-    std::ifstream ifs(gram_file, std::ios::binary);
-    gram.load_metadata(ifs);
-    gram.load_pointers(ifs);
-}
+//template<class gram_type>
+//void se_rand_access(std::string& gram_file, size_t str_id, size_t start, size_t end){
+//    gram_type gram;
+//    std::ifstream ifs(gram_file, std::ios::binary);
+//    gram.load_metadata(ifs);
+//    gram.load_pointers(ifs);
+//}
 #endif //LCG_GRAMMAR_ALGORITHMS_H

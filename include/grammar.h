@@ -516,9 +516,12 @@ struct lc_gram_t {
 
     void print_parse_tree(size_t sym) const {
 
-        std::queue<std::tuple<size_t, bool, bool>> queue;
-        std::tuple<size_t, bool, bool> dc_sym;
-        queue.emplace(sym, true, true);
+        std::queue<std::pair<size_t, bool>> queue;
+        std::pair<size_t, bool> dc_sym;
+        queue.emplace(sym, true);
+
+        bool next_break_known=true;
+        std::cout<<sym<<" |"<<std::flush;
 
         while(!queue.empty()) {
 
@@ -526,22 +529,44 @@ struct lc_gram_t {
             queue.pop();
 
             sym = std::get<0>(dc_sym);
-            bool is_last_sib = std::get<1>(dc_sym);
-            bool is_left_branch = std::get<2>(dc_sym);
-            std::cout<<sym<<" ";
 
-            if(is_last_sib){
-                std::cout<<"| ";
-            }
-
-            if(is_left_branch){
-                std::cout<<" "<<std::endl;
-            }
-
-            if(!is_terminal(sym)){
+            if(sym>max_tsym){
                 auto range = nt2bitrange(sym);
-                for(size_t j=range.first; j<=range.second;j+=r_bits){
-                    queue.emplace(bitpos2symbol(j), j==range.second, (j==range.second && is_left_branch));
+
+                if(is_rl_sym(sym)){
+                    assert(range.second - range.first == r_bits);
+                    size_t rl_sym = bitpos2symbol(range.first);
+                    size_t len = bitpos2symbol(range.second);
+
+                    if(std::get<1>(dc_sym)){
+                        next_break_known = false;
+                        std::cout<<" "<<std::endl;
+                    }
+                    for (size_t j = 0; j < len; j++) {
+                        bool flag=false;
+                        if(!next_break_known && rl_sym>max_tsym){
+                            next_break_known=true;
+                            flag = true;
+                        }
+                        std::cout<<rl_sym<<" "<<std::flush;
+                        queue.emplace(rl_sym, flag);
+                    }
+                    std::cout<<"| ";
+                }else{
+                    if(std::get<1>(dc_sym)){
+                        next_break_known = false;
+                        std::cout<<" "<<std::endl;
+                    }
+                    for(size_t j=range.first; j<=range.second;j+=r_bits){
+                        bool flag=false;
+                        if(!next_break_known && bitpos2symbol(j)>max_tsym){
+                            next_break_known=true;
+                            flag = true;
+                        }
+                        std::cout<<bitpos2symbol(j)<<" "<<std::flush;
+                        queue.emplace(bitpos2symbol(j), flag);
+                    }
+                    std::cout<<"| "<<std::flush;
                 }
             }
         }
@@ -567,9 +592,9 @@ struct lc_gram_t {
                 if constexpr (is_rl) {
                     if(is_rl_sym(sym)) {
                         assert(range.second - range.first + 1 == 2);
-                        size_t len = pos2symbol(range.second);
+                        size_t len = bitpos2symbol(range.second);
                         for (size_t j = 0; j < len; j++) {
-                            stack.emplace(pos2symbol(range.first));
+                            stack.emplace(bitpos2symbol(range.first));
                         }
                         continue;
                     }
@@ -595,6 +620,111 @@ struct lc_gram_t {
         return exp_len;
     }
 
+    [[nodiscard]] size_t in_memory_rand_access_range(size_t sym, off_t exp_start, off_t exp_end,
+                                                     std::string& dc_string) const {
+
+        off_t rhs_bit_pos_s, rhs_bit_pos_e, rhs_bit_pos_exp;
+        bool rhs_in_rl;//right-hand-side is run-length encoded
+
+        rhs_in_rl = exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
+        off_t k = (rhs_bit_pos_e-rhs_bit_pos_s+r_bits)/r_bits;
+        while(k==1){
+            sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s+r_bits-1);
+            rhs_in_rl = exp_search_range<RULE_EXP>(sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
+            k = (rhs_bit_pos_e-rhs_bit_pos_s+r_bits)/r_bits;
+        }
+
+        std::stack<uint64_t> exp_stack;
+        sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s+r_bits-1);
+        size_t rm_sym;
+        if(rhs_in_rl){
+            for(off_t u=rhs_bit_pos_e-r_bits;u>rhs_bit_pos_s;u-=r_bits){
+                exp_stack.push(sym);
+            }
+            rm_sym = sym;
+        }else{
+            for(off_t u=rhs_bit_pos_e-r_bits;u>rhs_bit_pos_s;u-=r_bits){
+                exp_stack.push(rule_stream.read(u, u+r_bits-1));
+            }
+            rm_sym = rule_stream.read(rhs_bit_pos_e, rhs_bit_pos_e+r_bits-1);
+        }
+
+        while(sym>max_tsym){
+            rhs_in_rl = exp_search<RULE_EXP>(exp_start, sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
+            if(rhs_in_rl){
+                for(off_t u=rhs_bit_pos_e;u>rhs_bit_pos_exp;u-=r_bits){
+                    exp_stack.push(sym);
+                }
+            }else{
+                for(off_t u=rhs_bit_pos_e;u>rhs_bit_pos_exp;u-=r_bits){
+                    exp_stack.push(rule_stream.read(u, u+r_bits-1));
+                }
+            }
+        }
+
+        dc_string.clear();
+        dc_string.push_back(terminals[sym]);
+        while(!exp_stack.empty()){
+            sym = exp_stack.top();
+            exp_stack.pop();
+
+            if(sym<=max_tsym){
+                dc_string.push_back(terminals[sym]);
+            }else{
+                auto range = nt2bitrange(sym);
+                if(is_rl_sym(sym)) {
+                    assert(range.second - range.first== r_bits);
+                    size_t len = bitpos2symbol(range.second);
+                    for (size_t j = 0; j < len; j++) {
+                        exp_stack.emplace(bitpos2symbol(range.first));
+                    }
+                    continue;
+                }
+                for(off_t j=range.second; j>=range.first;j-=r_bits){
+                    exp_stack.emplace(bitpos2symbol(j));
+                }
+            }
+        }
+
+        size_t stack_sym;
+        sym = rm_sym;
+        while(sym>max_tsym){
+
+            rhs_in_rl = exp_search<RULE_EXP>(exp_end, sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
+            if(rhs_in_rl){
+                for(off_t u=rhs_bit_pos_exp-r_bits;u>=rhs_bit_pos_s;u-=r_bits){
+                    exp_stack.push(sym);
+                }
+            }else{
+                for(off_t u=rhs_bit_pos_exp-r_bits;u>=rhs_bit_pos_s;u-=r_bits){
+                    exp_stack.push(rule_stream.read(u, u+r_bits-1));
+                }
+            }
+
+            while(!exp_stack.empty()){
+                stack_sym = exp_stack.top();
+                exp_stack.pop();
+                if(stack_sym<=max_tsym){
+                    dc_string.push_back(terminals[stack_sym]);
+                }else{
+                    auto range = nt2bitrange(stack_sym);
+                    if(is_rl_sym(stack_sym)) {
+                        assert(range.second - range.first== r_bits);
+                        size_t len = bitpos2symbol(range.second);
+                        for (size_t j = 0; j < len; j++) {
+                            exp_stack.emplace(bitpos2symbol(range.first));
+                        }
+                        continue;
+                    }
+                    for(off_t j=range.second; j>=range.first;j-=r_bits){
+                        exp_stack.emplace(bitpos2symbol(j));
+                    }
+                }
+            }
+        }
+        dc_string.push_back(terminals[sym]);
+    }
+
     [[nodiscard]] size_t in_memory_rand_access(size_t sym, off_t pos) const {
         assert(has_rand_access);
         exp_search<STR_EXP>(pos, sym);
@@ -604,8 +734,178 @@ struct lc_gram_t {
         return terminals[sym];
     }
 
+    /**
+     * sym is a grammar symbol (nonterminal or string id)
+     * Given the rule sym -> A_1 A_2 ... A_x, this function returns the minimum substring A_i A_{i+1} .. A_{i+k} in
+     * the right-hand side of that rule containing exp(sym)[exp_s..exp_e] (exp_e is inclusive).
+     * The function produces the following output:
+     *      exp_s: the relative position of exp[exp_s] within exp(A_i)
+     *      exp_e: the relative position of exp[exp_e] within exp(A_{i+k})
+     *      bit_pos_s: leftmost bit of A_{i} within the grammar encoding
+     *      bit_pos_e: leftmost bit of A_{i+k} within the grammar encoding
+     * The return value is a bool indicating if sym is a run-length nonterminal. If it is true, then bit_pos_s and
+     * bit_pos_e are relative to the uncompressed form of A_i A_{i+1} ... A_{i+k}
+    **/
     template<bool is_str>
-    inline void exp_search(off_t& exp_pos, size_t& sym) const {
+    inline bool exp_search_range(size_t sym, off_t& exp_s, off_t& exp_e, off_t& bit_pos_s, off_t& bit_pos_e) const {
+
+        assert(exp_s<=exp_e);
+        off_t rhs_start, exp_start, ra_bits, rule_len, n_samples, acc_exp, rhs_idx_l, rhs_idx_r, bps;
+
+        if constexpr(is_str){
+            rhs_start = str_boundaries[sym];
+            exp_start = str_boundaries[sym+1];
+            ra_bits = rule_stream.read(exp_start-str_samp_bits, exp_start-1);
+            exp_start -= str_samp_bits+ra_bits;
+            rule_len = (exp_start-rhs_start)/r_bits;
+            n_samples = rule_len/str_samp_rate;
+            bps = ra_bits/n_samples;
+        } else{
+
+            bool is_rl_rule = is_rl_sym(sym);
+            sym -= max_tsym+1;
+
+            rhs_start = rl_ptr.read(sym);
+            exp_start = rl_ptr.read(sym+1);
+            ra_bits = rule_stream.read(exp_start-r_samp_bits, exp_start-1);
+            exp_start -= r_samp_bits+ra_bits;
+
+            if(is_rl_rule){//the right-hand side A_1 A_2 ... A_x = A^{l} is a sequence of l copies of symbol A
+                off_t rl_len = rule_stream.read(rhs_start+r_bits, rhs_start+(2*r_bits)-1);//read the value of l
+                acc_exp = rule_stream.read(exp_start, exp_start+ra_bits-1);//read the value of |exp(A)|*l
+                acc_exp /= rl_len;// read |exp(A)|
+                //compute how many copies of A we need to cover exp[exp_s..exp_e]
+                off_t n_copies = (exp_e/acc_exp)- (exp_s/acc_exp)+1;
+                exp_s %=acc_exp;
+                exp_e %=acc_exp;
+                bit_pos_s = rhs_start;
+                bit_pos_e = rhs_start + (n_copies-1)*r_bits;
+                return true;
+            }
+
+            rule_len = (exp_start-rhs_start)/r_bits;
+            n_samples = rule_len/rl_samp_rate;
+            bps = ra_bits/(n_samples+1);// +1 because the rules also include the value of |exp(sym)| as a sample
+        }
+
+        //binary search of exp_s in the expansion samples
+        off_t left = 0, exp_m=0, exp_n, bit_pos, middle=-1;
+        auto right = (off_t)n_samples-1;
+        while(left <= right) {
+            middle = left + (right - left) / 2;
+            bit_pos = exp_start + middle*bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if(exp_m>exp_s){
+                right = middle - 1;
+                middle = -1;
+                exp_m = 0;
+                continue;
+            }
+
+            //exp_m<=pos
+            bit_pos += bps;
+            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if((middle+1)==n_samples || exp_s<exp_n){
+                //exp_m<=pos && pos<exp_n
+                break;
+            }
+            //exp_n=<pos
+            left = middle + 1;
+        }
+
+        acc_exp = exp_m;
+        if constexpr (is_str){
+            rhs_idx_l = (middle+1)*str_samp_rate;
+        }else{
+            rhs_idx_l = (middle+1)*rl_samp_rate;
+        }
+
+        size_t rhs_bit_pos = rhs_start + rhs_idx_l*r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        off_t e_len = exp_len(sym);
+        acc_exp+=e_len;
+
+        while(rhs_idx_l<rule_len && acc_exp<=exp_s){
+            rhs_idx_l++;
+            rhs_bit_pos+=r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            e_len = exp_len(sym);
+            acc_exp+=e_len;
+        }
+        exp_s-=acc_exp-e_len;
+
+        //binary search of exp_e in the expansion samples
+        if constexpr (is_str){
+            left = rhs_idx_l/str_samp_rate;
+        }else{
+            left = rhs_idx_l/rl_samp_rate;
+        }
+        right = (off_t)n_samples-1;
+        while(left <= right) {
+            middle = left + (right - left) / 2;
+            bit_pos = exp_start + middle*bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if(exp_m>exp_e){
+                right = middle - 1;
+                middle = -1;
+                exp_m = 0;
+                continue;
+            }
+            //exp_m<=pos
+            bit_pos += bps;
+            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
+            if((middle+1)==n_samples || exp_e<exp_n){
+                //exp_m<=pos && pos<exp_n
+                break;
+            }
+            //exp_n=<pos
+            left = middle + 1;
+        }
+        acc_exp = exp_m;
+        if constexpr (is_str){
+            rhs_idx_r = (middle+1)*str_samp_rate;
+        }else{
+            rhs_idx_r = (middle+1)*rl_samp_rate;
+        }
+        rhs_bit_pos = rhs_start + rhs_idx_r*r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        e_len = exp_len(sym);
+        acc_exp+=e_len;
+
+        while(rhs_idx_r<rule_len && acc_exp<=exp_e){
+            rhs_idx_r++;
+            rhs_bit_pos+=r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            e_len = exp_len(sym);
+            acc_exp+=e_len;
+        }
+        exp_e-=acc_exp-e_len;
+
+        bit_pos_s = rhs_start+rhs_idx_l*r_bits;
+        bit_pos_e = rhs_start+rhs_idx_r*r_bits;
+
+        return false;
+    }
+
+
+    /**
+     * Input:
+     *      sym: a grammar symbol (nonterminal or string id)
+     *      exp_pos: the position for the symbol exp(sym)[exp_pos]
+     * Given the rule sym -> A_1 A_2 ... A_x, this function returns symbol A_i in
+     * the right-hand side of that rule containing exp(sym)[exp_pos]
+     * Output:
+     *      exp_pos: the relative position of exp(sym)[exp_pos] within exp(A_i)
+     *      sym: the value of A_i
+     *      bit_pos_s: leftmost bit of A_1 within the grammar encoding
+     *      bit_pos_exp: leftmost bit of A_i within the grammar encoding
+     *      bit_pos_e: leftmost bit of A_x within the grammar encoding
+     * Caveat: when A_1 A_2 ... A_x is a run A^{l} of l copies of some symbol A, then this rule is encoded as
+     * A l. Therefore, bit_pos_s=bit_pos_exp=bit_pos_e is the leftmost bit of A
+     * within (A l) in the grammar encoding
+    **/
+    template<bool is_str>
+    inline bool exp_search(off_t& exp_pos, size_t& sym, off_t& bit_pos_s, off_t& bit_pos_exp, off_t& bit_pos_e) const {
 
         off_t rhs_start, exp_start, ra_bits, rule_len, n_samples, acc_exp, rhs_idx, bps;
 
@@ -628,12 +928,16 @@ struct lc_gram_t {
 
             if(is_rl_rule){
                 sym = rule_stream.read(rhs_start, rhs_start+r_bits-1);
-                rhs_start+=r_bits;
-                off_t rl_len = rule_stream.read(rhs_start, rhs_start+r_bits-1);
+                off_t rl_len = rule_stream.read(rhs_start+r_bits, rhs_start+(2*r_bits)-1);
                 acc_exp = rule_stream.read(exp_start, exp_start+ra_bits-1);
                 acc_exp /= rl_len;
+
+                bit_pos_s = rhs_start;
+                bit_pos_exp = rhs_start + (exp_pos/acc_exp)*r_bits;
+                bit_pos_e = rhs_start + (rl_len-1)*r_bits;
+
                 exp_pos %=acc_exp;
-                return;
+                return true;
             }
 
             rule_len = (exp_start-rhs_start)/r_bits;
@@ -642,11 +946,6 @@ struct lc_gram_t {
         }
 
         off_t left = 0, exp_m=0, exp_n, bit_pos, middle=-1;
-
-        /*for(size_t j=samp_s;j<samp_s+(bps*n_samples);j+=bps){
-            std::cout<<rule_stream.read(j, j+bps-1)<<" ";
-        }
-        std::cout<<""<<std::endl;*/
 
         auto right = (off_t)n_samples-1;
 
@@ -679,7 +978,7 @@ struct lc_gram_t {
             rhs_idx = (middle+1)*rl_samp_rate;
         }
 
-        size_t rhs_bit_pos = rhs_start + rhs_idx*r_bits;
+        off_t rhs_bit_pos = rhs_start + rhs_idx*r_bits;
         sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
         off_t e_len = exp_len(sym);
         acc_exp+=e_len;
@@ -692,8 +991,14 @@ struct lc_gram_t {
             acc_exp+=e_len;
         }
         exp_pos-=acc_exp-e_len;
+
+        bit_pos_s = rhs_start;
+        bit_pos_exp = rhs_bit_pos;
+        bit_pos_e = exp_start-r_bits;
+        return false;
     }
 
+    //returns |exp(sym)|
     [[nodiscard]] inline size_t exp_len(size_t sym) const {
         assert(has_rand_access);
 
