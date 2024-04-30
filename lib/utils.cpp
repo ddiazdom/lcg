@@ -46,6 +46,17 @@ std::string random_string(size_t length){
     return random_string;
 }
 
+std::vector<std::string> split (const std::string &s, char delim) {
+    std::vector<std::string> result;
+    std::stringstream ss (s);
+    std::string item;
+
+    while (getline (ss, item, delim)) {
+        result.push_back (item);
+    }
+    return result;
+}
+
 std::string report_space(off_t bytes){
     if(bytes<1000){
         return std::to_string(bytes)+" bytes";

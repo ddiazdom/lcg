@@ -98,6 +98,9 @@ struct tmp_workspace{
     }
 };
 
+//https://stackoverflow.com/questions/14265581/parse-split-a-string-in-c-using-string-delimiter-standard-c
+std::vector<std::string> split (const std::string &s, char delim);
+
 
 str_collection collection_stats(std::string& input_file);
 

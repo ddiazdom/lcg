@@ -24,6 +24,11 @@ struct arguments{
     std::string coord_file;
     std::string version= "v1.0.1 alpha";
     bool se_par_rounds = false;
+
+    //size_t str{};
+    //off_t start{};
+    //off_t end{};
+    std::vector<std::string> ra_positions;
 };
 
 struct CellWidthValidator : public CLI::Validator {
@@ -80,19 +85,22 @@ static void parse_app(CLI::App& app, struct arguments& args){
 
     CLI::App* access = app.add_subcommand("access", "random access");
     access->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
+    access->add_option("STR:START-END", args.ra_positions, "Coordinates to be accessed");
+    //access->add_option("START", args.start, "First position inclusive");
+    //access->add_option("END", args.end, "Last position inclusive");
 
-    CLI::App* group = access->add_option_group("asdas");
-    group->add_option("-p,--position", args.position_list, "Area to access in format str_idx:start-end (0-based)");
-    group->add_option("-f,--pos-file", args.coord_file, "File with the list of positions to access");
-    access->add_option("-o,--output-file", args.output_file, "Output file");
-    group->require_option(1,2);
+    //CLI::App* group = access->add_option_group("asdas");
+    //group->add_option("-p,--position", args.position_list, "Area to access in format str_idx:start-end (0-based)");
+    //group->add_option("-f,--pos-file", args.coord_file, "File with the list of positions to access");
+    //access->add_option("-o,--output-file", args.output_file, "Output file");
+    //group->require_option(1,2);
 
     app.require_subcommand(1,1);
     app.footer("Report bugs to <diego.diaz@helsinki.fi>");
 }
 
 template<class sym_type>
-void run_int(std::string& input_file, arguments& args) {
+void comp_int(std::string& input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
     if(args.skip_rl){
@@ -120,6 +128,104 @@ void run_int(std::string& input_file, arguments& args) {
     }
 }
 
+void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, off_t>>& query_coords, bool has_rl_rules, bool has_cg_rules, bool has_rand_access) {
+    assert(has_rand_access);
+    if(has_cg_rules){
+        if(has_rl_rules){
+            lc_gram_t<true, true, true> gram;
+            load_from_file(input_file, gram);
+            for(auto const& query : query_coords){
+                std::string dc_output;
+                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
+                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                std::cout<<dc_output<<std::endl;
+            }
+        }else{
+            lc_gram_t<true, false, true> gram;
+            load_from_file(input_file, gram);
+            for(auto const& query : query_coords){
+                std::string dc_output;
+                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
+                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                std::cout<<dc_output<<std::endl;
+            }
+        }
+    }else{
+        if(has_rl_rules){
+            lc_gram_t<false, true, true> gram;
+            load_from_file(input_file, gram);
+            for(auto const& query : query_coords){
+                std::string dc_output;
+                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
+                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                std::cout<<dc_output<<std::endl;
+            }
+        }else{
+            lc_gram_t<false, false, true> gram;
+            load_from_file(input_file, gram);
+            for(auto const& query : query_coords){
+                std::string dc_output;
+                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
+                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                std::cout<<dc_output<<std::endl;
+            }
+        }
+    }
+}
+
+std::vector<std::tuple<size_t, off_t, off_t>> parse_query_coords(std::vector<std::string>& str_queries){
+
+    size_t str;
+    off_t start, end;
+    std::vector<std::tuple<size_t, off_t, off_t>> query_coords;
+    query_coords.reserve(str_queries.size());
+
+    for(auto const &coord: str_queries){
+        std::vector<std::string> tmp = split(coord, ':');
+        if(tmp.size()!=2){
+            std::cout<<"Coordinate error: query \""<<coord<<"\" is il-formed"<<std::endl;
+            exit(1);
+        }
+        std::vector<std::string> tmp2 = split(tmp[1], '-');
+        if(tmp2.size()!=2){
+            std::cout<<"Coordinate error: query \""<<coord<<"\" is il-formed"<<std::endl;
+            exit(1);
+        }
+
+        try{
+            str = stoi(tmp[0]);
+        } catch (const std::invalid_argument & e) {
+            std::cout << "Coordinate error: \""<<tmp[0] <<"\" in \""<<coord<<"\" is not a valid string ID\n";
+            exit(1);
+        } catch (const std::out_of_range & e) {
+            std::cout << "Coordinate error: \""<<tmp[0] <<"\" in \""<<coord<<"\" is not a valid string ID\n";
+            exit(1);
+        }
+
+        try{
+            start = stoi(tmp2[0]);
+        } catch (const std::invalid_argument & e) {
+            std::cout << "Coordinate error: \""<<tmp2[0] <<"\" in \""<<coord<<"\" is not a valid start\n";
+            exit(1);
+        } catch (const std::out_of_range & e) {
+            std::cout << "Coordinate error: \""<<tmp2[0] <<"\" in \""<<coord<<"\" is not a valid start\n";
+            exit(1);
+        }
+
+        try{
+            end = stoi(tmp2[1]);
+        } catch (const std::invalid_argument & e) {
+            std::cout << "Coordinate error: \""<<tmp2[1] <<"\" in \""<<coord<<"\" is not a valid end\n";
+            exit(1);
+        } catch (const std::out_of_range & e) {
+            std::cout << "Coordinate error: \""<<tmp2[1] <<"\" in \""<<coord<<"\" is not a valid end\n";
+            exit(1);
+        }
+        query_coords.emplace_back(str, start, end);
+    }
+    return query_coords;
+}
+
 int main(int argc, char** argv) {
 
     arguments args;
@@ -139,19 +245,18 @@ int main(int argc, char** argv) {
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;
-        run_int<uint8_t>(input_collection, args);
+        comp_int<uint8_t>(input_collection, args);
     } if(app.got_subcommand("meta")){
         print_metadata(args.input_file);
     } else if(app.got_subcommand("merge")){
-        //lc_gram_t gram;
-        //load_from_file(args.input_file, gram);
-        //estimate_alt_encodings(gram);
         std::cout<<"merge"<<std::endl;
     } else if(app.got_subcommand("access")){
-        std::cout<<"access"<<std::endl;
-        //lc_gram_t gram;
-        //load_from_file(args.input_file, gram);
-        //estimate_alt_encodings(gram);
+        std::vector<std::tuple<size_t, off_t, off_t>> query_coords = parse_query_coords(args.ra_positions);
+        bool has_rl_rules, has_cg_rules, has_rand_access;
+        std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
+        access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
     }
+
     return 0;
+
 }
