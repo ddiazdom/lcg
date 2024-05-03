@@ -59,7 +59,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.formatter(fmt);
     app.add_flag("-v,--version", args.ver, "Print the software version and exit");
 
-    CLI::App* comp = app.add_subcommand("comp", "compress text");
+    CLI::App* comp = app.add_subcommand("cmp", "compress text");
     comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
@@ -76,14 +76,14 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-C,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
     comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
 
-    CLI::App* meta = app.add_subcommand("meta", "get the metadata of a grammar");
+    CLI::App* meta = app.add_subcommand("met", "get the metadata of a grammar");
     meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
 
-    CLI::App* merge = app.add_subcommand("merge", "merge grammars");
+    CLI::App* merge = app.add_subcommand("mrg", "merge grammars");
     merge->add_option("GRAM LIST", args.grammars_to_merge, "Grammars to be merged")->check(CLI::ExistingFile)->required();
     merge->add_option("-o,--output-file", args.output_file, "Output grammar");
 
-    CLI::App* access = app.add_subcommand("access", "random access");
+    CLI::App* access = app.add_subcommand("acc", "random access");
     access->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
     access->add_option("STR:START-END", args.ra_positions, "Coordinates to be accessed");
     //access->add_option("START", args.start, "First position inclusive");
@@ -94,6 +94,11 @@ static void parse_app(CLI::App& app, struct arguments& args){
     //group->add_option("-f,--pos-file", args.coord_file, "File with the list of positions to access");
     //access->add_option("-o,--output-file", args.output_file, "Output file");
     //group->require_option(1,2);
+
+    CLI::App* rem = app.add_subcommand("rem", "remove text from the grammar");
+    rem->add_option("GRAM", args.input_file, "Grammar to be edited")->check(CLI::ExistingFile)->required();
+    rem->add_option("STR:START-END", args.ra_positions, "Coordinates to be removed");
+    rem->add_option("-o,--output-file", args.output_file, "Output grammar");
 
     app.require_subcommand(1,1);
     app.footer("Report bugs to <diego.diaz@helsinki.fi>");
@@ -173,6 +178,7 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
     }
 }
 
+
 std::vector<std::tuple<size_t, off_t, off_t>> parse_query_coords(std::vector<std::string>& str_queries){
 
     size_t str;
@@ -240,21 +246,24 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    if(app.got_subcommand("comp")) {
+    if(app.got_subcommand("cmp")) {
         std::cout << "Input file:       " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;
         comp_int<uint8_t>(input_collection, args);
-    } if(app.got_subcommand("meta")){
+    } if(app.got_subcommand("met")){
         print_metadata(args.input_file);
-    } else if(app.got_subcommand("merge")){
-        std::cout<<"merge"<<std::endl;
-    } else if(app.got_subcommand("access")){
+    } else if(app.got_subcommand("mrg")){
+        std::cout<<"mrg"<<std::endl;
+    } else if(app.got_subcommand("acc")){
         std::vector<std::tuple<size_t, off_t, off_t>> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
+    } else if(app.got_subcommand("rem")){
+        std::vector<std::tuple<size_t, off_t, off_t>> rem_coords = parse_query_coords(args.ra_positions);
+        rem_txt_from_gram(args.input_file, rem_coords);
     }
 
     return 0;

@@ -17,80 +17,80 @@
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
-    size_t                                 n{}; //n: number of symbols in the original text
-    size_t                                 r{}; //r: number of grammar symbols (nter + ter)
-    size_t                                 c{}; //c: length of the right-hand of the start symbol
-    size_t                                 g{}; //g: sum of the rules' right-hand sides
-    size_t                                 s{}; //s: number of strings
-    size_t                                 max_tsym{}; //highest terminal symbol
-    size_t                                 min_nter{}; //smallest nonterminal symbol
-    size_t                                 cg_mark{};
-    size_t                                 n_cg_rules{};
-    uint64_t                               par_seed{}; //list of hash functions from which the grammar was constructed
-    uint8_t                                r_bits=0;
-    uint8_t                                r_samp_bits=0;
-    uint8_t                                str_samp_bits=0;
+    size_t n{}; //n: number of symbols in the original text
+    size_t r{}; //r: number of grammar symbols (nter + ter)
+    size_t c{}; //c: length of the right-hand of the start symbol
+    size_t g{}; //g: sum of the rules' right-hand sides
+    size_t s{}; //s: number of strings
+    size_t max_tsym{}; //highest terminal symbol
+    size_t min_nter{}; //smallest nonterminal symbol
+    size_t cg_mark{};
+    size_t n_cg_rules{};
+    uint64_t par_seed{}; //list of hash functions from which the grammar was constructed
+    uint8_t r_bits = 0;
+    uint8_t r_samp_bits = 0;
+    uint8_t str_samp_bits = 0;
 
-    uint8_t                                sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
-    bool                                   is_simplified=false;
-    const static bool                      has_rl_rules=is_rl;
-    const static bool                      has_cg_rules=is_cg;
-    const static bool                      has_rand_access=has_ra;
+    uint8_t sep_tsym{}; //separator symbol in the collection. This is 0 if the text is a single string
+    bool is_simplified = false;
+    const static bool has_rl_rules = is_rl;
+    const static bool has_cg_rules = is_cg;
+    const static bool has_rand_access = has_ra;
 
-    std::vector<uint8_t>                   terminals; //set of terminals
-    std::vector<size_t>                    str_boundaries; // start position of every string in the compressed string
-    std::vector<size_t>                    lvl_rules; //number of rules generated in every round of locally-consistent parsing
+    std::vector<uint8_t> terminals; //set of terminals
+    std::vector<size_t> str_boundaries; // start position of every string in the compressed string
+    std::vector<size_t> lvl_rules; //number of rules generated in every round of locally-consistent parsing
 
-    bitstream<size_t>                      rule_stream;
-    int_array<size_t>                      rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
-    size_t                                 rl_samp_rate=4;//sampling rate to sample nt expansions in "rules"
-    size_t                                 str_samp_rate=8;//sampling rate to sample nt expansions in "rules"
-    std::pair<size_t, size_t>              run_len_nt{0,0};//first run-length rule and total number of run-length rules
+    bitstream<size_t> rule_stream;
+    int_array<size_t> rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
+    size_t rl_samp_rate = 4;//sampling rate to sample nt expansions in "rules"
+    size_t str_samp_rate = 8;//sampling rate to sample nt expansions in "rules"
+    std::pair<size_t, size_t> run_len_nt{0, 0};//first run-length rule and total number of run-length rules
 
-    lc_gram_t()= default;
+    lc_gram_t() = default;
 
-    size_t serialize(std::ofstream &ofs){
-        size_t written_bytes=0;
-        written_bytes +=serialize_elm(ofs, has_rl_rules);
-        written_bytes +=serialize_elm(ofs, has_cg_rules);
-        written_bytes +=serialize_elm(ofs, has_rand_access);
-        written_bytes +=serialize_elm(ofs, n);
-        written_bytes +=serialize_elm(ofs, r);
-        written_bytes +=serialize_elm(ofs, g);
-        written_bytes +=serialize_elm(ofs, c);
-        written_bytes +=serialize_elm(ofs, s);
-        written_bytes +=serialize_elm(ofs, rl_samp_rate);
-        written_bytes +=serialize_elm(ofs, str_samp_rate);
-        written_bytes +=serialize_elm(ofs, r_bits);
-        written_bytes +=serialize_elm(ofs, r_samp_bits);
-        written_bytes +=serialize_elm(ofs, str_samp_bits);
-        written_bytes +=serialize_elm(ofs, max_tsym);
-        written_bytes +=serialize_elm(ofs, min_nter);
-        written_bytes +=serialize_elm(ofs, sep_tsym);
-        written_bytes +=serialize_elm(ofs, is_simplified);
-        written_bytes +=serialize_elm(ofs, cg_mark);
-        written_bytes +=serialize_elm(ofs, n_cg_rules);
-        written_bytes +=serialize_elm(ofs, run_len_nt.first);
-        written_bytes +=serialize_elm(ofs, run_len_nt.second);
-        written_bytes +=serialize_elm(ofs, par_seed);
-        written_bytes +=serialize_plain_vector(ofs, lvl_rules);
+    size_t serialize(std::ofstream &ofs) {
+        size_t written_bytes = 0;
+        written_bytes += serialize_elm(ofs, has_rl_rules);
+        written_bytes += serialize_elm(ofs, has_cg_rules);
+        written_bytes += serialize_elm(ofs, has_rand_access);
+        written_bytes += serialize_elm(ofs, n);
+        written_bytes += serialize_elm(ofs, r);
+        written_bytes += serialize_elm(ofs, g);
+        written_bytes += serialize_elm(ofs, c);
+        written_bytes += serialize_elm(ofs, s);
+        written_bytes += serialize_elm(ofs, rl_samp_rate);
+        written_bytes += serialize_elm(ofs, str_samp_rate);
+        written_bytes += serialize_elm(ofs, r_bits);
+        written_bytes += serialize_elm(ofs, r_samp_bits);
+        written_bytes += serialize_elm(ofs, str_samp_bits);
+        written_bytes += serialize_elm(ofs, max_tsym);
+        written_bytes += serialize_elm(ofs, min_nter);
+        written_bytes += serialize_elm(ofs, sep_tsym);
+        written_bytes += serialize_elm(ofs, is_simplified);
+        written_bytes += serialize_elm(ofs, cg_mark);
+        written_bytes += serialize_elm(ofs, n_cg_rules);
+        written_bytes += serialize_elm(ofs, run_len_nt.first);
+        written_bytes += serialize_elm(ofs, run_len_nt.second);
+        written_bytes += serialize_elm(ofs, par_seed);
+        written_bytes += serialize_plain_vector(ofs, lvl_rules);
 
-        written_bytes +=serialize_plain_vector(ofs, terminals);
-        written_bytes +=serialize_plain_vector(ofs, str_boundaries);
-        written_bytes +=rl_ptr.serialize(ofs);
-        written_bytes +=rule_stream.serialize(ofs);
+        written_bytes += serialize_plain_vector(ofs, terminals);
+        written_bytes += serialize_plain_vector(ofs, str_boundaries);
+        written_bytes += rl_ptr.serialize(ofs);
+        written_bytes += rule_stream.serialize(ofs);
 
         return written_bytes;
     }
 
-    void load_metadata(std::ifstream &ifs){
+    void load_metadata(std::ifstream &ifs) {
         bool tmp;
         load_elm(ifs, tmp);
-        assert(tmp==has_rl_rules);
+        assert(tmp == has_rl_rules);
         load_elm(ifs, tmp);
-        assert(tmp==has_cg_rules);
+        assert(tmp == has_cg_rules);
         load_elm(ifs, tmp);
-        assert(tmp==has_rand_access);
+        assert(tmp == has_rand_access);
 
         load_elm(ifs, n);
         load_elm(ifs, r);
@@ -116,7 +116,7 @@ struct lc_gram_t {
 
 
     template<class gram_type>
-    void swap(gram_type& other){
+    void swap(gram_type &other) {
         std::swap(n, other.n);
         std::swap(r, other.r);
         std::swap(g, other.g);
@@ -142,105 +142,105 @@ struct lc_gram_t {
         rule_stream.swap(other.rule_stream);
     }
 
-    void load_pointers(std::ifstream &ifs){
+    void load_pointers(std::ifstream &ifs) {
         load_plain_vector(ifs, terminals);
         load_plain_vector(ifs, str_boundaries);
         rl_ptr.load(ifs);
     }
 
-    void load(std::ifstream &ifs){
+    void load(std::ifstream &ifs) {
         load_metadata(ifs);
         load_pointers(ifs);
         rule_stream.load(ifs);
     }
 
     [[nodiscard]] inline std::pair<off_t, off_t> nt2bitrange(size_t sym) const {
-        assert(sym>max_tsym);
-        size_t nt = sym - max_tsym-1;
-        if constexpr (has_ra){
+        assert(sym > max_tsym);
+        size_t nt = sym - max_tsym - 1;
+        if constexpr (has_ra) {
             size_t start = rl_ptr.read(nt);
-            size_t end = rl_ptr.read(nt+1);
-            size_t ra_bits = rule_stream.read(end-r_samp_bits, end-1);
-            end -= r_samp_bits+ra_bits;
-            return {start, end-r_bits};
-        }else{
-            return {rl_ptr.read(nt)*r_bits, (rl_ptr.read(nt+1)-1)*r_bits};
+            size_t end = rl_ptr.read(nt + 1);
+            size_t ra_bits = rule_stream.read(end - r_samp_bits, end - 1);
+            end -= r_samp_bits + ra_bits;
+            return {start, end - r_bits};
+        } else {
+            return {rl_ptr.read(nt) * r_bits, (rl_ptr.read(nt + 1) - 1) * r_bits};
         }
     }
 
     [[nodiscard]] inline bool is_terminal(size_t sym) const {
-        return sym<=max_tsym;
+        return sym <= max_tsym;
     }
 
-    [[nodiscard]] inline bool is_rl_sym(size_t symbol) const{
-        return run_len_nt.first<=symbol && symbol<(run_len_nt.first+run_len_nt.second);
+    [[nodiscard]] inline bool is_rl_sym(size_t symbol) const {
+        return run_len_nt.first <= symbol && symbol < (run_len_nt.first + run_len_nt.second);
     }
 
-    [[nodiscard]] inline bool is_cg_nt(size_t sym) const{
+    [[nodiscard]] inline bool is_cg_nt(size_t sym) const {
         auto res = nt2bitrange(sym);
-        return rule_stream.read(res.first, res.first+r_bits-1)>=cg_mark;
+        return rule_stream.read(res.first, res.first + r_bits - 1) >= cg_mark;
     }
 
-    [[nodiscard]] inline size_t first_rl_sym() const{
+    [[nodiscard]] inline size_t first_rl_sym() const {
         return run_len_nt.first;
     }
 
-    [[nodiscard]] inline size_t last_rl_sym() const{
-        return run_len_nt.first+run_len_nt.second-1;
+    [[nodiscard]] inline size_t last_rl_sym() const {
+        return run_len_nt.first + run_len_nt.second - 1;
     }
 
     [[nodiscard]] inline size_t n_terminals() const {
-        return (max_tsym+1);
+        return (max_tsym + 1);
     }
 
     [[nodiscard]] inline size_t n_nonterminals() const {
-        return r-n_terminals();
+        return r - n_terminals();
     }
 
     [[nodiscard]] inline size_t comp_str_size() const {
         return c;
     }
 
-    inline size_t get_byte_ter(size_t sym){
+    inline size_t get_byte_ter(size_t sym) {
         assert(is_terminal(sym));
-        if(is_simplified){
+        if (is_simplified) {
             return terminals[sym];
-        }else{
+        } else {
             return sym;
         }
     }
 
     [[nodiscard]] inline off_t parsing_level(size_t symbol) const {
-        if(symbol <= max_tsym) return 0;
-        for(off_t i=0;i<(off_t)lvl_rules.size();i++){
-            if(lvl_rules[i]<=symbol && symbol<lvl_rules[i+1]){
-                return i+1;
+        if (symbol <= max_tsym) return 0;
+        for (off_t i = 0; i < (off_t) lvl_rules.size(); i++) {
+            if (lvl_rules[i] <= symbol && symbol < lvl_rules[i + 1]) {
+                return i + 1;
             }
         }
         return -1;
     }
 
     [[nodiscard]] inline size_t bitpos2symbol(size_t bit_pos) const {
-        return rule_stream.read(bit_pos, bit_pos+r_bits-1);
+        return rule_stream.read(bit_pos, bit_pos + r_bits - 1);
     }
 
     [[nodiscard]] inline size_t start_symbol() const {
-        return r-1;
+        return r - 1;
     }
 
     [[nodiscard]] inline size_t n_strings() const {
-        return str_boundaries.size()-1;
+        return str_boundaries.size() - 1;
     }
 
     [[nodiscard]] inline std::pair<off_t, off_t> str2bitrange(size_t str) const {
-        if constexpr (has_ra){
+        if constexpr (has_ra) {
             size_t start = str_boundaries[str];
-            size_t end = str_boundaries[str+1];
-            size_t ra_bits = rule_stream.read(end-str_samp_bits, end-1);
-            end -= str_samp_bits+ra_bits;
-            return {start, end-r_bits};
-        }else{
-            return {str_boundaries[str]*r_bits, (str_boundaries[str+1]-1)*r_bits};
+            size_t end = str_boundaries[str + 1];
+            size_t ra_bits = rule_stream.read(end - str_samp_bits, end - 1);
+            end -= str_samp_bits + ra_bits;
+            return {start, end - r_bits};
+        } else {
+            return {str_boundaries[str] * r_bits, (str_boundaries[str + 1] - 1) * r_bits};
         }
     }
 
@@ -250,60 +250,65 @@ struct lc_gram_t {
         size_t n_nter = n_nonterminals();
 
         auto pt_bytes = INT_CEIL(rl_ptr.n_bits(), 8);//space of the pointers for the nonterminals
-        auto g_bytes = INT_CEIL(g*r_bits, 8); //space of the expansions
-        auto pt_str_bytes = (s+1)*sizeof(size_t);  //space of the pointers to the strings
+        auto g_bytes = INT_CEIL(g * r_bits, 8); //space of the expansions
+        auto pt_str_bytes = (s + 1) * sizeof(size_t);  //space of the pointers to the strings
 
-        float comp_ratio = float(n)/float(pt_bytes+g_bytes+pt_str_bytes);
+        float comp_ratio = float(n) / float(pt_bytes + g_bytes + pt_str_bytes);
 
-        std::string pad_string(pad,' ');
-        std::cout<<pad_string<<"Seed for the parsing:           "<<par_seed<<std::endl;
-        std::cout<<pad_string<<"Number of compressed symbols:   "<<n<<" ("<<report_space((off_t)n)<<")"<<std::endl;
-        std::cout<<pad_string<<"Number of compressed strings:   "<<s<<" ("<<report_space((off_t)pt_str_bytes)<<" in pointers)"<<std::endl;
-        std::cout<<pad_string<<"Separator symbol:               "<<(int)sep_tsym<<std::endl;
-        std::cout<<pad_string<<"Number of terminals:            "<<n_ter<<std::endl;
-        std::cout<<pad_string<<"Number of non-terminals:        "<<n_nter<<" ("<<report_space((off_t)pt_bytes)<<" in pointers)"<<std::endl;
-        std::cout<<pad_string<<"Grammar size:                   "<<g<<" ("<<report_space((off_t)g_bytes)<<")"<<std::endl;
-        std::cout<<pad_string<<"Length of the comp. collection: "<<c<<std::endl;
-        std::cout<<pad_string<<"Approx. compression ratio:      "<<comp_ratio<<std::endl;
-        std::cout<<pad_string<<"Simplified:                     "<<(is_simplified ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Run-length rules:               "<<(has_rl_rules ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Collage system rules:           "<<(has_cg_rules ? "yes" : "no")<<std::endl;
-        std::cout<<pad_string<<"Random access support:          "<<(has_rand_access? "yes" : "no")<<std::endl;
-        if(has_rand_access){
-            auto ras_bytes = rule_stream.bit_capacity()-(g*r_bits);//the cost of the expansion samples
-            ras_bytes += rl_ptr.n_bits() - (r*sym_width(g));//the cost of expanding the rules' pointers
+        std::string pad_string(pad, ' ');
+        std::cout << pad_string << "Seed for the parsing:           " << par_seed << std::endl;
+        std::cout << pad_string << "Number of compressed symbols:   " << n << " (" << report_space((off_t) n) << ")"
+                  << std::endl;
+        std::cout << pad_string << "Number of compressed strings:   " << s << " (" << report_space((off_t) pt_str_bytes)
+                  << " in pointers)" << std::endl;
+        std::cout << pad_string << "Separator symbol:               " << (int) sep_tsym << std::endl;
+        std::cout << pad_string << "Number of terminals:            " << n_ter << std::endl;
+        std::cout << pad_string << "Number of non-terminals:        " << n_nter << " ("
+                  << report_space((off_t) pt_bytes) << " in pointers)" << std::endl;
+        std::cout << pad_string << "Grammar size:                   " << g << " (" << report_space((off_t) g_bytes)
+                  << ")" << std::endl;
+        std::cout << pad_string << "Length of the comp. collection: " << c << std::endl;
+        std::cout << pad_string << "Approx. compression ratio:      " << comp_ratio << std::endl;
+        std::cout << pad_string << "Simplified:                     " << (is_simplified ? "yes" : "no") << std::endl;
+        std::cout << pad_string << "Run-length rules:               " << (has_rl_rules ? "yes" : "no") << std::endl;
+        std::cout << pad_string << "Collage system rules:           " << (has_cg_rules ? "yes" : "no") << std::endl;
+        std::cout << pad_string << "Random access support:          " << (has_rand_access ? "yes" : "no") << std::endl;
+        if (has_rand_access) {
+            auto ras_bytes = rule_stream.bit_capacity() - (g * r_bits);//the cost of the expansion samples
+            ras_bytes += rl_ptr.n_bits() - (r * sym_width(g));//the cost of expanding the rules' pointers
             ras_bytes = INT_CEIL(ras_bytes, 8);
-            std::cout<<pad_string<<"  Samp. rate for non.ter exps:  1/"<<rl_samp_rate<<std::endl;
-            std::cout<<pad_string<<"  Samp. rate for string exps:   1/"<<str_samp_rate<<std::endl;
-            std::cout<<pad_string<<"  Space overhead:               "<<report_space((off_t)ras_bytes)<<std::endl;
+            std::cout << pad_string << "  Samp. rate for non.ter exps:  1/" << rl_samp_rate << std::endl;
+            std::cout << pad_string << "  Samp. rate for string exps:   1/" << str_samp_rate << std::endl;
+            std::cout << pad_string << "  Space overhead:               " << report_space((off_t) ras_bytes)
+                      << std::endl;
         }
     }
 
     void breakdown(size_t pad) {
         //assert(g==rules.size());
         //assert(r-(max_tsym+1)==(rl_ptr.size()-1));
-        assert(s==str_boundaries.size()-1);
+        assert(s == str_boundaries.size() - 1);
         stats(pad);
 
-        std::string pad_string(pad,' ');
+        std::string pad_string(pad, ' ');
 
         size_t n_rules;
-        std::cout<<pad_string<<"Grammar rules per level"<<std::endl;
-        for(size_t i=0;i<lvl_rules.size()-1; i++){
-            n_rules = lvl_rules[i+1]-lvl_rules[i];//number of rules in the level
-            if(n_rules>0){
-                std::cout<<pad_string<<"  Level " << (i + 1) << ": number of rules: " << n_rules <<std::endl;
+        std::cout << pad_string << "Grammar rules per level" << std::endl;
+        for (size_t i = 0; i < lvl_rules.size() - 1; i++) {
+            n_rules = lvl_rules[i + 1] - lvl_rules[i];//number of rules in the level
+            if (n_rules > 0) {
+                std::cout << pad_string << "  Level " << (i + 1) << ": number of rules: " << n_rules << std::endl;
             }
         }
 
-        if(has_cg_rules){
-            std::cout <<pad_string<<"Number of collage rules: " << n_cg_rules <<std::endl;
+        if (has_cg_rules) {
+            std::cout << pad_string << "Number of collage rules: " << n_cg_rules << std::endl;
         }
 
-        if(has_rl_rules){
-            std::cout <<pad_string<<"Number of run-length rules: " << run_len_nt.second <<std::endl;
+        if (has_rl_rules) {
+            std::cout << pad_string << "Number of run-length rules: " << run_len_nt.second << std::endl;
         }
-        std::cout <<pad_string<<"Length of the compressed sequence (start symbol's rule): " << c<<std::endl;
+        std::cout << pad_string << "Length of the compressed sequence (start symbol's rule): " << c << std::endl;
     }
 
     /*
@@ -515,78 +520,93 @@ struct lc_gram_t {
     }
      */
 
-    void print_parse_tree(size_t sym) const {
-
+    void print_parse_tree(size_t sym, bool is_str=false) const {
         std::queue<std::pair<size_t, bool>> queue;
         std::pair<size_t, bool> dc_sym;
-        queue.emplace(sym, true);
+        bool next_break_known;
+        if(is_str){
+            auto range = str2bitrange(sym);
+            for (off_t j = range.first; j <= range.second; j += r_bits) {
+                bool flag = false;
+                if (!next_break_known && bitpos2symbol(j) > max_tsym) {
+                    next_break_known = true;
+                    flag = true;
+                }
+                std::cout << bitpos2symbol(j) << " " << std::flush;
+                queue.emplace(bitpos2symbol(j), flag);
+            }
+            std::cout << "| " << std::flush;
+        }else{
+            queue.emplace(sym, true);
+            next_break_known=true;
+            std::cout << sym << " |" << std::flush;
+        }
 
-        bool next_break_known=true;
-        std::cout<<sym<<" |"<<std::flush;
 
-        while(!queue.empty()) {
+        while (!queue.empty()) {
 
             dc_sym = queue.front();
             queue.pop();
 
             sym = std::get<0>(dc_sym);
 
-            if(sym>max_tsym){
+            if (sym > max_tsym) {
                 auto range = nt2bitrange(sym);
 
-                if(is_rl_sym(sym)){
+                if (is_rl_sym(sym)) {
                     assert(range.second - range.first == r_bits);
                     size_t rl_sym = bitpos2symbol(range.first);
                     size_t len = bitpos2symbol(range.second);
 
-                    if(std::get<1>(dc_sym)){
+                    if (std::get<1>(dc_sym)) {
                         next_break_known = false;
-                        std::cout<<" "<<std::endl;
+                        std::cout << " " << std::endl;
                     }
                     for (size_t j = 0; j < len; j++) {
-                        bool flag=false;
-                        if(!next_break_known && rl_sym>max_tsym){
-                            next_break_known=true;
+                        bool flag = false;
+                        if (!next_break_known && rl_sym > max_tsym) {
+                            next_break_known = true;
                             flag = true;
                         }
-                        std::cout<<rl_sym<<" "<<std::flush;
+                        std::cout << rl_sym << " " << std::flush;
                         queue.emplace(rl_sym, flag);
                     }
-                    std::cout<<"| ";
-                }else{
-                    if(std::get<1>(dc_sym)){
+                    std::cout << "| ";
+                } else {
+                    if (std::get<1>(dc_sym)) {
                         next_break_known = false;
-                        std::cout<<" "<<std::endl;
+                        std::cout << " " << std::endl;
                     }
-                    for(off_t j=range.first; j<=range.second;j+=r_bits){
-                        bool flag=false;
-                        if(!next_break_known && bitpos2symbol(j)>max_tsym){
-                            next_break_known=true;
+                    for (off_t j = range.first; j <= range.second; j += r_bits) {
+                        bool flag = false;
+                        if (!next_break_known && bitpos2symbol(j) > max_tsym) {
+                            next_break_known = true;
                             flag = true;
                         }
-                        std::cout<<bitpos2symbol(j)<<" "<<std::flush;
+                        std::cout << bitpos2symbol(j) << " " << std::flush;
                         queue.emplace(bitpos2symbol(j), flag);
                     }
-                    std::cout<<"| "<<std::flush;
+                    std::cout << "| " << std::flush;
                 }
             }
         }
+        std::cout<<""<<std::endl;
     }
 
-    void im_nt_decomp(size_t sym, std::string& dc_string) const {
+    void im_nt_decomp(size_t sym, std::string &dc_string) const {
 
         std::stack<size_t> stack;
         stack.push(sym);
 
-        while(!stack.empty()) {
+        while (!stack.empty()) {
             sym = stack.top();
             stack.pop();
-            if(sym<=max_tsym){
+            if (sym <= max_tsym) {
                 dc_string.push_back(terminals[sym]);
-            }else{
+            } else {
                 auto range = nt2bitrange(sym);
                 if constexpr (is_rl) {
-                    if(is_rl_sym(sym)) {
+                    if (is_rl_sym(sym)) {
                         assert(range.second - range.first == r_bits);
                         size_t len = bitpos2symbol(range.second);
                         for (size_t j = 0; j < len; j++) {
@@ -595,32 +615,32 @@ struct lc_gram_t {
                         continue;
                     }
                 }
-                for(off_t j=range.second; j>=range.first;j-=r_bits){
+                for (off_t j = range.second; j >= range.first; j -= r_bits) {
                     stack.emplace(bitpos2symbol(j));
                 }
             }
         }
     }
 
-    void im_str_decomp(size_t str, std::string& dc_string) const {
-        assert(str<n_strings());
+    void im_str_decomp(size_t str, std::string &dc_string) const {
+        assert(str < n_strings());
         size_t sym;
 
         auto range = str2bitrange(str);
         std::stack<size_t> stack;
-        for(off_t j=range.second; j>=range.first;j-=r_bits){
+        for (off_t j = range.second; j >= range.first; j -= r_bits) {
             stack.emplace(bitpos2symbol(j));
         }
 
-        while(!stack.empty()) {
+        while (!stack.empty()) {
             sym = stack.top();
             stack.pop();
-            if(sym<=max_tsym){
+            if (sym <= max_tsym) {
                 dc_string.push_back(terminals[sym]);
-            }else{
+            } else {
                 range = nt2bitrange(sym);
                 if constexpr (is_rl) {
-                    if(is_rl_sym(sym)) {
+                    if (is_rl_sym(sym)) {
                         assert(range.second - range.first == r_bits);
                         size_t len = bitpos2symbol(range.second);
                         for (size_t j = 0; j < len; j++) {
@@ -629,74 +649,74 @@ struct lc_gram_t {
                         continue;
                     }
                 }
-                for(off_t j=range.second; j>=range.first;j-=r_bits){
+                for (off_t j = range.second; j >= range.first; j -= r_bits) {
                     stack.emplace(bitpos2symbol(j));
                 }
             }
         }
     }
 
-    void im_str_rand_access(size_t sym, off_t exp_start, off_t exp_end, std::string& dc_string) const {
+    void im_str_rand_access(size_t sym, off_t exp_start, off_t exp_end, std::string &dc_string) const {
 
-        assert(exp_start<exp_end);
+        assert(exp_start < exp_end);
         dc_string.clear();
 
         off_t rhs_bit_pos_s, rhs_bit_pos_e, rhs_bit_pos_exp;
         bool rhs_in_rl;//right-hand-side is run-length encoded
 
         rhs_in_rl = exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
-        size_t lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s+r_bits-1);
-        off_t k = (rhs_bit_pos_e-rhs_bit_pos_s+r_bits)/r_bits;
-        while(k==1){
+        size_t lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s + r_bits - 1);
+        off_t k = (rhs_bit_pos_e - rhs_bit_pos_s + r_bits) / r_bits;
+        while (k == 1) {
             rhs_in_rl = exp_search_range<RULE_EXP>(lm_sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
-            lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s+r_bits-1);
-            k = (rhs_bit_pos_e-rhs_bit_pos_s+r_bits)/r_bits;
+            lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s + r_bits - 1);
+            k = (rhs_bit_pos_e - rhs_bit_pos_s + r_bits) / r_bits;
         }
 
         size_t rm_sym;
         std::stack<uint64_t> exp_stack;
-        if(rhs_in_rl){
-            for(off_t u=rhs_bit_pos_e-r_bits;u>rhs_bit_pos_s;u-=r_bits){
+        if (rhs_in_rl) {
+            for (off_t u = rhs_bit_pos_e - r_bits; u > rhs_bit_pos_s; u -= r_bits) {
                 exp_stack.push(lm_sym);
             }
             rm_sym = lm_sym;
-        }else{
-            for(off_t u=rhs_bit_pos_e-r_bits;u>rhs_bit_pos_s;u-=r_bits){
-                exp_stack.push(rule_stream.read(u, u+r_bits-1));
+        } else {
+            for (off_t u = rhs_bit_pos_e - r_bits; u > rhs_bit_pos_s; u -= r_bits) {
+                exp_stack.push(rule_stream.read(u, u + r_bits - 1));
             }
-            rm_sym = rule_stream.read(rhs_bit_pos_e, rhs_bit_pos_e+r_bits-1);
+            rm_sym = rule_stream.read(rhs_bit_pos_e, rhs_bit_pos_e + r_bits - 1);
         }
 
-        while(lm_sym>max_tsym){
+        while (lm_sym > max_tsym) {
             rhs_in_rl = exp_search<RULE_EXP>(exp_start, lm_sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
-            if(rhs_in_rl){
-                for(off_t u=rhs_bit_pos_e;u>rhs_bit_pos_exp;u-=r_bits){
+            if (rhs_in_rl) {
+                for (off_t u = rhs_bit_pos_e; u > rhs_bit_pos_exp; u -= r_bits) {
                     exp_stack.push(lm_sym);
                 }
-            }else{
-                for(off_t u=rhs_bit_pos_e;u>rhs_bit_pos_exp;u-=r_bits){
-                    exp_stack.push(rule_stream.read(u, u+r_bits-1));
+            } else {
+                for (off_t u = rhs_bit_pos_e; u > rhs_bit_pos_exp; u -= r_bits) {
+                    exp_stack.push(rule_stream.read(u, u + r_bits - 1));
                 }
             }
         }
         dc_string.push_back(terminals[lm_sym]);
 
-        while(!exp_stack.empty()){
+        while (!exp_stack.empty()) {
             sym = exp_stack.top();
             exp_stack.pop();
 
-            if(sym<=max_tsym){
+            if (sym <= max_tsym) {
                 dc_string.push_back(terminals[sym]);
-            }else{
+            } else {
                 auto range = nt2bitrange(sym);
-                if(is_rl_sym(sym)) {
-                    assert(range.second - range.first== r_bits);
+                if (is_rl_sym(sym)) {
+                    assert(range.second - range.first == r_bits);
                     size_t len = bitpos2symbol(range.second);
                     for (size_t j = 0; j < len; j++) {
                         exp_stack.emplace(bitpos2symbol(range.first));
                     }
-                }else{
-                    for(off_t j=range.second; j>=range.first;j-=r_bits){
+                } else {
+                    for (off_t j = range.second; j >= range.first; j -= r_bits) {
                         exp_stack.emplace(bitpos2symbol(j));
                     }
                 }
@@ -704,34 +724,34 @@ struct lc_gram_t {
         }
 
         size_t stack_sym;
-        while(rm_sym>max_tsym){
+        while (rm_sym > max_tsym) {
             rhs_in_rl = exp_search<RULE_EXP>(exp_end, rm_sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
-            if(rhs_in_rl){
-                for(off_t u=rhs_bit_pos_exp-r_bits;u>=rhs_bit_pos_s;u-=r_bits){
+            if (rhs_in_rl) {
+                for (off_t u = rhs_bit_pos_exp - r_bits; u >= rhs_bit_pos_s; u -= r_bits) {
                     exp_stack.push(rm_sym);
                 }
-            }else{
-                for(off_t u=rhs_bit_pos_exp-r_bits;u>=rhs_bit_pos_s;u-=r_bits){
-                    exp_stack.push(rule_stream.read(u, u+r_bits-1));
+            } else {
+                for (off_t u = rhs_bit_pos_exp - r_bits; u >= rhs_bit_pos_s; u -= r_bits) {
+                    exp_stack.push(rule_stream.read(u, u + r_bits - 1));
                 }
             }
 
-            while(!exp_stack.empty()){
+            while (!exp_stack.empty()) {
                 stack_sym = exp_stack.top();
                 exp_stack.pop();
-                if(stack_sym<=max_tsym){
+                if (stack_sym <= max_tsym) {
                     dc_string.push_back(terminals[stack_sym]);
-                }else{
+                } else {
                     auto range = nt2bitrange(stack_sym);
-                    if(is_rl_sym(stack_sym)) {
-                        assert(range.second - range.first== r_bits);
+                    if (is_rl_sym(stack_sym)) {
+                        assert(range.second - range.first == r_bits);
                         size_t len = bitpos2symbol(range.second);
                         for (size_t j = 0; j < len; j++) {
                             exp_stack.emplace(bitpos2symbol(range.first));
                         }
                         continue;
                     }
-                    for(off_t j=range.second; j>=range.first;j-=r_bits){
+                    for (off_t j = range.second; j >= range.first; j -= r_bits) {
                         exp_stack.emplace(bitpos2symbol(j));
                     }
                 }
@@ -743,7 +763,7 @@ struct lc_gram_t {
     [[nodiscard]] size_t im_rand_access(size_t sym, off_t pos) const {
         assert(has_rand_access);
         exp_search<STR_EXP>(pos, sym);
-        while(sym>max_tsym){
+        while (sym > max_tsym) {
             exp_search<RULE_EXP>(pos, sym);
         }
         return terminals[sym];
@@ -762,57 +782,57 @@ struct lc_gram_t {
      * bit_pos_e are bit positions in the uncompressed form of A_i A_{i+1} ... A_{i+k}
     **/
     template<bool is_str>
-    inline bool exp_search_range(size_t sym, off_t& exp_s, off_t& exp_e, off_t& bit_pos_s, off_t& bit_pos_e) const {
+    inline bool exp_search_range(size_t sym, off_t &exp_s, off_t &exp_e, off_t &bit_pos_s, off_t &bit_pos_e) const {
 
-        assert(exp_s<=exp_e);
+        assert(exp_s <= exp_e);
         off_t rhs_start, exp_start, ra_bits, last_rhs_idx, n_samples, acc_exp, rhs_idx_l, rhs_idx_r, bps;
 
-        if constexpr(is_str){
+        if constexpr (is_str) {
             rhs_start = str_boundaries[sym];
-            exp_start = str_boundaries[sym+1];
-            ra_bits = rule_stream.read(exp_start-str_samp_bits, exp_start-1);
-            exp_start -= str_samp_bits+ra_bits;
-            last_rhs_idx = (exp_start-rhs_start)/r_bits;
-            n_samples = last_rhs_idx/str_samp_rate;
+            exp_start = str_boundaries[sym + 1];
+            ra_bits = rule_stream.read(exp_start - str_samp_bits, exp_start - 1);
+            exp_start -= str_samp_bits + ra_bits;
+            last_rhs_idx = (exp_start - rhs_start) / r_bits;
+            n_samples = last_rhs_idx / str_samp_rate;
             last_rhs_idx--;
-            bps = ra_bits/n_samples;
-        } else{
+            bps = ra_bits / n_samples;
+        } else {
 
             bool is_rl_rule = is_rl_sym(sym);
-            sym -= max_tsym+1;
+            sym -= max_tsym + 1;
 
             rhs_start = rl_ptr.read(sym);
-            exp_start = rl_ptr.read(sym+1);
-            ra_bits = rule_stream.read(exp_start-r_samp_bits, exp_start-1);
-            exp_start -= r_samp_bits+ra_bits;
+            exp_start = rl_ptr.read(sym + 1);
+            ra_bits = rule_stream.read(exp_start - r_samp_bits, exp_start - 1);
+            exp_start -= r_samp_bits + ra_bits;
 
-            if(is_rl_rule){//the right-hand side A_1 A_2 ... A_x = A^{l} is a sequence of l copies of symbol A
-                off_t rl_len = rule_stream.read(rhs_start+r_bits, rhs_start+(2*r_bits)-1);//read the value of l
-                acc_exp = rule_stream.read(exp_start, exp_start+ra_bits-1);//read the value of |exp(A)|*l
+            if (is_rl_rule) {//the right-hand side A_1 A_2 ... A_x = A^{l} is a sequence of l copies of symbol A
+                off_t rl_len = rule_stream.read(rhs_start + r_bits, rhs_start + (2 * r_bits) - 1);//read the value of l
+                acc_exp = rule_stream.read(exp_start, exp_start + ra_bits - 1);//read the value of |exp(A)|*l
                 acc_exp /= rl_len;// read |exp(A)|
                 //compute how many copies of "A" we need to cover exp(sym)[exp_s..exp_e]
-                off_t n_copies = (exp_e/acc_exp)- (exp_s/acc_exp)+1;
-                exp_s %=acc_exp;
-                exp_e %=acc_exp;
+                off_t n_copies = (exp_e / acc_exp) - (exp_s / acc_exp) + 1;
+                exp_s %= acc_exp;
+                exp_e %= acc_exp;
                 bit_pos_s = rhs_start;
-                bit_pos_e = rhs_start + (n_copies-1)*r_bits;
+                bit_pos_e = rhs_start + (n_copies - 1) * r_bits;
                 return true;
             }
 
-            last_rhs_idx = (exp_start-rhs_start)/r_bits;
-            n_samples = last_rhs_idx/rl_samp_rate;
+            last_rhs_idx = (exp_start - rhs_start) / r_bits;
+            n_samples = last_rhs_idx / rl_samp_rate;
             last_rhs_idx--;
-            bps = ra_bits/(n_samples+1);// +1 because the rules also include the value of |exp(sym)| as a sample
+            bps = ra_bits / (n_samples + 1);// +1 because the rules also include the value of |exp(sym)| as a sample
         }
 
         //binary search of exp_s in the expansion samples
-        off_t left = 0, exp_m=0, exp_n, bit_pos, middle=-1;
-        auto right = (off_t)n_samples-1;
-        while(left <= right) {
+        off_t left = 0, exp_m = 0, exp_n, bit_pos, middle = -1;
+        auto right = (off_t) n_samples - 1;
+        while (left <= right) {
             middle = left + (right - left) / 2;
-            bit_pos = exp_start + middle*bps;
-            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if(exp_m>exp_s){
+            bit_pos = exp_start + middle * bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if (exp_m > exp_s) {
                 right = middle - 1;
                 middle = -1;
                 exp_m = 0;
@@ -821,8 +841,8 @@ struct lc_gram_t {
 
             //exp_m<=pos
             bit_pos += bps;
-            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if((middle+1)==n_samples || exp_s<exp_n){
+            exp_n = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if ((middle + 1) == n_samples || exp_s < exp_n) {
                 //exp_m<=pos && pos<exp_n
                 break;
             }
@@ -831,39 +851,39 @@ struct lc_gram_t {
         }
 
         acc_exp = exp_m;
-        if constexpr (is_str){
-            rhs_idx_l = (middle+1)*str_samp_rate;
-        }else{
-            rhs_idx_l = (middle+1)*rl_samp_rate;
+        if constexpr (is_str) {
+            rhs_idx_l = (middle + 1) * str_samp_rate;
+        } else {
+            rhs_idx_l = (middle + 1) * rl_samp_rate;
         }
 
-        size_t rhs_bit_pos = rhs_start + rhs_idx_l*r_bits;
-        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        size_t rhs_bit_pos = rhs_start + rhs_idx_l * r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
         off_t e_len = exp_len(sym);
-        acc_exp+=e_len;
+        acc_exp += e_len;
 
-        while(acc_exp<=exp_s && rhs_idx_l<last_rhs_idx){
+        while (acc_exp <= exp_s && rhs_idx_l < last_rhs_idx) {
             rhs_idx_l++;
-            rhs_bit_pos+=r_bits;
-            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            rhs_bit_pos += r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
             e_len = exp_len(sym);
-            acc_exp+=e_len;
+            acc_exp += e_len;
         }
-        assert(acc_exp>exp_s);
-        exp_s-=acc_exp-e_len;
+        assert(acc_exp > exp_s);
+        exp_s -= acc_exp - e_len;
 
         //binary search of exp_e in the expansion samples
-        if constexpr (is_str){
-            left = rhs_idx_l/str_samp_rate;
-        }else{
-            left = rhs_idx_l/rl_samp_rate;
+        if constexpr (is_str) {
+            left = rhs_idx_l / str_samp_rate;
+        } else {
+            left = rhs_idx_l / rl_samp_rate;
         }
-        right = (off_t)n_samples-1;
-        while(left <= right) {
+        right = (off_t) n_samples - 1;
+        while (left <= right) {
             middle = left + (right - left) / 2;
-            bit_pos = exp_start + middle*bps;
-            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if(exp_m>exp_e){
+            bit_pos = exp_start + middle * bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if (exp_m > exp_e) {
                 right = middle - 1;
                 middle = -1;
                 exp_m = 0;
@@ -871,8 +891,8 @@ struct lc_gram_t {
             }
             //exp_m<=pos
             bit_pos += bps;
-            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if((middle+1)==n_samples || exp_e<exp_n){
+            exp_n = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if ((middle + 1) == n_samples || exp_e < exp_n) {
                 //exp_m<=pos && pos<exp_n
                 break;
             }
@@ -880,28 +900,28 @@ struct lc_gram_t {
             left = middle + 1;
         }
         acc_exp = exp_m;
-        if constexpr (is_str){
-            rhs_idx_r = (middle+1)*str_samp_rate;
-        }else{
-            rhs_idx_r = (middle+1)*rl_samp_rate;
+        if constexpr (is_str) {
+            rhs_idx_r = (middle + 1) * str_samp_rate;
+        } else {
+            rhs_idx_r = (middle + 1) * rl_samp_rate;
         }
-        rhs_bit_pos = rhs_start + rhs_idx_r*r_bits;
-        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        rhs_bit_pos = rhs_start + rhs_idx_r * r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
         e_len = exp_len(sym);
-        acc_exp+=e_len;
+        acc_exp += e_len;
 
-        while(acc_exp<=exp_e && rhs_idx_r<last_rhs_idx){
+        while (acc_exp <= exp_e && rhs_idx_r < last_rhs_idx) {
             rhs_idx_r++;
-            rhs_bit_pos+=r_bits;
-            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            rhs_bit_pos += r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
             e_len = exp_len(sym);
-            acc_exp+=e_len;
+            acc_exp += e_len;
         }
-        assert(acc_exp>exp_e);
-        exp_e-= acc_exp-e_len;
+        assert(acc_exp > exp_e);
+        exp_e -= acc_exp - e_len;
 
-        bit_pos_s = rhs_start+rhs_idx_l*r_bits;
-        bit_pos_e = rhs_start+rhs_idx_r*r_bits;
+        bit_pos_s = rhs_start + rhs_idx_l * r_bits;
+        bit_pos_e = rhs_start + rhs_idx_r * r_bits;
 
         return false;
     }
@@ -924,57 +944,57 @@ struct lc_gram_t {
      * within (A l) in the grammar encoding
     **/
     template<bool is_str>
-    inline bool exp_search(off_t& exp_pos, size_t& sym, off_t& bit_pos_s, off_t& bit_pos_exp, off_t& bit_pos_e) const {
+    inline bool exp_search(off_t &exp_pos, size_t &sym, off_t &bit_pos_s, off_t &bit_pos_exp, off_t &bit_pos_e) const {
 
         off_t rhs_start, exp_start, ra_bits, last_rhs_idx, n_samples, acc_exp, rhs_idx, bps;
 
-        if constexpr(is_str){
+        if constexpr (is_str) {
             rhs_start = str_boundaries[sym];
-            exp_start = str_boundaries[sym+1];
-            ra_bits = rule_stream.read(exp_start-str_samp_bits, exp_start-1);
-            exp_start -= str_samp_bits+ra_bits;
-            last_rhs_idx = (exp_start-rhs_start)/r_bits;
-            n_samples = last_rhs_idx/str_samp_rate;
+            exp_start = str_boundaries[sym + 1];
+            ra_bits = rule_stream.read(exp_start - str_samp_bits, exp_start - 1);
+            exp_start -= str_samp_bits + ra_bits;
+            last_rhs_idx = (exp_start - rhs_start) / r_bits;
+            n_samples = last_rhs_idx / str_samp_rate;
             last_rhs_idx--;
-            bps = ra_bits/n_samples;
-        } else{
+            bps = ra_bits / n_samples;
+        } else {
             bool is_rl_rule = is_rl_sym(sym);
-            sym -= max_tsym+1;
+            sym -= max_tsym + 1;
 
             rhs_start = rl_ptr.read(sym);
-            exp_start = rl_ptr.read(sym+1);
-            ra_bits = rule_stream.read(exp_start-r_samp_bits, exp_start-1);
-            exp_start -= r_samp_bits+ra_bits;
+            exp_start = rl_ptr.read(sym + 1);
+            ra_bits = rule_stream.read(exp_start - r_samp_bits, exp_start - 1);
+            exp_start -= r_samp_bits + ra_bits;
 
-            if(is_rl_rule){
-                sym = rule_stream.read(rhs_start, rhs_start+r_bits-1);
-                off_t rl_len = rule_stream.read(rhs_start+r_bits, rhs_start+(2*r_bits)-1);
-                acc_exp = rule_stream.read(exp_start, exp_start+ra_bits-1);
+            if (is_rl_rule) {
+                sym = rule_stream.read(rhs_start, rhs_start + r_bits - 1);
+                off_t rl_len = rule_stream.read(rhs_start + r_bits, rhs_start + (2 * r_bits) - 1);
+                acc_exp = rule_stream.read(exp_start, exp_start + ra_bits - 1);
 
                 acc_exp /= rl_len;
 
                 bit_pos_s = rhs_start;
-                bit_pos_exp = rhs_start + (exp_pos/acc_exp)*r_bits;
-                bit_pos_e = rhs_start + (rl_len-1)*r_bits;
+                bit_pos_exp = rhs_start + (exp_pos / acc_exp) * r_bits;
+                bit_pos_e = rhs_start + (rl_len - 1) * r_bits;
 
-                exp_pos %=acc_exp;
+                exp_pos %= acc_exp;
                 return true;
             }
 
-            last_rhs_idx = (exp_start-rhs_start)/r_bits;
-            n_samples = last_rhs_idx/rl_samp_rate;
+            last_rhs_idx = (exp_start - rhs_start) / r_bits;
+            n_samples = last_rhs_idx / rl_samp_rate;
             last_rhs_idx--;
-            bps = ra_bits/(n_samples+1);// the rules also include the expansion size as a sample
+            bps = ra_bits / (n_samples + 1);// the rules also include the expansion size as a sample
         }
 
-        off_t left = 0, exp_m=0, exp_n, bit_pos, middle=-1;
-        auto right = (off_t)n_samples-1;
+        off_t left = 0, exp_m = 0, exp_n, bit_pos, middle = -1;
+        auto right = (off_t) n_samples - 1;
 
         while (left <= right) {
             middle = left + (right - left) / 2;
-            bit_pos = exp_start + middle*bps;
-            exp_m = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if(exp_m>exp_pos){
+            bit_pos = exp_start + middle * bps;
+            exp_m = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if (exp_m > exp_pos) {
                 right = middle - 1;
                 middle = -1;
                 exp_m = 0;
@@ -983,8 +1003,8 @@ struct lc_gram_t {
 
             //exp_m<=pos
             bit_pos += bps;
-            exp_n = rule_stream.read(bit_pos, bit_pos+bps-1);
-            if((middle+1)==n_samples || exp_pos<exp_n){
+            exp_n = rule_stream.read(bit_pos, bit_pos + bps - 1);
+            if ((middle + 1) == n_samples || exp_pos < exp_n) {
                 //exp_m<=pos && pos<exp_n
                 break;
             }
@@ -993,29 +1013,29 @@ struct lc_gram_t {
         }
 
         acc_exp = exp_m;
-        if constexpr (is_str){
-            rhs_idx = (middle+1)*str_samp_rate;
-        }else{
-            rhs_idx = (middle+1)*rl_samp_rate;
+        if constexpr (is_str) {
+            rhs_idx = (middle + 1) * str_samp_rate;
+        } else {
+            rhs_idx = (middle + 1) * rl_samp_rate;
         }
 
-        off_t rhs_bit_pos = rhs_start + rhs_idx*r_bits;
-        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+        off_t rhs_bit_pos = rhs_start + rhs_idx * r_bits;
+        sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
         off_t e_len = exp_len(sym);
-        acc_exp+=e_len;
+        acc_exp += e_len;
 
-        while(acc_exp<=exp_pos && rhs_idx<last_rhs_idx){
+        while (acc_exp <= exp_pos && rhs_idx < last_rhs_idx) {
             rhs_idx++;
-            rhs_bit_pos+=r_bits;
-            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos+r_bits-1);
+            rhs_bit_pos += r_bits;
+            sym = rule_stream.read(rhs_bit_pos, rhs_bit_pos + r_bits - 1);
             e_len = exp_len(sym);
-            acc_exp+=e_len;
+            acc_exp += e_len;
         }
-        exp_pos-=acc_exp-e_len;
+        exp_pos -= acc_exp - e_len;
 
         bit_pos_s = rhs_start;
         bit_pos_exp = rhs_bit_pos;
-        bit_pos_e = exp_start-r_bits;
+        bit_pos_e = exp_start - r_bits;
         return false;
     }
 
@@ -1023,20 +1043,154 @@ struct lc_gram_t {
     [[nodiscard]] inline size_t exp_len(size_t sym) const {
         assert(has_rand_access);
 
-        if(sym<=max_tsym) return 1;
+        if (sym <= max_tsym) return 1;
 
-        sym-= max_tsym+1;
+        sym -= max_tsym + 1;
         size_t rl_start = rl_ptr.read(sym);
-        size_t end = rl_ptr.read(sym+1);
-        size_t ra_bits = rule_stream.read(end-r_samp_bits, end-1);
-        end -=r_samp_bits;
+        size_t end = rl_ptr.read(sym + 1);
+        size_t ra_bits = rule_stream.read(end - r_samp_bits, end - 1);
+        end -= r_samp_bits;
         size_t rl_end = end - ra_bits;
 
-        size_t rule_len = (rl_end-rl_start)/r_bits;
-        size_t n_samples = (rule_len/rl_samp_rate)+1;
-        size_t bps = ra_bits/n_samples;
+        size_t rule_len = (rl_end - rl_start) / r_bits;
+        size_t n_samples = (rule_len / rl_samp_rate) + 1;
+        size_t bps = ra_bits / n_samples;
 
-        return rule_stream.read(end-bps, end-1);
+        return rule_stream.read(end - bps, end - 1);
+    }
+
+    uint64_t fps2fps(std::vector<uint64_t> &buffer, size_t pos, size_t e_pos, uint64_t seed) const {
+
+        //corner case: the buffer has only one symbol
+        if((e_pos-pos)==1){
+            buffer[0] = XXH64(buffer.data(), sizeof(uint64_t), seed);
+            return 1;
+        }
+
+        uint64_t lb, rb, prev_sym, curr_sym, next_sym, ps_pos = pos, first_pos=pos, phrase_len;
+
+        lb = pos;
+        prev_sym = buffer[pos++];
+        curr_sym = buffer[pos++];
+        while (curr_sym == prev_sym && pos < e_pos) curr_sym = buffer[pos++];
+        rb = pos - 1;
+
+        //corner case: the buffer is a sequence of one symbol
+        if (pos == e_pos) {
+            phrase_len = rb - lb + 1;
+            buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+            return ps_pos-first_pos;
+        }
+
+        while (pos < e_pos) {
+            next_sym = buffer[pos++];
+            while (next_sym == curr_sym && pos < e_pos) next_sym = buffer[pos++];
+
+            if (prev_sym > curr_sym && curr_sym < next_sym) {
+                phrase_len = rb - lb;
+                buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+                lb = rb;
+            }
+
+            rb = pos - 1;
+            prev_sym = curr_sym;
+            curr_sym = next_sym;
+        }
+
+        phrase_len = pos - lb;
+        buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+
+        return ps_pos-first_pos;
+    }
+
+    uint64_t get_fp_int(size_t sym, std::vector<uint64_t> &p_seeds) const {
+
+
+        assert(sym < r);
+        assert(!is_rl_sym(sym));
+
+        if (sym <= max_tsym) {
+            return XXH64(&terminals[sym], sizeof(uint8_t), p_seeds[0]);
+        }
+
+        uint8_t g_level = parsing_level(sym);
+        auto range = nt2bitrange(sym);
+        size_t rule_len = (range.second - range.first + r_bits) / r_bits;
+        std::vector<uint64_t> buff_fp_seq;
+        std::vector<uint8_t> buff_fp_lvl;
+        buff_fp_seq.reserve(rule_len);
+        buff_fp_lvl.reserve(rule_len);
+        uint8_t min_g_level=255;
+
+        for (off_t j = range.first; j <= range.second; j += r_bits) {
+            sym = rule_stream.read(j, j + r_bits - 1);
+            if (is_rl_sym(sym)) {
+                auto range2 = nt2bitrange(sym);
+                sym = rule_stream.read(range2.first, range2.first + r_bits - 1);
+                rule_len = rule_stream.read(range2.second, range2.second + r_bits - 1);
+                uint64_t fp = get_fp_int(sym, p_seeds);
+                uint8_t p_lvl = parsing_level(sym);
+                if(p_lvl<min_g_level) min_g_level = p_lvl;
+                for (size_t i = 0; i < rule_len; i++) {
+                    buff_fp_seq.emplace_back(fp);
+                    buff_fp_lvl.emplace_back(p_lvl);
+                }
+            } else {
+                uint8_t p_lvl = parsing_level(sym);
+                if(p_lvl<min_g_level) min_g_level = p_lvl;
+                buff_fp_seq.emplace_back(get_fp_int(sym, p_seeds));
+                buff_fp_lvl.emplace_back(p_lvl);
+            }
+        }
+
+        size_t start, n_fps, comp_pos;
+        bool in_min_p_level;
+        while(min_g_level<g_level) {
+            comp_pos = 0, start=0;
+            for (size_t i = 1; i < buff_fp_seq.size(); i++) {
+                if(buff_fp_lvl[start] != buff_fp_lvl[i]) {
+                    in_min_p_level =  buff_fp_lvl[start] == min_g_level;
+                    n_fps = i - start;
+                    if(in_min_p_level) {
+                        n_fps = fps2fps(buff_fp_seq, start, i, p_seeds[buff_fp_lvl[start]+1]);
+                    }
+                    for (size_t u = start; u < start + n_fps; u++) {
+                        buff_fp_seq[comp_pos] = buff_fp_seq[u];
+                        buff_fp_lvl[comp_pos++] = buff_fp_lvl[u] + in_min_p_level;
+                    }
+                    start = i;
+                }
+            }
+
+            in_min_p_level =  buff_fp_lvl[start] == min_g_level;
+            n_fps = buff_fp_seq.size() - start;
+            if (in_min_p_level) {
+                n_fps = fps2fps(buff_fp_seq, start, buff_fp_seq.size(), p_seeds[buff_fp_lvl[start]+1]);
+            }
+
+            for (size_t u = start; u < start + n_fps; u++) {
+                buff_fp_seq[comp_pos] = buff_fp_seq[u];
+                buff_fp_lvl[comp_pos++] = buff_fp_lvl[u] + in_min_p_level;
+            }
+            buff_fp_seq.resize(comp_pos);
+            buff_fp_lvl.resize(comp_pos);
+            min_g_level++;
+        }
+        assert(buff_fp_seq.size()==1);
+
+        return buff_fp_seq[0];
+    }
+
+    [[nodiscard]] uint64_t get_fp(size_t sym) const {
+        std::vector<uint64_t> p_seeds;
+        p_seeds.resize(lvl_rules.size()+1);
+        std::random_device rd;
+        std::mt19937 gen(par_seed);
+        std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
+        for(unsigned long long & seed : p_seeds){
+            seed = distrib(gen);
+        }
+        return get_fp_int(sym, p_seeds);
     }
 };
 

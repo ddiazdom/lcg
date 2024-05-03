@@ -1065,8 +1065,30 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     final_gram.swap(gram);
 
     //std::string dc_string;
+    //final_gram.im_str_rand_access(192, 147, 147, dc_string);
+
+
+    //final_gram.breakdown(2);
+    //final_gram.print_parse_tree(10565, false);
+    //final_gram.get_fp(10565);
+
+    //final_gram.print_parse_tree(1109, false);
+    //final_gram.get_fp(1109);
+
     //std::string dc_string_2;
     //final_gram.print_parse_tree(10930);
+    //final_gram.get_fp(10930);
+    /*for(size_t i=0;i<final_gram.n_strings();i++){
+        auto range = final_gram.str2bitrange(i);
+        for(off_t j=range.first;j<=range.second;j+=final_gram.r_bits){
+            size_t sym = final_gram.bitpos2symbol(j);
+            if(!final_gram.is_rl_sym(sym)){
+                //std::cout<<"string "<<i<<" and sym "<<sym<<std::endl;
+                final_gram.get_fp(sym);
+            }
+        }
+    }*/
+
     //final_gram.in_memory_rand_access_range(192, 147, 152, dc_string);
     /*for(size_t str=0;str<final_gram.n_strings();str++){
         final_gram.im_str_decomp(str, dc_string_2);
@@ -1090,6 +1112,50 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
 }
 
+template<class gram_type>
+void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
+    //gram.print_parse_tree(3976351);
+    //gram.get_fp(3976351);
+    /*for(size_t i=0;i<gram.n_strings();i++) {
+        auto range = gram.str2bitrange(i);
+        std::cout<<i<<std::endl;
+        for (off_t j = range.first; j <= range.second; j += gram.r_bits) {
+            size_t sym = gram.bitpos2symbol(j);
+            if (!gram.is_rl_sym(sym)) {
+                //std::cout<<"string "<<i<<" and sym "<<sym<<std::endl;
+                gram.get_fp(sym);
+            }
+        }
+    }*/
+}
+
+void rem_txt_from_gram(std::string& input_gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
+
+    bool has_rl_rules, has_cg_rules, has_rand_access;
+    std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(input_gram);
+    assert(has_rand_access);
+    if(has_cg_rules){
+        if(has_rl_rules){
+            lc_gram_t<true, true, true> gram;
+            load_from_file(input_gram, gram);
+            rem_txt_from_gram_int(gram, rem_coordinates);
+        }else{
+            lc_gram_t<true, false, true> gram;
+            load_from_file(input_gram, gram);
+            rem_txt_from_gram_int(gram, rem_coordinates);
+        }
+    }else{
+        if(has_rl_rules){
+            lc_gram_t<false, true, true> gram;
+            load_from_file(input_gram, gram);
+            rem_txt_from_gram_int(gram, rem_coordinates);
+        }else{
+            lc_gram_t<false, false, true> gram;
+            load_from_file(input_gram, gram);
+            rem_txt_from_gram_int(gram, rem_coordinates);
+        }
+    }
+}
 
 //template<class gram_type>
 //void se_rand_access(std::string& gram_file, size_t str_id, size_t start, size_t end){
