@@ -1114,19 +1114,30 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
 
 template<class gram_type>
 void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
-    //gram.print_parse_tree(3976351);
-    //gram.get_fp(3976351);
-    /*for(size_t i=0;i<gram.n_strings();i++) {
-        auto range = gram.str2bitrange(i);
-        std::cout<<i<<std::endl;
-        for (off_t j = range.first; j <= range.second; j += gram.r_bits) {
-            size_t sym = gram.bitpos2symbol(j);
-            if (!gram.is_rl_sym(sym)) {
-                //std::cout<<"string "<<i<<" and sym "<<sym<<std::endl;
-                gram.get_fp(sym);
-            }
+    size_t sym;
+    off_t exp_start, exp_end;
+    uint8_t r_bits = gram.r_bits;
+
+    std::stack<exp_data> parse_tree;
+
+    for(auto & coord : rem_coordinates){
+
+        sym = std::get<0>(coord);
+        exp_start = std::get<1>(coord);
+        exp_end = std::get<2>(coord);
+        exp_data rhs_data{};
+
+        gram.template exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_data);
+        size_t lm_sym = gram.rule_stream.read(rhs_data.bp_exp_s, rhs_data.bp_exp_s + r_bits - 1);
+        off_t k = (rhs_data.bp_exp_e-rhs_data.bp_exp_s+r_bits) / r_bits;
+
+        while(k == 1) {
+            parse_tree.emplace(rhs_data);
+            gram.template exp_search_range<RULE_EXP>(lm_sym, exp_start, exp_end, rhs_data);
+            lm_sym = gram.rule_stream.read(rhs_data.bp_exp_s, rhs_data.bp_exp_s + r_bits - 1);
+            k = (rhs_data.bp_exp_e-rhs_data.bp_exp_s+r_bits) / r_bits;
         }
-    }*/
+    }
 }
 
 void rem_txt_from_gram(std::string& input_gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){

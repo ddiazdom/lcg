@@ -6,13 +6,23 @@
 #define LCG_GRAMMAR_H
 #include <stack>
 #include <queue>
+#include <random>
 
 #include "cds/cdt_common.hpp"
 #include "cds/int_array.h"
 #include "cds/utils.h"
+#include "xxhash.h"
 
 #define STR_EXP true
 #define RULE_EXP false
+
+struct exp_data{
+    bool is_rl;
+    off_t bp_rhs_s;
+    off_t bp_rhs_e;
+    off_t bp_exp_s;
+    off_t bp_exp_e;
+};
 
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
@@ -661,40 +671,39 @@ struct lc_gram_t {
         assert(exp_start < exp_end);
         dc_string.clear();
 
-        off_t rhs_bit_pos_s, rhs_bit_pos_e, rhs_bit_pos_exp;
-        bool rhs_in_rl;//right-hand-side is run-length encoded
+        exp_data rhs_data{};
 
-        rhs_in_rl = exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
-        size_t lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s + r_bits - 1);
-        off_t k = (rhs_bit_pos_e - rhs_bit_pos_s + r_bits) / r_bits;
+        exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_data);
+        size_t lm_sym = rule_stream.read(rhs_data.bp_exp_s, rhs_data.bp_exp_s + r_bits - 1);
+        off_t k = (rhs_data.bp_exp_e - rhs_data.bp_exp_s + r_bits) / r_bits;
         while (k == 1) {
-            rhs_in_rl = exp_search_range<RULE_EXP>(lm_sym, exp_start, exp_end, rhs_bit_pos_s, rhs_bit_pos_e);
-            lm_sym = rule_stream.read(rhs_bit_pos_s, rhs_bit_pos_s + r_bits - 1);
-            k = (rhs_bit_pos_e - rhs_bit_pos_s + r_bits) / r_bits;
+            exp_search_range<RULE_EXP>(lm_sym, exp_start, exp_end, rhs_data);
+            lm_sym = rule_stream.read(rhs_data.bp_exp_s, rhs_data.bp_exp_s + r_bits - 1);
+            k = (rhs_data.bp_exp_e - rhs_data.bp_exp_s + r_bits) / r_bits;
         }
 
         size_t rm_sym;
         std::stack<uint64_t> exp_stack;
-        if (rhs_in_rl) {
-            for (off_t u = rhs_bit_pos_e - r_bits; u > rhs_bit_pos_s; u -= r_bits) {
+        if(rhs_data.is_rl) {
+            for (off_t u = rhs_data.bp_exp_e - r_bits; u > rhs_data.bp_exp_s; u -= r_bits) {
                 exp_stack.push(lm_sym);
             }
             rm_sym = lm_sym;
         } else {
-            for (off_t u = rhs_bit_pos_e - r_bits; u > rhs_bit_pos_s; u -= r_bits) {
+            for (off_t u = rhs_data.bp_exp_e - r_bits; u > rhs_data.bp_exp_s; u -= r_bits) {
                 exp_stack.push(rule_stream.read(u, u + r_bits - 1));
             }
-            rm_sym = rule_stream.read(rhs_bit_pos_e, rhs_bit_pos_e + r_bits - 1);
+            rm_sym = rule_stream.read(rhs_data.bp_exp_e, rhs_data.bp_exp_e + r_bits - 1);
         }
 
         while (lm_sym > max_tsym) {
-            rhs_in_rl = exp_search<RULE_EXP>(exp_start, lm_sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
-            if (rhs_in_rl) {
-                for (off_t u = rhs_bit_pos_e; u > rhs_bit_pos_exp; u -= r_bits) {
+            exp_search<RULE_EXP>(exp_start, lm_sym, rhs_data);
+            if (rhs_data.is_rl) {
+                for (off_t u = rhs_data.bp_rhs_e; u > rhs_data.bp_exp_s; u -= r_bits) {
                     exp_stack.push(lm_sym);
                 }
             } else {
-                for (off_t u = rhs_bit_pos_e; u > rhs_bit_pos_exp; u -= r_bits) {
+                for (off_t u = rhs_data.bp_rhs_e; u > rhs_data.bp_exp_s; u -= r_bits) {
                     exp_stack.push(rule_stream.read(u, u + r_bits - 1));
                 }
             }
@@ -725,13 +734,13 @@ struct lc_gram_t {
 
         size_t stack_sym;
         while (rm_sym > max_tsym) {
-            rhs_in_rl = exp_search<RULE_EXP>(exp_end, rm_sym, rhs_bit_pos_s, rhs_bit_pos_exp, rhs_bit_pos_e);
-            if (rhs_in_rl) {
-                for (off_t u = rhs_bit_pos_exp - r_bits; u >= rhs_bit_pos_s; u -= r_bits) {
+            exp_search<RULE_EXP>(exp_end, rm_sym, rhs_data);
+            if(rhs_data.is_rl) {
+                for (off_t u = rhs_data.bp_exp_s - r_bits; u >= rhs_data.bp_rhs_s; u -= r_bits) {
                     exp_stack.push(rm_sym);
                 }
             } else {
-                for (off_t u = rhs_bit_pos_exp - r_bits; u >= rhs_bit_pos_s; u -= r_bits) {
+                for (off_t u = rhs_data.bp_exp_s - r_bits; u >= rhs_data.bp_rhs_s; u -= r_bits) {
                     exp_stack.push(rule_stream.read(u, u + r_bits - 1));
                 }
             }
@@ -760,11 +769,12 @@ struct lc_gram_t {
         dc_string.push_back(terminals[rm_sym]);
     }
 
-    [[nodiscard]] size_t im_rand_access(size_t sym, off_t pos) const {
+    [[nodiscard]] size_t im_sym_rand_access(size_t sym, off_t pos) const {
         assert(has_rand_access);
-        exp_search<STR_EXP>(pos, sym);
+        exp_data rhs{};
+        exp_search<STR_EXP>(pos, sym, rhs);
         while (sym > max_tsym) {
-            exp_search<RULE_EXP>(pos, sym);
+            exp_search<RULE_EXP>(pos, sym, rhs);
         }
         return terminals[sym];
     }
@@ -782,7 +792,7 @@ struct lc_gram_t {
      * bit_pos_e are bit positions in the uncompressed form of A_i A_{i+1} ... A_{i+k}
     **/
     template<bool is_str>
-    inline bool exp_search_range(size_t sym, off_t &exp_s, off_t &exp_e, off_t &bit_pos_s, off_t &bit_pos_e) const {
+    inline void exp_search_range(size_t sym, off_t &exp_s, off_t &exp_e, exp_data& rhs_data) const {
 
         assert(exp_s <= exp_e);
         off_t rhs_start, exp_start, ra_bits, last_rhs_idx, n_samples, acc_exp, rhs_idx_l, rhs_idx_r, bps;
@@ -814,9 +824,13 @@ struct lc_gram_t {
                 off_t n_copies = (exp_e / acc_exp) - (exp_s / acc_exp) + 1;
                 exp_s %= acc_exp;
                 exp_e %= acc_exp;
-                bit_pos_s = rhs_start;
-                bit_pos_e = rhs_start + (n_copies - 1) * r_bits;
-                return true;
+
+                rhs_data.bp_rhs_s = rhs_start;
+                rhs_data.bp_exp_s = rhs_start;
+                rhs_data.bp_exp_e = rhs_start + (n_copies - 1) * r_bits;
+                rhs_data.bp_rhs_e = rhs_start + (rl_len-1) * r_bits;
+                rhs_data.is_rl = true;
+                return;
             }
 
             last_rhs_idx = (exp_start - rhs_start) / r_bits;
@@ -920,10 +934,11 @@ struct lc_gram_t {
         assert(acc_exp > exp_e);
         exp_e -= acc_exp - e_len;
 
-        bit_pos_s = rhs_start + rhs_idx_l * r_bits;
-        bit_pos_e = rhs_start + rhs_idx_r * r_bits;
-
-        return false;
+        rhs_data.bp_rhs_s = rhs_start;
+        rhs_data.bp_exp_s = rhs_start + rhs_idx_l * r_bits;
+        rhs_data.bp_exp_e = rhs_start + rhs_idx_r * r_bits;
+        rhs_data.bp_rhs_e = exp_start - r_bits;
+        rhs_data.is_rl = false;
     }
 
 
@@ -944,7 +959,7 @@ struct lc_gram_t {
      * within (A l) in the grammar encoding
     **/
     template<bool is_str>
-    inline bool exp_search(off_t &exp_pos, size_t &sym, off_t &bit_pos_s, off_t &bit_pos_exp, off_t &bit_pos_e) const {
+    inline void exp_search(off_t &exp_pos, size_t &sym, exp_data& rhs_data) const {
 
         off_t rhs_start, exp_start, ra_bits, last_rhs_idx, n_samples, acc_exp, rhs_idx, bps;
 
@@ -973,12 +988,13 @@ struct lc_gram_t {
 
                 acc_exp /= rl_len;
 
-                bit_pos_s = rhs_start;
-                bit_pos_exp = rhs_start + (exp_pos / acc_exp) * r_bits;
-                bit_pos_e = rhs_start + (rl_len - 1) * r_bits;
-
+                rhs_data.bp_rhs_s = rhs_start;
+                rhs_data.bp_exp_s = rhs_start + (exp_pos / acc_exp) * r_bits;
+                rhs_data.bp_exp_e = rhs_data.bp_exp_s;
+                rhs_data.bp_rhs_e = rhs_start + (rl_len - 1) * r_bits;
+                rhs_data.is_rl = true;
                 exp_pos %= acc_exp;
-                return true;
+                return;
             }
 
             last_rhs_idx = (exp_start - rhs_start) / r_bits;
@@ -1033,10 +1049,11 @@ struct lc_gram_t {
         }
         exp_pos -= acc_exp - e_len;
 
-        bit_pos_s = rhs_start;
-        bit_pos_exp = rhs_bit_pos;
-        bit_pos_e = exp_start - r_bits;
-        return false;
+        rhs_data.bp_rhs_s = rhs_start;
+        rhs_data.bp_exp_s = rhs_bit_pos;
+        rhs_data.bp_exp_e = rhs_bit_pos;
+        rhs_data.bp_rhs_e = exp_start - r_bits;
+        rhs_data.is_rl = false;
     }
 
     //returns |exp(sym)|

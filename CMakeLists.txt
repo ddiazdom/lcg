@@ -30,3 +30,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 target_include_directories(lcg PRIVATE include)
+
+add_executable(test_gram test_gram_functions.cpp external/xxHash-dev/xxhash.c lib/cdt_common.cpp lib/utils.cpp)
+target_include_directories(test_gram PRIVATE external/xxHash-dev include)
+
