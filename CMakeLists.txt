@@ -29,7 +29,7 @@ if(UNIX AND NOT APPLE)
         target_link_libraries(lcg LINK_PUBLIC stdc++fs)
 endif()
 
-target_include_directories(lcg PRIVATE include)
+target_include_directories(lcg PRIVATE include external/xxHash-dev)
 
 add_executable(test_gram test_gram_functions.cpp external/xxHash-dev/xxhash.c lib/cdt_common.cpp lib/utils.cpp)
 target_include_directories(test_gram PRIVATE external/xxHash-dev include)

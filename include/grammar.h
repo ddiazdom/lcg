@@ -16,12 +16,20 @@
 #define STR_EXP true
 #define RULE_EXP false
 
+/** exp_data is a struct storing expansion information. Let B -> A_1 A_2 ... A_x be a grammar rule, and
+ * let exp(B)[exp_s..exp_e] be a substring of exp(B) covered by the substring A_i A_{i+1} .. A_{i+k} of the
+ * right-hand side (rhs) of B's rule. Here, "covered" means that if we remove A_i or A_{i+k}, the remaining substring
+ * no longer contains exp(X)[exp_s..exp_e]. The meaning of each field in the struct is described below. Additionally,
+ * when B -> A_1 A_2 ... A_x is a sequence of x copies of some symbol A, we encode the rule as B -> (A, x) in the grammar.
+ * In that case, the fields indicating bit positions are relative to the uncompressed rule B -> A_1=A A_2=A ... A_x=A.
+ * The flag is_rl indicates when B's rule is run-length encoded.
+ **/
 struct exp_data{
+    off_t bp_rhs_s; //leftmost bit of A_{1} within the rhs of X's rule
+    off_t bp_rhs_e; //leftmost bit of A_{x} within the rhs of X's rule
+    off_t bp_exp_s; //leftmost bit of A_{i} within the rhs of X's rule
+    off_t bp_exp_e; //leftmost bit of A_{i+k} within the rhs of X's rule
     bool is_rl;
-    off_t bp_rhs_s;
-    off_t bp_rhs_e;
-    off_t bp_exp_s;
-    off_t bp_exp_e;
 };
 
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
@@ -672,7 +680,6 @@ struct lc_gram_t {
         dc_string.clear();
 
         exp_data rhs_data{};
-
         exp_search_range<STR_EXP>(sym, exp_start, exp_end, rhs_data);
         size_t lm_sym = rule_stream.read(rhs_data.bp_exp_s, rhs_data.bp_exp_s + r_bits - 1);
         off_t k = (rhs_data.bp_exp_e - rhs_data.bp_exp_s + r_bits) / r_bits;
@@ -782,14 +789,11 @@ struct lc_gram_t {
     /**
      * sym is a grammar symbol (nonterminal or string id)
      * Given the rule sym -> A_1 A_2 ... A_x, this function returns the minimum substring A_i A_{i+1} .. A_{i+k} in
-     * the right-hand side of that rule containing exp(sym)[exp_s..exp_e] (exp_e is inclusive).
+     * the right-hand side of that rule covering exp(sym)[exp_s..exp_e] (exp_e is inclusive).
      * The function produces the following output:
      *      exp_s: the relative position of exp(sym)[exp_s] within exp(A_i)
      *      exp_e: the relative position of exp(sym)[exp_e] within exp(A_{i+k})
-     *      bit_pos_s: leftmost bit of A_{i} within the grammar encoding
-     *      bit_pos_e: leftmost bit of A_{i+k} within the grammar encoding
-     * The return value is a bool indicating if sym is a run-length nonterminal. If it is true, then bit_pos_s and
-     * bit_pos_e are bit positions in the uncompressed form of A_i A_{i+1} ... A_{i+k}
+     *      rhs_data: a struct of the type "exp_data" storing relevant information about the expansion
     **/
     template<bool is_str>
     inline void exp_search_range(size_t sym, off_t &exp_s, off_t &exp_e, exp_data& rhs_data) const {
@@ -1118,6 +1122,58 @@ struct lc_gram_t {
         buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
 
         return ps_pos-first_pos;
+    }
+
+    void get_rhs(size_t sym, bool dc_rl, std::vector<size_t>& rhs){
+        auto range = nt2bitrange(sym);
+        size_t tmp_sym, len;
+        for(off_t u=range.first;u<=range.second;u+=r_bits){
+            tmp_sym = bitpos2symbol(u);
+            if(dc_rl && is_rl_sym(tmp_sym)){
+                auto range2 = nt2bitrange(tmp_sym);
+                tmp_sym = bitpos2symbol(range2.first);
+                len = bitpos2symbol(range2.second);
+                for(size_t j=0;j<len;j++){
+                    rhs.push_back(tmp_sym);
+                }
+            }else{
+                rhs.push_back(tmp_sym);
+            }
+        }
+    }
+
+    void get_rhs_prefix(off_t start, off_t end, bool dc_rl, std::vector<size_t>& output){
+        size_t tmp_sym, len;
+        for(off_t i=start;i<=end;i+=r_bits){
+            tmp_sym = bitpos2symbol(i);
+            if(is_rl_sym(tmp_sym)){
+                auto range = nt2bitrange(tmp_sym);
+                tmp_sym = bitpos2symbol(range.first);
+                len = bitpos2symbol(range.second);
+                for(size_t j=0;j<len;j++){
+                    output.push_back(tmp_sym);
+                }
+            }else{
+                output.push_back(tmp_sym);
+            }
+        }
+    }
+
+    void get_rhs_suffix(off_t start, off_t end, bool dc_rl, std::vector<size_t>& output){
+        size_t tmp_sym, len;
+        for(off_t i=end;i>=start;i-=r_bits){
+            tmp_sym = bitpos2symbol(i);
+            if(dc_rl && is_rl_sym(tmp_sym)){
+                auto range = nt2bitrange(tmp_sym);
+                tmp_sym = bitpos2symbol(range.first);
+                len = bitpos2symbol(range.second);
+                for(size_t j=0;j<len;j++){
+                    output.push_back(tmp_sym);
+                }
+            }else{
+                output.push_back(tmp_sym);
+            }
+        }
     }
 
     uint64_t get_fp_int(size_t sym, std::vector<uint64_t> &p_seeds) const {
