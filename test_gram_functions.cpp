@@ -19,6 +19,7 @@ std::vector<std::string> file2strcoll(std::string& input_file){
 
 template<class gram_t>
 void check_random_access_symbol(std::vector<std::string>& str_coll, gram_t& gram){
+    std::cout<<" Checking random access for the symbols"<<std::endl;
     for(size_t i=0;i<str_coll.size();i++){
         for(size_t j=0;j<str_coll[i].size();j++){
             uint8_t sym = gram.im_sym_rand_access(i, j);
@@ -33,8 +34,10 @@ void check_random_access_symbol(std::vector<std::string>& str_coll, gram_t& gram
 
 template<class gram_t>
 void check_random_access_string(std::vector<std::string>& str_coll, gram_t& gram){
+    std::cout<<" Checking random access for substrings"<<std::endl;
     std::string dc_string;
     for(size_t i=0;i<str_coll.size();i++){
+        std::cout<<i<<std::endl;
         for(size_t j=1;j<str_coll[i].size();j++){
             for(size_t u=0;u<j;u++){
                 gram.im_str_rand_access(i, u, j, dc_string);

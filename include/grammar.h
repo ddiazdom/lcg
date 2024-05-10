@@ -32,6 +32,31 @@ struct exp_data{
     bool is_rl;
 };
 
+struct rule_type{
+    off_t nt{};
+    uint8_t lvl{};
+    std::vector<size_t> rhs;
+
+    rule_type()=default;
+    rule_type(rule_type&& other) noexcept {
+        std::swap(nt, other.nt);
+        std::swap(lvl, other.lvl);
+        rhs.swap(other.rhs);
+    }
+
+    rule_type(off_t nt_, uint8_t lvl_, std::vector<size_t>& rhs_)  {
+        nt = nt_;
+        lvl = lvl_;
+        rhs = rhs_;
+    }
+
+    rule_type(off_t nt_, uint8_t lvl_, std::vector<size_t>&& rhs_)  {
+        nt = nt_;
+        lvl = lvl_;
+        rhs.swap(rhs_);
+    }
+};
+
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
@@ -190,6 +215,14 @@ struct lc_gram_t {
         return sym <= max_tsym;
     }
 
+    [[nodiscard]] inline size_t n_lc_syms() const {
+        return lvl_rules.back();
+    }
+
+    [[nodiscard]] inline bool has_run_length_rules() const {
+        return has_rl_rules;
+    }
+
     [[nodiscard]] inline bool is_rl_sym(size_t symbol) const {
         return run_len_nt.first <= symbol && symbol < (run_len_nt.first + run_len_nt.second);
     }
@@ -217,6 +250,10 @@ struct lc_gram_t {
 
     [[nodiscard]] inline size_t comp_str_size() const {
         return c;
+    }
+
+    [[nodiscard]] inline size_t lc_par_tree_height() const {
+        return lvl_rules.size();
     }
 
     inline size_t get_byte_ter(size_t sym) {
@@ -1160,6 +1197,8 @@ struct lc_gram_t {
     }
 
     void get_rhs_suffix(off_t start, off_t end, bool dc_rl, std::vector<size_t>& output){
+
+        if(start>end) return;
         size_t tmp_sym, len;
         for(off_t i=end;i>=start;i-=r_bits){
             tmp_sym = bitpos2symbol(i);
@@ -1177,7 +1216,6 @@ struct lc_gram_t {
     }
 
     uint64_t get_fp_int(size_t sym, std::vector<uint64_t> &p_seeds) const {
-
 
         assert(sym < r);
         assert(!is_rl_sym(sym));
@@ -1255,6 +1293,11 @@ struct lc_gram_t {
     }
 
     [[nodiscard]] uint64_t get_fp(size_t sym) const {
+        std::vector<uint64_t> p_seeds = get_parsing_seeds();
+        return get_fp_int(sym, p_seeds);
+    }
+
+    [[nodiscard]] std::vector<uint64_t> get_parsing_seeds() const {
         std::vector<uint64_t> p_seeds;
         p_seeds.resize(lvl_rules.size()+1);
         std::random_device rd;
@@ -1263,7 +1306,30 @@ struct lc_gram_t {
         for(unsigned long long & seed : p_seeds){
             seed = distrib(gen);
         }
-        return get_fp_int(sym, p_seeds);
+        return p_seeds;
+    }
+
+    std::vector<uint64_t> get_all_fps(){
+        std::vector<uint64_t> p_seeds = get_parsing_seeds();
+        std::vector<uint64_t> fps(r, 0);
+
+        for(size_t i=0;i<=max_tsym;i++){
+            fps[i] = XXH64(&i, sizeof(uint8_t),p_seeds[0]);
+        }
+
+        std::vector<uint64_t> fp_seq;
+        for (off_t i = 0; i < (off_t) lvl_rules.size()-1; i++) {
+            for(size_t nt=lvl_rules[i];nt<lvl_rules[i+1];nt++){
+                auto range = nt2bitrange(nt);
+                for(off_t j=range.first;j<=range.second;j++){
+                    size_t sym = bitpos2symbol(j);
+                    fp_seq.push_back(fps[sym]);
+                }
+                fps[nt] = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[i+1]);
+                fp_seq.clear();
+            }
+        }
+        return fps;
     }
 };
 
