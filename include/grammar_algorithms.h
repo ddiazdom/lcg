@@ -1119,7 +1119,7 @@ off_t find_parsing_break(std::vector<size_t>& left_side, std::vector<size_t>& ri
                          std::vector<uint64_t>& all_fps,
                          std::unordered_map<uint64_t, std::pair<std::vector<size_t>, uint64_t>>& new_gram_rules){
 
-    //todo poner secuencias vacias en el arbol de parsing por casos bordes
+    if(left_side.empty() || right_side.empty()) return -1;
 
     size_t i=1;
     size_t lm_sym = right_side[0];
@@ -1153,8 +1153,9 @@ off_t find_parsing_break(std::vector<size_t>& left_side, std::vector<size_t>& ri
 }
 
 template<class gram_t>
-void insert_left_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data, gram_t& gram, uint8_t lvl){
+void insert_left_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data, gram_t& gram, uint8_t lvl, bool& lm_branch){
     std::vector<size_t> rhs;
+
     if(rhs_data.is_rl){
         size_t sym = gram.bitpos2symbol(rhs_data.bp_rhs_s);
         off_t len = (rhs_data.bp_exp_s-rhs_data.bp_rhs_s)/gram.r_bits;
@@ -1167,13 +1168,15 @@ void insert_left_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data,
         }
     }
 
-    if(!rhs.empty()){
-        offset_stack.emplace(-1, lvl, rhs);
+    lm_branch = lm_branch && rhs_data.bp_rhs_s==rhs_data.bp_exp_s;
+
+    if(!rhs.empty() || lm_branch){
+        offset_stack.emplace(-1, lvl, !rhs.empty(), rhs);
     }
 }
 
 template<class gram_t>
-void insert_right_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data, gram_t& gram, uint8_t lvl){
+void insert_right_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data, gram_t& gram, uint8_t lvl, bool& rm_branch){
     std::vector<size_t> rhs;
     if(rhs_data.is_rl){
         size_t sym = gram.bitpos2symbol(rhs_data.bp_rhs_s);
@@ -1187,8 +1190,10 @@ void insert_right_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data
         }
     }
 
-    if(!rhs.empty()){
-        offset_stack.emplace(-1, lvl, rhs);
+    rm_branch = rm_branch && rhs_data.bp_rhs_e==rhs_data.bp_exp_e;
+
+    if(!rhs.empty() || rm_branch){
+        offset_stack.emplace(-1, lvl, !rhs.empty(), rhs);
     }
 }
 
@@ -1240,17 +1245,17 @@ void retrieve_right_offset(std::stack<std::tuple<off_t, off_t, bool>>& off_stack
 template<class gram_type>
 void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
 
-    size_t sym, empty_sym = std::numeric_limits<size_t>::max();
+    size_t sym;
     off_t d_seq_s, d_seq_e;
     uint8_t r_bits = gram.r_bits;
     std::vector<uint64_t> p_seeds = gram.get_parsing_seeds();
-    uint64_t next_av_nt = gram.r;
+    uint64_t smallest_new_nt = gram.r;
+    uint64_t next_av_nt = smallest_new_nt;
 
     std::vector<uint64_t> all_fps = gram.get_all_fps();
 
     std::stack<rule_type> left_off_stack;
     std::stack<rule_type> right_off_stack;
-
     std::unordered_map<uint64_t, std::pair<std::vector<size_t>, uint64_t>> new_gram_rules;
 
     for(auto & coord : rem_coordinates){
@@ -1265,16 +1270,17 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
 
         size_t lm_sym, rm_sym;
         uint8_t left_lvl, right_lvl;
+        bool is_lm_branch=true, is_rm_branch=true;
 
         exp_data rhs_data{};
         gram.template exp_search_range<STR_EXP>(sym, d_seq_s, d_seq_e, rhs_data);
 
         left_lvl = gram.lc_par_tree_height();
-        insert_left_offset(left_off_stack, rhs_data, gram, left_lvl);
+        insert_left_offset(left_off_stack, rhs_data, gram, left_lvl, is_lm_branch);
         lm_sym = gram.bitpos2symbol(rhs_data.bp_exp_s);
 
         right_lvl = gram.lc_par_tree_height();
-        insert_right_offset(right_off_stack, rhs_data, gram, right_lvl);
+        insert_right_offset(right_off_stack, rhs_data, gram, right_lvl, is_rm_branch);
         rm_sym = gram.bitpos2symbol(rhs_data.bp_exp_e);
 
         off_t k = (rhs_data.bp_exp_e-rhs_data.bp_exp_s+r_bits) / r_bits;
@@ -1284,8 +1290,8 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
         while(k == 1) {
             left_lvl = gram.parsing_level(lm_sym);
             gram.template exp_search_range<RULE_EXP>(lm_sym, d_seq_s, d_seq_e, rhs_data);
-            insert_left_offset(left_off_stack, rhs_data, gram, left_lvl);
-            insert_right_offset(right_off_stack, rhs_data, gram, left_lvl);
+            insert_left_offset(left_off_stack, rhs_data, gram, left_lvl, is_lm_branch);
+            insert_right_offset(right_off_stack, rhs_data, gram, left_lvl, is_rm_branch);
 
             lm_sym = gram.bitpos2symbol(rhs_data.bp_exp_s);
             k = (rhs_data.bp_exp_e-rhs_data.bp_exp_s+r_bits) / r_bits;
@@ -1299,52 +1305,54 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
         while (lm_sym > gram.max_tsym) {
             left_lvl = gram.parsing_level(lm_sym);
             gram.template exp_search<RULE_EXP>(d_seq_s, lm_sym, rhs_data);
-            insert_left_offset(left_off_stack, rhs_data, gram, left_lvl);
+            insert_left_offset(left_off_stack, rhs_data, gram, left_lvl, is_lm_branch);
         }
 
         //descend over the rightmost branch of exp(sym)[d_seq_s..d_seq_e]'s parse tree
         while (rm_sym > gram.max_tsym) {
             right_lvl = gram.parsing_level(lm_sym);
             gram.template exp_search<RULE_EXP>(d_seq_e, rm_sym, rhs_data);
-            insert_right_offset(right_off_stack, rhs_data, gram, right_lvl);
+            insert_right_offset(right_off_stack, rhs_data, gram, right_lvl, is_rm_branch);
         }
 
-        size_t g_level=1;
-        size_t tmp_sym;
+        off_t g_level=0;
         std::vector<size_t> rhs;
-
         while(g_level<gram.lc_par_tree_height()){
 
             rule_type * left_offset = &left_off_stack.top();
             rule_type * right_offset = &right_off_stack.top();
 
-            /*rm_sym = left_offset->rhs.back();
-            left_offset->rhs.pop_back();
-            while(gram.parsing_level(rm_sym)>g_level){
-                gram.get_rhs(rm_sym, true, rhs);
-                tmp_sym = rhs.back();
-                rhs.pop_back();
-                left_off_stack.emplace(rm_sym, rhs);
-                rm_sym = tmp_sym;
-                left_offset = &left_off_stack.top();
+            if(left_offset->exp_branch){
+                rm_sym = left_offset->rhs.back();
+                left_offset->rhs.pop_back();
+                while(gram.parsing_level(rm_sym)>g_level){
+                    left_offset->exp_branch = false;
+                    gram.get_rhs(rm_sym, true, rhs);
+                    size_t tmp_sym = rhs.back();
+                    rhs.pop_back();
+                    left_off_stack.emplace(rm_sym, 0, false, rhs);
+                    rm_sym = tmp_sym;
+                    left_offset = &left_off_stack.top();
+                }
+                left_offset->rhs.push_back(rm_sym);
             }
 
-            lm_sym = right_offset->rhs[0];
-            right_offset->rhs.erase(right_offset->rhs.begin());
-            while(gram.parsing_level(lm_sym)>g_level){
-                gram.get_rhs(lm_sym, true, rhs);
-                tmp_sym = rhs[0];
-                rhs.erase(rhs.begin());
-                right_off_stack.emplace(lm_sym, rhs);
-                lm_sym = tmp_sym;
-                right_offset = &right_off_stack.top();
+            if(right_offset->exp_branch){
+                lm_sym = right_offset->rhs[0];
+                right_offset->rhs.erase(right_offset->rhs.begin());
+                while(gram.parsing_level(lm_sym)>g_level){
+                    right_offset->exp_branch = false;
+                    gram.get_rhs(lm_sym, true, rhs);
+                    size_t tmp_sym = rhs[0];
+                    rhs.erase(rhs.begin());
+                    right_off_stack.emplace(lm_sym, 0, false, rhs);
+                    lm_sym = tmp_sym;
+                    right_offset = &right_off_stack.top();
+                }
+                right_offset->rhs.insert(right_offset->rhs.begin(), lm_sym);
             }
 
-            //if(rm_sym!=empty_sym) left_offset->rhs.push_back(rm_sym);
-            //if(lm_sym!=empty_sym) right_offset->rhs.insert(right_offset->rhs.begin(), lm_sym);*/
-
-            assert(left_offset->lvl==right_offset->lvl);
-
+            //assert(left_offset->lvl==right_offset->lvl);
             off_t parsing_break = find_parsing_break(left_offset->rhs, right_offset->rhs, all_fps, new_gram_rules);
 
             if(parsing_break>0){//there is a break
@@ -1354,15 +1362,14 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
                     std::vector<uint64_t> fp_seq;
                     for(unsigned long & s : left_offset->rhs){
                         if(s>gram.r){
-                            fp_seq.push_back(gram.get_fp(s));
-                        }else{
                             fp_seq.push_back(new_gram_rules[s].second);
+                        }else{
+                            fp_seq.push_back(all_fps[s]);
                         }
                     }
-                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level]);
-                    new_gram_rules[next_av_nt] = {left_offset->rhs, new_fp};
-                    rm_sym = next_av_nt;
-                    next_av_nt++;
+                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
+                    rm_sym = next_av_nt++;
+                    new_gram_rules[rm_sym] = {left_offset->rhs, new_fp};
                 }
 
                 lm_sym = right_offset->nt;
@@ -1370,30 +1377,22 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
                     std::vector<uint64_t> fp_seq;
                     for(unsigned long & s : right_offset->rhs){
                         if(s>gram.r){
-                            fp_seq.push_back(gram.get_fp(s));
-                        }else{
                             fp_seq.push_back(new_gram_rules[s].second);
+                        }else{
+                            fp_seq.push_back(all_fps[s]);
                         }
                     }
-                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level]);
-                    new_gram_rules[next_av_nt] = {right_offset->rhs, new_fp};
-                    lm_sym = next_av_nt;
-                    next_av_nt++;
+                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
+                    lm_sym = next_av_nt++;
+                    new_gram_rules[lm_sym] = {right_offset->rhs, new_fp};
                 }
 
-                /*left_off_stack.pop();
-                if(left_off_stack.empty()){
-                    left_off_stack.emplace(-1, std::vector<size_t>());
-                }
+                left_off_stack.pop();
                 left_off_stack.top().rhs.push_back(rm_sym);
 
                 right_off_stack.pop();
-                if(right_off_stack.empty()){
-                    right_off_stack.emplace(-1, std::vector<size_t>());
-                }
-                right_off_stack.top().rhs.push_back(lm_sym);*/
-
-            } else{//the phrases are merged
+                right_off_stack.top().rhs.push_back(lm_sym);
+            } else {//the phrases are merged
 
                 std::vector<uint64_t> fp_seq;
                 std::vector<size_t> new_seq;
@@ -1405,34 +1404,15 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
                     fp_seq.push_back(all_fps[s]);
                     new_seq.push_back(s);
                 }
-                uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level]);
+                uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
                 rm_sym = next_av_nt++;
                 new_gram_rules[rm_sym] = {new_seq, new_fp};
-
-                g_level++;
                 left_off_stack.pop();
                 right_off_stack.pop();
-                left_lvl = left_off_stack.empty() ? gram.lc_par_tree_height()+1 : left_off_stack.top().lvl;
-                right_lvl = right_off_stack.empty() ? gram.lc_par_tree_height()+1 : right_off_stack.top().lvl;
-                uint8_t next_lvl = std::min(left_lvl, right_lvl);
-
-                while(g_level<next_lvl){
-                    new_fp = XXH64(&new_fp, sizeof(uint64_t), p_seeds[g_level]);
-                    new_seq.clear();
-                    new_seq.push_back(rm_sym);
-                    rm_sym = next_av_nt++;
-                    new_gram_rules[rm_sym] = {new_seq, new_fp};
-                    g_level++;
-                }
-
-                if(left_off_stack.empty()){
-                    left_off_stack.emplace(-1, next_lvl, std::vector<size_t>());
-                }
-                if(right_off_stack.empty()){
-                    right_off_stack.emplace(-1, next_lvl, std::vector<size_t>());
-                }
                 left_off_stack.top().rhs.push_back(rm_sym);
             }
+
+            g_level++;
         }
     }
 }

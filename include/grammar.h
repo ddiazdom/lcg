@@ -35,24 +35,28 @@ struct exp_data{
 struct rule_type{
     off_t nt{};
     uint8_t lvl{};
+    bool exp_branch=false;
     std::vector<size_t> rhs;
 
     rule_type()=default;
     rule_type(rule_type&& other) noexcept {
         std::swap(nt, other.nt);
         std::swap(lvl, other.lvl);
+        std::swap(exp_branch, other.exp_branch);
         rhs.swap(other.rhs);
     }
 
-    rule_type(off_t nt_, uint8_t lvl_, std::vector<size_t>& rhs_)  {
+    rule_type(off_t nt_, uint8_t lvl_, bool exp_branch_, std::vector<size_t>& rhs_)  {
         nt = nt_;
         lvl = lvl_;
+        exp_branch = exp_branch_;
         rhs = rhs_;
     }
 
-    rule_type(off_t nt_, uint8_t lvl_, std::vector<size_t>&& rhs_)  {
+    rule_type(off_t nt_, uint8_t lvl_, bool exp_branch_, std::vector<size_t>&& rhs_)  {
         nt = nt_;
         lvl = lvl_;
+        exp_branch = exp_branch_;
         rhs.swap(rhs_);
     }
 };
@@ -252,7 +256,7 @@ struct lc_gram_t {
         return c;
     }
 
-    [[nodiscard]] inline size_t lc_par_tree_height() const {
+    [[nodiscard]] inline off_t lc_par_tree_height() const {
         return lvl_rules.size();
     }
 
@@ -1162,6 +1166,7 @@ struct lc_gram_t {
     }
 
     void get_rhs(size_t sym, bool dc_rl, std::vector<size_t>& rhs){
+        rhs.clear();
         auto range = nt2bitrange(sym);
         size_t tmp_sym, len;
         for(off_t u=range.first;u<=range.second;u+=r_bits){
