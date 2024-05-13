@@ -32,35 +32,6 @@ struct exp_data{
     bool is_rl;
 };
 
-struct rule_type{
-    off_t nt{};
-    uint8_t lvl{};
-    bool exp_branch=false;
-    std::vector<size_t> rhs;
-
-    rule_type()=default;
-    rule_type(rule_type&& other) noexcept {
-        std::swap(nt, other.nt);
-        std::swap(lvl, other.lvl);
-        std::swap(exp_branch, other.exp_branch);
-        rhs.swap(other.rhs);
-    }
-
-    rule_type(off_t nt_, uint8_t lvl_, bool exp_branch_, std::vector<size_t>& rhs_)  {
-        nt = nt_;
-        lvl = lvl_;
-        exp_branch = exp_branch_;
-        rhs = rhs_;
-    }
-
-    rule_type(off_t nt_, uint8_t lvl_, bool exp_branch_, std::vector<size_t>&& rhs_)  {
-        nt = nt_;
-        lvl = lvl_;
-        exp_branch = exp_branch_;
-        rhs.swap(rhs_);
-    }
-};
-
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
@@ -1188,7 +1159,7 @@ struct lc_gram_t {
         size_t tmp_sym, len;
         for(off_t i=start;i<=end;i+=r_bits){
             tmp_sym = bitpos2symbol(i);
-            if(is_rl_sym(tmp_sym)){
+            if(dc_rl && is_rl_sym(tmp_sym)){
                 auto range = nt2bitrange(tmp_sym);
                 tmp_sym = bitpos2symbol(range.first);
                 len = bitpos2symbol(range.second);
@@ -1319,18 +1290,23 @@ struct lc_gram_t {
         std::vector<uint64_t> fps(r, 0);
 
         for(size_t i=0;i<=max_tsym;i++){
-            fps[i] = XXH64(&i, sizeof(uint8_t),p_seeds[0]);
+            fps[i] = XXH64(&i, sizeof(uint8_t), p_seeds[0]);
         }
 
         std::vector<uint64_t> fp_seq;
         for (off_t i = 0; i < (off_t) lvl_rules.size()-1; i++) {
+            uint64_t prev=0;
             for(size_t nt=lvl_rules[i];nt<lvl_rules[i+1];nt++){
                 auto range = nt2bitrange(nt);
-                for(off_t j=range.first;j<=range.second;j++){
+                for(off_t j=range.first;j<=range.second;j+=r_bits){
                     size_t sym = bitpos2symbol(j);
+                    assert(sym<nt);
                     fp_seq.push_back(fps[sym]);
                 }
                 fps[nt] = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[i+1]);
+                //std::cout<<nt<<" "<<max_tsym<<" "<<fps[nt]<<" "<<prev<<std::endl;
+                assert(fps[nt]>=prev);
+                prev=fps[nt];
                 fp_seq.clear();
             }
         }

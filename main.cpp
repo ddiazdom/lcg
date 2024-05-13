@@ -1,6 +1,7 @@
 #include <thread>
 
 #include "external/CLI11.hpp"
+#include "edit_algorithms.h"
 #include "grammar_algorithms.h"
 
 struct arguments{

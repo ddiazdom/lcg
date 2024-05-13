@@ -13,7 +13,7 @@ class lz_like_map {
 
 public:
 
-    data_type *data;
+    data_type *data;//pointer to the source sequence
     static constexpr uint8_t data_bytes=sizeof(data_type);
 
     static constexpr uint32_t null_source = std::numeric_limits<uint32_t>::max();
