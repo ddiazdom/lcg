@@ -42,6 +42,7 @@ struct new_rule_type{
     off_t nt{};
     uint64_t fp{};
     uint8_t lvl{};
+    uint64_t exp_len{};
     std::vector<size_t> rhs;
 
     new_rule_type()=default;
@@ -50,20 +51,23 @@ struct new_rule_type{
         std::swap(nt, other.nt);
         std::swap(fp, other.fp);
         std::swap(lvl, other.lvl);
+        std::swap(exp_len, other.exp_len);
         rhs.swap(other.rhs);
     }
 
-    new_rule_type(off_t nt_, uint64_t& fp_, uint8_t lvl_, std::vector<size_t>& rhs_)  {
+    new_rule_type(off_t nt_, uint64_t& fp_, uint8_t lvl_, uint64_t exp_len_, std::vector<size_t>& rhs_)  {
         nt = nt_;
         fp = fp_;
         lvl = lvl_;
+        exp_len = exp_len_;
         rhs = rhs_;
     }
 
-    new_rule_type(off_t nt_, uint64_t fp_, uint8_t lvl_, std::vector<size_t>&& rhs_)  {
+    new_rule_type(off_t nt_, uint64_t fp_, uint8_t lvl_, uint64_t exp_len_, std::vector<size_t>&& rhs_)  {
         nt = nt_;
         fp = fp_;
         lvl = lvl_;
+        exp_len = exp_len_;
         rhs.swap(rhs_);
     }
 
@@ -71,92 +75,11 @@ struct new_rule_type{
         std::swap(nt, other.nt);
         std::swap(fp, other.fp);
         std::swap(lvl, other.lvl);
+        std::swap(exp_len, other.exp_len);
         rhs.swap(other.rhs);
         return *this;
     }
 };
-
-template<class gram_type>
-void retrieve_left_offset(std::stack<std::tuple<off_t, off_t, bool>>& off_stack, gram_type& gram, uint8_t r_bits, std::vector<size_t>& offset_seq){
-    offset_seq.clear();
-    auto left_side = off_stack.top();
-    off_stack.pop();
-    if(std::get<2>(left_side)){//the sequence is in run-length format
-        size_t len = (std::get<1>(left_side)-std::get<0>(left_side)+r_bits)/r_bits;
-        size_t tmp_sym = gram.bitpos2symbol(std::get<0>(left_side));
-        for(size_t i=0;i<len;i++){
-            offset_seq.push_back(tmp_sym);
-        }
-        if(!off_stack.empty()){
-            left_side = off_stack.top();
-            off_stack.pop();
-            assert(!std::get<2>(left_side));
-            gram.get_rhs_suffix(std::get<0>(left_side), std::get<1>(left_side), true, offset_seq);
-        }
-    } else {
-        gram.get_rhs_suffix(std::get<0>(left_side), std::get<1>(left_side), true, offset_seq);
-    }
-    std::reverse(offset_seq.begin(), offset_seq.end());
-}
-
-template<class gram_type>
-void retrieve_right_offset(std::stack<std::tuple<off_t, off_t, bool>>& off_stack, gram_type& gram, uint8_t r_bits, std::vector<size_t>& offset_seq){
-    offset_seq.clear();
-    auto right_side = off_stack.top();
-    off_stack.pop();
-    if(std::get<2>(right_side)){
-        size_t len = std::get<1>(right_side)/r_bits;
-        size_t tmp_sym = gram.rule_stream.read(std::get<0>(right_side), std::get<0>(right_side)+r_bits-1);
-        for(size_t i=0;i<len;i++){
-            offset_seq.push_back(tmp_sym);
-        }
-        if(!off_stack.empty()){
-            right_side = off_stack.top();
-            off_stack.pop();
-            assert(!std::get<2>(right_side));
-            gram.get_rhs_prefix(std::get<0>(right_side), std::get<1>(right_side), true, offset_seq);
-        }
-    } else {
-        gram.get_rhs_prefix(std::get<0>(right_side), std::get<1>(right_side), true, offset_seq);
-    }
-}
-
-off_t find_parsing_break (std::vector<size_t> &left_side, std::vector<size_t> &right_side,
-                          std::vector<uint64_t> &all_fps,
-                          std::unordered_map<uint64_t, std::pair<std::vector<size_t>, uint64_t>> &new_gram_rules) {
-
-    if (left_side.empty () || right_side.empty ()) return -1;
-
-    size_t i = 1;
-    size_t lm_sym = right_side[ 0 ];
-    while (i < right_side.size () && lm_sym == right_side[ i ]) i++;
-
-    uint64_t lm_fp;
-    uint64_t lm_fp_next;
-
-    if (lm_sym > all_fps.size ()) {
-        lm_fp = new_gram_rules[ lm_sym ].second;
-    } else {
-        lm_fp = all_fps[ lm_sym ];
-    }
-    lm_fp_next = lm_fp - 1;
-    if (i < right_side.size ()) {
-        if (right_side[ i ] >= all_fps.size ()) {
-            lm_fp_next = new_gram_rules[ right_side[ i ]].second;
-        } else {
-            lm_fp_next = all_fps[ right_side[ i ]];
-        }
-    }
-
-    uint64_t rm_fp;
-    if (left_side.back () >= all_fps.size ()) {
-        rm_fp = new_gram_rules[ left_side.back () ].second;
-    } else {
-        rm_fp = all_fps[ left_side.back () ];
-    }
-    bool is_local_minimum = rm_fp > lm_fp && lm_fp < lm_fp_next;
-    return (-1) + is_local_minimum;
-}
 
 template<class gram_t>
 void insert_left_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data, gram_t& gram, uint8_t lvl, bool& lm_branch){
@@ -205,10 +128,10 @@ void insert_right_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data
 
 template<class gram_t>
 off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
-                std::unordered_map<uint64_t, new_rule_type>& new_gram_rules,
-                size_t &next_av_nt, std::vector<uint64_t>& all_fps, uint64_t pf_seed, uint8_t p_level) {
+                std::vector<std::vector<new_rule_type>>& new_gram_rules,
+                std::vector<uint64_t>& all_fps, uint64_t pf_seed, uint8_t p_level) {
 
-    size_t mt_sym;
+    size_t mt_sym, next_av_nt=gram.r;
     size_t prev_sym, curr_sym, next_sym, end_sym = std::numeric_limits<size_t>::max();
     off_t txt_pos = 0, phrase_len, lb, rb;
     lz_like_map<size_t> map(text);
@@ -220,7 +143,7 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
 
     lb = txt_pos;
     prev_sym = text[txt_pos++];
-    prev_hash = prev_sym<gram.r ? all_fps[prev_sym] : new_gram_rules[prev_sym].fp;
+    prev_hash = prev_sym<gram.r ? all_fps[prev_sym] : new_gram_rules[p_level-1][prev_sym-gram.r].fp;
 
     curr_sym = text[txt_pos++];
     while(curr_sym==prev_sym) curr_sym = text[txt_pos++];
@@ -235,14 +158,14 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
             memset(&text[lb+1], (int)end_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
         }
     }else{
-        curr_hash = curr_sym<gram.r ? all_fps[curr_sym] : new_gram_rules[curr_sym].fp;
+        curr_hash = curr_sym<gram.r ? all_fps[curr_sym] : new_gram_rules[p_level-1][curr_sym-gram.r].fp;
 
         next_sym = text[txt_pos++];
         while(next_sym==curr_sym) next_sym = text[txt_pos++];
 
         while(next_sym!=end_sym){
 
-            next_hash = next_sym<gram.r ? all_fps[next_sym] : new_gram_rules[next_sym].fp;
+            next_hash = next_sym<gram.r ? all_fps[next_sym] : new_gram_rules[p_level-1][next_sym-gram.r].fp;
             if(prev_hash>curr_hash && curr_hash<next_hash){//local minimum
                 phrase_len = rb-lb;
                 mt_sym = map.insert(lb, phrase_len, inserted);
@@ -287,17 +210,20 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
     size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
     mt_sym = 0, lb = 0;
     off_t i=0, parse_size=0;
+    uint64_t exp_len=0;
 
     while(mt_sym<tot_phrases) {
         assert(i==lb);
         source = map.phrase_set[mt_sym].source;
         end = source + map.phrase_set[mt_sym].len;
+        exp_len=0;
         for(size_t j=source;j<end;j++){
-            fp_sequence.push_back(text[j]<gram.r ? all_fps[text[j]]: new_gram_rules[text[j]].fp);
+            fp_sequence.push_back(text[j]<gram.r ? all_fps[text[j]]: new_gram_rules[p_level-1][text[j]-gram.r].fp);
             new_phrase.push_back(text[j]);
+            exp_len += text[j]<gram.r?  gram.exp_len(text[j]) : new_gram_rules[p_level-1][text[j]-gram.r].exp_len;
         }
         fp = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
-        new_gram_rules[mt_sym+next_av_nt] = {0, fp, p_level, new_phrase};
+        new_gram_rules[p_level].emplace_back(0, fp, p_level, exp_len, new_phrase);
         fp_sequence.clear();
         new_phrase.clear();
 
@@ -311,34 +237,154 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
             while(text[i]==end_sym && i<lb) i++;
         }
     }
-    next_av_nt+=tot_phrases;
+
     return parse_size;
 }
 
 template<class gram_type>
-void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
+void recompute_exp_lengths(std::vector<size_t>& rhs, gram_type& gram, uint8_t lvl, std::vector<std::vector<new_rule_type>>& edited_rules){
+
+    size_t acc =0;
+    for(auto &s : rhs){
+        if(s<gram.r){
+            acc += gram.exp_len(s);
+        }else{
+            acc+= edited_rules[lvl-1][s-gram.r].exp_len;
+        }
+        s = acc;
+    }
+    std::cout<<acc<<std::endl;
+}
+
+template<class gram_type>
+void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules, gram_type& gram){
+
+    off_t nt_offset=0;
+    int_array<size_t> nt_offsets(gram.r, sym_width(edited_rules.size()));
+    o_file_stream<size_t> edited_gram("pepe.txt", BUFFER_SIZE, std::ios::binary | std::ios::out);
+
+    for(size_t i=0;i<=gram.max_tsym;i++){
+        nt_offsets[i] = 0;
+    }
+
+    for(size_t lvl=0;lvl<(gram.lvl_rules.size()-1);lvl++) {
+
+        std::vector<new_rule_type *> perm(edited_rules[lvl].size());
+        size_t i=0;
+        for(auto & new_rule : edited_rules[lvl]){
+            perm[i++] =&new_rule;
+        }
+        std::sort(perm.begin(), perm.end(), [](auto const& a, auto const& b){
+            return a->fp < b->fp;
+        });
+
+        off_t middle;
+        off_t left = gram.lvl_rules[lvl];
+        off_t right = gram.lvl_rules[lvl+1]-1;
+
+        off_t first_nt = gram.lvl_rules[lvl];
+        off_t end_nt = gram.lvl_rules[lvl+1];
+
+        uint64_t fp_first, fp_second;
+
+        for(auto const &p : perm){
+
+            //binary search of the rule's fingerprint
+            while (left <= right) {
+                middle = left + (right - left) / 2;
+                fp_first = gram.get_fp(middle);
+                if(fp_first > p->fp) {
+                    right = middle - 1;
+                    continue;
+                }
+                if((middle+1)==end_nt){
+                    for(auto const& s : p->rhs){
+                        std::cout<<s<<" ";
+                    }
+                    std::cout<<" | "<<middle<<"+"<<(p->fp==fp_first? nt_offset : nt_offset+1)<<" -> "<<gram.get_fp(middle)<<" "<<p->fp<<" exp:"<<p->exp_len<<std::endl;
+                    break;
+                }
+                fp_second = gram.get_fp(middle+1);
+                if(p->fp<fp_second) {
+                    for(auto const& s : p->rhs){
+                        std::cout<<s<<" ";
+                    }
+                    std::cout<<" | "<<middle<<"+"<<(p->fp==fp_first? nt_offset : nt_offset+1)<<" -> "<<gram.get_fp(middle)<<" "<<p->fp<<" "<<gram.get_fp(middle+1)<<" exp:"<<p->exp_len<<std::endl;
+                    break;
+                }
+                left = middle + 1;
+            }
+
+            for(off_t nt=first_nt;nt<=middle;nt++){
+                nt_offsets[nt] = nt_offset;
+                auto res = gram.nt2bitrange(nt);
+                for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
+                    size_t sym = gram.bitpos2symbol(j);
+                    sym+=nt_offsets[sym];
+                    edited_gram.push_back((sym<<1UL) | (j==res.second));
+                }
+                auto e_data = gram.template nt2expdata<RULE_EXP>(nt);
+                for(off_t j = std::get<0>(e_data);j<=std::get<1>(e_data);j+=std::get<2>(e_data)){
+                    size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
+                    edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
+                }
+            }
+
+            if(p->fp==fp_first){
+                //TODO handle collisions
+                p->nt = middle+nt_offset;
+            } else{
+                //handle the new rule
+                size_t last = p->rhs.size()-1, j=0;
+                for(auto &sym : p->rhs){
+                    if(sym<gram.r){
+                        sym +=nt_offsets[sym];
+                    }else{
+                        sym = edited_rules[lvl-1][sym-gram.r].nt;
+                    }
+                    edited_gram.push_back(sym<<1UL | (j==last));
+                    j++;
+                }
+                recompute_exp_lengths(p->rhs, gram, lvl, edited_rules);
+                for(size_t u=0;u<p->rhs.size();u++){
+                    edited_gram.push_back((p->rhs[u]<<1UL) | (u==p->rhs.size()-1));
+                }
+                nt_offset++;
+                p->nt = middle+nt_offset;
+            }
+            first_nt = middle+1;
+            left = middle+1;
+            right = gram.lvl_rules[lvl+1]-1;
+        }
+    }
+
+    for(size_t lvl=(gram.lvl_rules.size()-1);lvl<edited_rules.size();lvl++){
+        //TODO in case the edition create more levels in the grammar
+    }
+}
+
+template<class gram_type>
+void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordinates){
 
     size_t sym;
     off_t d_seq_s, d_seq_e;
     uint8_t r_bits = gram.r_bits;
     std::vector<uint64_t> p_seeds = gram.get_parsing_seeds();
-    size_t next_av_nt = gram.r, end_sym = std::numeric_limits<size_t>::max();
+    size_t end_sym = std::numeric_limits<size_t>::max();
 
     std::vector<uint64_t> all_fps = gram.get_all_fps();
 
     std::stack<rule_type> left_off_stack;
     std::stack<rule_type> right_off_stack;
-    std::unordered_map<uint64_t, new_rule_type> new_gram_rules;
+    std::vector<std::vector<new_rule_type>> new_gram_rules(gram.lc_par_tree_height());
 
-    gram.breakdown(2);
-
-    for(auto & coord : rem_coordinates){
+    for(auto & coord : coordinates){
 
         //we will delete exp(sym)[d_seq_s..d_seq_e] from the grammar,
         // where sym is a string id in the range [0..n_strings-1]
-        sym = std::get<0>(coord);
-        d_seq_s = std::get<1>(coord);
-        d_seq_e = std::get<2>(coord);
+        sym = coord.str;
+        d_seq_s = coord.start;
+        d_seq_e = coord.end;
 
         gram.print_parse_tree(sym, true);
 
@@ -436,7 +482,7 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
                 left_offset->rhs.push_back(s);
             }
             left_offset->rhs.push_back(end_sym);
-            off_t p_size = parse_seq(left_offset->rhs.data(), left_offset->rhs.size(), gram, new_gram_rules, next_av_nt, all_fps, p_seeds[g_level+1], g_level);
+            off_t p_size = parse_seq(left_offset->rhs.data(), left_offset->rhs.size(), gram, new_gram_rules, all_fps, p_seeds[g_level+1], g_level);
             std::swap(left_offset->rhs, new_seq);
             new_seq.resize(p_size);
 
@@ -500,35 +546,14 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<std::tuple<size_t, off_t
             left_off_stack.pop();
             left_off_stack.top().rhs.push_back(rm_sym);
             left_off_stack.top().exp_branch = false;*/
-
             g_level++;
         }
-
-        std::vector<new_rule_type*> sorted_new_rules(new_gram_rules.size());
-        size_t i=0;
-        for(auto & rule : new_gram_rules){
-            sorted_new_rules[i++] = &rule.second;
-        }
-
-        std::sort(sorted_new_rules.begin(), sorted_new_rules.end(), [](auto const& a, auto const& b){
-            if(a->lvl!=b->lvl){
-                return a->lvl<b->lvl;
-            }
-            return a->fp < b->fp;
-        });
-
-        for(auto const &rule : sorted_new_rules){
-            std::cout<<"lvl: "<<int(rule->lvl)<<", fp: "<<rule->fp<<", seq: ";
-            for(auto const& s : rule->rhs){
-                std::cout<<s<<" ";
-            }
-            std::cout<<""<<std::endl;
-        }
-
     }
+
+    insert_edited_rules(new_gram_rules, gram);
 }
 
-void rem_txt_from_gram(std::string& input_gram, std::vector<std::tuple<size_t, off_t, off_t>>& rem_coordinates){
+void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem_coordinates){
 
     bool has_rl_rules, has_cg_rules, has_rand_access;
     std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(input_gram);

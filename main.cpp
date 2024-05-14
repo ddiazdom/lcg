@@ -134,7 +134,7 @@ void comp_int(std::string& input_file, arguments& args) {
     }
 }
 
-void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, off_t>>& query_coords, bool has_rl_rules, bool has_cg_rules, bool has_rand_access) {
+void access_int(std::string& input_file, std::vector<str_coord_type>& query_coords, bool has_rl_rules, bool has_cg_rules, bool has_rand_access) {
     assert(has_rand_access);
     if(has_cg_rules){
         if(has_rl_rules){
@@ -142,8 +142,8 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
             load_from_file(input_file, gram);
             for(auto const& query : query_coords){
                 std::string dc_output;
-                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
-                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
+                std::cout<<query.start<<":"<<query.start<<"-"<<query.end<<std::endl;
                 std::cout<<dc_output<<std::endl;
             }
         }else{
@@ -151,8 +151,8 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
             load_from_file(input_file, gram);
             for(auto const& query : query_coords){
                 std::string dc_output;
-                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
-                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
+                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
                 std::cout<<dc_output<<std::endl;
             }
         }
@@ -162,8 +162,8 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
             load_from_file(input_file, gram);
             for(auto const& query : query_coords){
                 std::string dc_output;
-                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
-                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
+                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
                 std::cout<<dc_output<<std::endl;
             }
         }else{
@@ -171,8 +171,8 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
             load_from_file(input_file, gram);
             for(auto const& query : query_coords){
                 std::string dc_output;
-                gram.im_str_rand_access(std::get<0>(query), std::get<1>(query), std::get<2>(query), dc_output);
-                std::cout<<std::get<0>(query)<<":"<<std::get<1>(query)<<"-"<<std::get<2>(query)<<std::endl;
+                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
+                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
                 std::cout<<dc_output<<std::endl;
             }
         }
@@ -180,11 +180,11 @@ void access_int(std::string& input_file, std::vector<std::tuple<size_t, off_t, o
 }
 
 
-std::vector<std::tuple<size_t, off_t, off_t>> parse_query_coords(std::vector<std::string>& str_queries){
+std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_queries){
 
     size_t str;
     off_t start, end;
-    std::vector<std::tuple<size_t, off_t, off_t>> query_coords;
+    std::vector<str_coord_type> query_coords;
     query_coords.reserve(str_queries.size());
 
     for(auto const &coord: str_queries){
@@ -258,12 +258,12 @@ int main(int argc, char** argv) {
     } else if(app.got_subcommand("mrg")){
         std::cout<<"mrg"<<std::endl;
     } else if(app.got_subcommand("acc")){
-        std::vector<std::tuple<size_t, off_t, off_t>> query_coords = parse_query_coords(args.ra_positions);
+        std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
     } else if(app.got_subcommand("rem")){
-        std::vector<std::tuple<size_t, off_t, off_t>> rem_coords = parse_query_coords(args.ra_positions);
+        std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
         rem_txt_from_gram(args.input_file, rem_coords);
     }
 

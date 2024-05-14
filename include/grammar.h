@@ -32,6 +32,13 @@ struct exp_data{
     bool is_rl;
 };
 
+struct str_coord_type{
+    size_t str;
+    off_t start;
+    off_t end;
+    str_coord_type(size_t str_, off_t start_, off_t end_): str(str_), start(start_), end(end_){};
+};
+
 template<bool is_cg=false, bool is_rl=false, bool has_ra=false>
 struct lc_gram_t {
 
@@ -184,6 +191,37 @@ struct lc_gram_t {
         } else {
             return {rl_ptr.read(nt) * r_bits, (rl_ptr.read(nt + 1) - 1) * r_bits};
         }
+    }
+
+    template<bool is_str>
+    [[nodiscard]] inline std::tuple<off_t, off_t, off_t> nt2expdata(size_t sym) const {
+
+        assert(has_ra);
+        off_t rhs_start, exp_start, ra_bits, rhs_len, n_samples, bps;
+
+        if constexpr (is_str) {
+            rhs_start = str_boundaries[sym];
+            exp_start = str_boundaries[sym + 1];
+            ra_bits = rule_stream.read(exp_start - str_samp_bits, exp_start - 1);
+            exp_start -= str_samp_bits + ra_bits;
+
+            rhs_len = (exp_start - rhs_start) / r_bits;
+            n_samples = rhs_len / str_samp_rate;
+            bps = ra_bits / n_samples;
+        } else {
+            sym -= max_tsym + 1;
+
+            rhs_start = rl_ptr.read(sym);
+            exp_start = rl_ptr.read(sym + 1);
+            ra_bits = rule_stream.read(exp_start - r_samp_bits, exp_start - 1);
+            exp_start -= r_samp_bits + ra_bits;
+
+            rhs_len = (exp_start - rhs_start) / r_bits;
+            n_samples = rhs_len / rl_samp_rate;
+            bps = ra_bits / (n_samples + 1);// +1 because the rules also include the value of |exp(sym)| as a sample
+        }
+
+        return {exp_start, exp_start+ra_bits-bps, bps};
     }
 
     [[nodiscard]] inline bool is_terminal(size_t sym) const {
