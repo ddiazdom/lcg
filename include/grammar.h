@@ -1350,6 +1350,32 @@ struct lc_gram_t {
         }
         return fps;
     }
+
+    template<class vector_type>
+    void get_nt_freqs(vector_type& nt_freq){
+        size_t last_sym = n_lc_syms();
+        for(size_t nt = max_tsym+1; nt<last_sym;nt++){
+            auto range = nt2bitrange(nt);
+            for(off_t bp=range.first;bp<=range.second;bp+=r_bits){
+                size_t sym = bitpos2symbol(bp);
+                nt_freq[sym]++;
+            }
+        }
+
+        if constexpr (is_rl){
+            last_sym = last_rl_sym();
+            for(size_t nt=first_rl_sym(); nt<=last_sym;nt++){
+            }
+        }
+
+        for(size_t str=0;str<n_strings();str++){
+            auto range = str2bitrange(str);
+            for(off_t bp=range.first;bp<=range.second;bp+=r_bits){
+                size_t sym = bitpos2symbol(bp);
+                nt_freq[sym]++;
+            }
+        }
+    }
 };
 
 #endif //LCG_GRAMMAR_H
