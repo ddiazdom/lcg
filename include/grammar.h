@@ -221,7 +221,7 @@ struct lc_gram_t {
             bps = ra_bits / (n_samples + 1);// +1 because the rules also include the value of |exp(sym)| as a sample
         }
 
-        return {exp_start, exp_start+ra_bits-bps, bps};
+        return {exp_start, exp_start+ra_bits, bps};
     }
 
     [[nodiscard]] inline bool is_terminal(size_t sym) const {

@@ -263,7 +263,7 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
 template<class gram_type>
 void recompute_exp_samples(std::vector<size_t>& rhs, gram_type& gram, uint8_t lvl,
                            std::vector<std::vector<new_rule_type>>& edited_rules,
-                           size_t sampling_rate){
+                           size_t sampling_rate, bool is_str){
 
     size_t acc =0, j=1, pos=0;
     for(size_t i=0;i<rhs.size();i++){
@@ -279,30 +279,56 @@ void recompute_exp_samples(std::vector<size_t>& rhs, gram_type& gram, uint8_t lv
         j++;
     }
     rhs.resize(pos);
-    rhs.push_back(acc);
+    if(!is_str){
+        rhs.push_back(acc);
+    }
 }
 
 
 template<class gram_type, class vector_type>
-void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
+size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
                          std::vector<std::pair<off_t, std::vector<size_t>>>& edited_strings,
                          gram_type& gram, vector_type& nt_freqs){
-    size_t lvl=0;
     size_t eff_new_rules = 0;
-    size_t del_rules = 0;
+    size_t lvl=0;
 
-    for(;lvl<(gram.lvl_rules.size()-1);lvl++) {
+    //first we will sort the new rules according their fingerprints
+    {
+        std::vector<size_t> prev_perm;
+        for (auto &edited_rules_lvl: edited_rules) {
+            std::vector<size_t> perm(edited_rules_lvl.size());
+            off_t j = 0;
+            for (auto &new_rule: edited_rules_lvl) {
+                /*for (auto &s: new_rule.rhs) {
+                    std::cout<<s<<" ";
+                }
+                std::cout<<""<<std::endl;*/
+                new_rule.nt = j++;
+            }
+            std::sort(edited_rules_lvl.begin(), edited_rules_lvl.end(), [](auto const &a, auto const &b) {
+                //TODO handle collisions
+                return a.fp < b.fp;
+            });
 
-        std::vector<new_rule_type *> perm(edited_rules[lvl].size());
-        size_t i = 0;
-        for (auto &new_rule: edited_rules[lvl]) {
-            perm[i++] = &new_rule;
+            j = 0;
+            for (auto &new_rule: edited_rules_lvl) {
+                perm[new_rule.nt] = j++;
+                if (lvl > 0) {
+                    for (auto &s: new_rule.rhs) {
+                        if (s >= gram.r) {
+                            s = gram.r + prev_perm[s];
+                        }
+                    }
+                }
+            }
+            lvl++;
+            prev_perm.swap(perm);
         }
-        std::sort(perm.begin(), perm.end(), [](auto const &a, auto const &b) {
-            //TODO handle collisions
-            return a->fp < b->fp;
-        });
+    }
 
+    //now we will find for each new rule r the rule with the greatest fingerprint that is equal or smaller to r's fingerprint
+    lvl=0;
+    for(;lvl<(gram.lvl_rules.size()-1);lvl++) {
         off_t middle;
         off_t left = gram.lvl_rules[lvl];
         off_t right = gram.lvl_rules[lvl + 1] - 1;
@@ -310,13 +336,13 @@ void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
 
         uint64_t fp_first, fp_second;
 
-        for (auto const &p: perm) {
+        for(auto &new_rule: edited_rules[lvl]) {
 
             //binary search of the rule's fingerprint
             while (left <= right) {
                 middle = left + (right - left) / 2;
                 fp_first = gram.get_fp(middle);
-                if(fp_first > p->fp) {
+                if(fp_first > new_rule.fp) {
                     right = middle - 1;
                     continue;
                 }
@@ -328,7 +354,7 @@ void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
                     break;
                 }
                 fp_second = gram.get_fp(middle+1);
-                if(p->fp<fp_second) {
+                if(new_rule.fp<fp_second) {
                     /*for(auto const& s : p.second->rhs){
                         std::cout<<s<<" ";
                     }
@@ -339,19 +365,19 @@ void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
             }
 
             std::cout<<"new seq: ";
-            for(auto &sym : p->rhs){
+            for(auto &sym : new_rule.rhs){
                 if(sym>=gram.r && edited_rules[lvl-1][sym-gram.r].exist){
                     sym = edited_rules[lvl-1][sym-gram.r].nt;
                 }
                 if(sym<gram.r) nt_freqs[sym]++;
                 std::cout<<sym<<" ";
             }
-            std::cout<<" exist? "<<(p->fp==fp_first)<<std::endl;
+            std::cout<<" exist? "<<(new_rule.fp==fp_first)<<std::endl;
 
-            p->nt = middle;
-            eff_new_rules +=p->fp!=fp_first;
-            if(p->fp==fp_first){
-                p->exist = true;
+            new_rule.nt = middle;
+            eff_new_rules +=new_rule.fp!=fp_first;
+            if(new_rule.fp==fp_first){
+                new_rule.exist = true;
                 //TODO handle collisions
             }
             left = middle+1;
@@ -369,221 +395,169 @@ void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
         std::cout<<""<<std::endl;
     }
-
-    /*std::stack<size_t> stack;
-    size_t copies;
-    for(size_t nt=gram.max_tsym+1;nt<nt_freqs.size();nt++){
-        if(nt_freqs[nt]==0){
-            stack.push(nt);
-            while(!stack.empty()){
-                size_t sym = stack.top();
-                stack.pop();
-                auto range = gram.nt2bitrange(sym);
-                for(off_t bp=range.second;bp>=range.second;bp-=gram.r_bits){
-
-                    sym = gram.bitpos2symbol(bp);
-                    copies=1;
-                    if(gram.is_rl_sym(sym)){
-                        range = gram.nt2bitrange(sym);
-                        sym = gram.bitpos2symbol(range.first);
-                        copies = gram.bitpos2symbol(range.second);
-                    }
-
-                    if(nt_freqs[sym]>0){//for the case when we have a path that was removed in the tree
-                        nt_freqs[sym]-=copies;
-                        if(nt_freqs[sym]==0){
-                            stack.push(sym);
-                        }
-                    }
-                }
-            }
-        }
-    }*/
+    std::cout<<"There are "<<eff_new_rules<<" rules "<<std::endl;
+    return eff_new_rules;
 }
 
-template<class gram_type>
+template<class gram_type, class vector_type>
 void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules,
                          std::vector<std::pair<off_t, std::vector<size_t>>>& edited_strings,
-                         gram_type& gram){
+                         vector_type& nt_freqs, gram_type& gram){
 
-
-    off_t nt_offset=0;
-    int_array<size_t> nt_offsets(gram.r, sym_width(edited_rules.size()));
+    off_t nt_name=0;
+    int_array<size_t> new_nt_names(gram.r, sym_width(gram.r+edited_rules.size()));
     o_file_stream<size_t> edited_gram("pepe.txt", BUFFER_SIZE, std::ios::binary | std::ios::out);
 
     for(size_t i=0;i<=gram.max_tsym;i++){
-        nt_offsets[i] = 0;
+        new_nt_names[nt_name++] = i;
     }
 
     size_t lvl=0;
     for(;lvl<(gram.lvl_rules.size()-1);lvl++) {
 
-        std::vector<new_rule_type *> perm(edited_rules[lvl].size());
-        size_t i=0;
-        for(auto & new_rule : edited_rules[lvl]){
-            perm[i++] =&new_rule;
+        //skip rules that exist in the grammar
+        size_t er_pos=0;
+        while(er_pos<edited_rules[lvl].size() && edited_rules[lvl][er_pos].exist){
+            er_pos++;
         }
-        std::sort(perm.begin(), perm.end(), [](auto const& a, auto const& b){
-            return a->fp < b->fp;
-        });
+        off_t next_new_nt = er_pos<edited_rules[lvl].size()? edited_rules[lvl][er_pos].nt : -1;
 
-        off_t middle;
-        off_t left = gram.lvl_rules[lvl];
-        off_t right = gram.lvl_rules[lvl+1]-1;
+        off_t last_nt = gram.lvl_rules[lvl+1]-1;
+        for(off_t nt=gram.lvl_rules[lvl];nt<=last_nt;nt++){
 
-        off_t first_nt = gram.lvl_rules[lvl];
-        off_t end_nt = gram.lvl_rules[lvl+1];
-
-        uint64_t fp_first, fp_second;
-
-        for(auto const &p : perm){
-
-            //binary search of the rule's fingerprint
-            while (left <= right) {
-                middle = left + (right - left) / 2;
-                fp_first = gram.get_fp(middle);
-                if(fp_first > p->fp) {
-                    right = middle - 1;
-                    continue;
-                }
-                if((middle+1)==end_nt){
-                    for(auto const& s : p->rhs){
-                        std::cout<<s<<" ";
-                    }
-                    std::cout<<" | "<<middle<<"+"<<(p->fp==fp_first? nt_offset : nt_offset+1)<<" -> "<<gram.get_fp(middle)<<" "<<p->fp<<" exp:"<<p->exp_len<<std::endl;
-                    break;
-                }
-                fp_second = gram.get_fp(middle+1);
-                if(p->fp<fp_second) {
-                    for(auto const& s : p->rhs){
-                        std::cout<<s<<" ";
-                    }
-                    std::cout<<" | "<<middle<<"+"<<(p->fp==fp_first? nt_offset : nt_offset+1)<<" -> "<<gram.get_fp(middle)<<" "<<p->fp<<" "<<gram.get_fp(middle+1)<<" exp:"<<p->exp_len<<std::endl;
-                    break;
-                }
-                left = middle + 1;
+            if(nt_freqs[nt]==0){
+                continue;
             }
 
-            for(off_t nt=first_nt;nt<=middle;nt++){
-                nt_offsets[nt] = nt_offset;
-                auto res = gram.nt2bitrange(nt);
-                for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
-                    size_t sym = gram.bitpos2symbol(j);
-                    sym+=nt_offsets[sym];
-                    edited_gram.push_back((sym<<1UL) | (j==res.second));
-                }
-                auto e_data = gram.template nt2expdata<RULE_EXP>(nt);
-                for(off_t j = std::get<0>(e_data);j<=std::get<1>(e_data);j+=std::get<2>(e_data)){
-                    size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
-                    edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
-                }
+            new_nt_names[nt] = nt_name++;
+            auto res = gram.nt2bitrange(nt);
+            for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
+                size_t sym = gram.bitpos2symbol(j);
+                sym = new_nt_names[sym];
+                edited_gram.push_back((sym<<1UL) | (j==res.second));
             }
 
-            if(p->fp==fp_first){
-                //TODO handle collisions
-                p->nt = middle+nt_offset;
-            } else{
-                //handle the new rule
-                size_t last = p->rhs.size()-1, j=0;
-                for(auto sym : p->rhs){
-                    if(sym<gram.r){
-                        sym +=nt_offsets[sym];
+            auto e_data = gram.template nt2expdata<RULE_EXP>(nt);
+            for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
+                size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
+                edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
+            }
+
+            if(nt==next_new_nt){
+                size_t last = edited_rules[lvl][er_pos].rhs.size()-1, j = 0;
+                for(auto &s : edited_rules[lvl][er_pos].rhs){
+                    if(s<gram.r){
+                        edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
                     }else{
-                        sym = edited_rules[lvl-1][sym-gram.r].nt;
+                        edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
                     }
-                    //std::cout<<sym<<", ";
-                    edited_gram.push_back(sym<<1UL | (j==last));
                     j++;
                 }
-                //std::cout<<""<<std::endl;
-
-                recompute_exp_samples(p->rhs, gram, lvl, edited_rules, gram.rl_samp_rate);
-                for(size_t u=0;u<p->rhs.size();u++){
-                    edited_gram.push_back((p->rhs[u]<<1UL) | (u==(p->rhs.size()-1)));
+                recompute_exp_samples(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
+                last = edited_rules[lvl][er_pos].rhs.size()-1;
+                j=0;
+                for(auto exp_sample : edited_rules[lvl][er_pos].rhs){
+                    edited_gram.push_back((exp_sample<<1UL) | (j==last));
+                    j++;
                 }
-                nt_offset++;
-                p->nt = middle+nt_offset;
+                edited_rules[lvl][er_pos].nt = nt_name++;
+
+                er_pos++;
+                while(er_pos<edited_rules[lvl].size() && edited_rules[lvl][er_pos].exist){
+                    er_pos++;
+                }
+                next_new_nt = er_pos<edited_rules[lvl].size()? edited_rules[lvl][er_pos].nt : -1;
             }
-            first_nt = middle+1;
-            left = middle+1;
-            right = gram.lvl_rules[lvl+1]-1;
+        }
+
+        while(next_new_nt>0){
+            size_t last = edited_rules[lvl][er_pos].rhs.size()-1, j = 0;
+            for(auto &s : edited_rules[lvl][er_pos].rhs){
+                if(s<gram.r){
+                    edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
+                }else{
+                    edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
+                }
+                j++;
+            }
+            recompute_exp_samples(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
+
+            last = edited_rules[lvl][er_pos].rhs.size()-1;
+            j=0;
+            for(auto exp_sample : edited_rules[lvl][er_pos].rhs){
+                edited_gram.push_back((exp_sample<<1UL) | (j==last));
+                j++;
+            }
+            edited_rules[lvl][er_pos].nt = nt_name++;
+
+            er_pos++;
+            while(er_pos<edited_rules[lvl].size() && edited_rules[lvl][er_pos].exist){
+                er_pos++;
+            }
+            next_new_nt = er_pos<edited_rules[lvl].size()? edited_rules[lvl][er_pos].nt : -1;
         }
     }
 
-    //TODO in case the edition create more levels in the grammar
+    //TODO in case the edition create more grammar levels
     for(;lvl<edited_rules.size();lvl++){
+        for(auto &new_rule: edited_rules[lvl]){
+            size_t j=0, last=new_rule.rhs.size()-1;
+            for(auto const& s: new_rule.rhs){
+                assert(s>=gram.r);
+                edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
+            }
+            recompute_exp_samples(new_rule.rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
+
+            j=0, last = new_rule.rhs.size()-1;
+            for(auto exp_sample : new_rule.rhs){
+                edited_gram.push_back((exp_sample<<1UL) | (j==last));
+                j++;
+            }
+            new_rule.nt = nt_name++;
+        }
     }
 
     //insert the strings in the grammar (it is simpler than the rules)
     size_t e_str_pos=0;
-    size_t next_edited_str=edited_strings[e_str_pos].first;
-    for(size_t str=0;str<gram.n_strings();str++){
+    off_t next_edited_str=edited_strings[e_str_pos].first;
+    for(off_t str=0;str<(off_t)gram.n_strings();str++){
         if(str==next_edited_str){
-
-            size_t last = edited_strings[e_str_pos].second.size()-1, j=0;
-            for(auto sym : edited_strings[e_str_pos].second){
-                if(sym<gram.r){
-                    sym +=nt_offsets[sym];
+            size_t j=0,last = edited_strings[e_str_pos].second.size()-1;
+            for(auto s : edited_strings[e_str_pos].second){
+                if(s<gram.r){
+                    edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
                 }else{
-                    sym = edited_rules[lvl-1][sym-gram.r].nt;
+                    edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
                 }
-                edited_gram.push_back(sym<<1UL | (j==last));
                 j++;
             }
-            recompute_exp_samples(edited_strings[e_str_pos].second, gram, lvl, edited_rules, gram.rl_samp_rate);
+            recompute_exp_samples(edited_strings[e_str_pos].second, gram, lvl, edited_rules, gram.rl_samp_rate, true);
             last = edited_strings[e_str_pos].second.size()-1;
             size_t u=0;
             for(auto e : edited_strings[e_str_pos].second){
                 edited_gram.push_back((e<<1UL) | (u==last));
                 u++;
             }
-            next_edited_str=edited_strings[++e_str_pos].first;
-        }else{
+            e_str_pos++;
+            next_edited_str= e_str_pos<edited_strings.size()? edited_strings[e_str_pos].first : -1;
+        } else {
             auto res = gram.str2bitrange(str);
             for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
-                size_t sym = gram.bitpos2symbol(j);
-                sym+=nt_offsets[sym];
-                edited_gram.push_back((sym<<1UL) | (j==res.second));
+                size_t s = gram.bitpos2symbol(j);
+                s=new_nt_names[s];
+                edited_gram.push_back((s<<1UL) | (j==res.second));
             }
             auto e_data = gram.template nt2expdata<STR_EXP>(str);
-            for(off_t j = std::get<0>(e_data);j<=std::get<1>(e_data);j+=std::get<2>(e_data)){
+            for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
                 size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
                 edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
             }
         }
     }
-}
+    nt_name++;
 
-/*template<class gram_t, class vector_t>
-void subtract_context(gram_t& gram, vector_t& nt_freqs, exp_data& exp_data, uint8_t context){
-    switch (context) {
-        case BOTH_CONTEXTS:
-            for(off_t bp = exp_data.bp_rhs_s; bp<exp_data.bp_exp_s; bp+=gram.r_bits){
-                size_t symbol = gram.bitpos2symbol(bp);
-                nt_freqs[symbol]--;
-            }
-            for(off_t bp = exp_data.bp_exp_e+gram.r_bits; bp<exp_data.bp_rhs_e; bp+=gram.r_bits){
-                size_t symbol = gram.bitpos2symbol(bp);
-                nt_freqs[symbol]--;
-            }
-            break;
-        case LEFT_CONTEXT:
-            for(off_t bp = exp_data.bp_rhs_s; bp<exp_data.bp_exp_s; bp+=gram.r_bits){
-                size_t symbol = gram.bitpos2symbol(bp);
-                nt_freqs[symbol]--;
-            }
-            break;
-        case RIGHT_CONTEXT:
-            for(off_t bp = exp_data.bp_exp_e+gram.r_bits; bp<exp_data.bp_rhs_e; bp+=gram.r_bits){
-                size_t symbol = gram.bitpos2symbol(bp);
-                nt_freqs[symbol]--;
-            }
-            break;
-        default:
-            std::cout<<"There is bug"<<std::endl;
-            exit(1);
-    }
-}*/
+    std::cout<<"A total of "<<nt_name<<" | "<<nt_name<<" "<<gram.r<<std::endl;
+}
 
 template<class gram_t, class vector_t>
 void subtract_int_par_trees(gram_t& gram, vector_t& nt_freqs, std::vector<std::pair<off_t, off_t>>& internal_par_trees){
@@ -598,29 +572,30 @@ void subtract_int_par_trees(gram_t& gram, vector_t& nt_freqs, std::vector<std::p
         }
 
         while(!stack.empty()){
+
             size_t sym = stack.top();
+            copies = 1;
             stack.pop();
-            if(sym>gram.max_tsym){
+
+            if(gram.is_rl_sym(sym)){
+                auto range = gram.nt2bitrange(sym);
+                sym = gram.bitpos2symbol(range.first);
+                copies = gram.bitpos2symbol(range.second);
+            }
+
+            if(nt_freqs[sym]>0){
+                assert(nt_freqs[sym]>=copies);
+                nt_freqs[sym]-=copies;
+            }
+
+            if(sym>gram.max_tsym && nt_freqs[sym]==0){
                 auto range = gram.nt2bitrange(sym);
                 for(off_t bp=range.second;bp>=range.second;bp-=gram.r_bits){
-                    sym = gram.bitpos2symbol(bp);
-                    copies=1;
-                    if(gram.is_rl_sym(sym)){
-                        range = gram.nt2bitrange(sym);
-                        sym = gram.bitpos2symbol(range.first);
-                        copies = gram.bitpos2symbol(range.second);
-                    }
-                    if(nt_freqs[sym]>0){//for the case when we have a path that was removed in the tree
-                        nt_freqs[sym]-=copies;
-                        if(nt_freqs[sym]==0){
-                            stack.push(sym);
-                        }
-                    }
+                    stack.push(gram.bitpos2symbol(bp));
                 }
             }
         }
     }
-
 }
 
 
@@ -637,12 +612,34 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
     std::vector<size_t> nt_freqs(gram.r-1, 0);
     gram.get_nt_freqs(nt_freqs);
 
+    /*std::cout<<"71 "<<nt_freqs[71]<<std::endl;
+    std::cout<<"84 "<<nt_freqs[84]<<std::endl;
+    std::cout<<"1560 "<<nt_freqs[1560]<<std::endl;
+    std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;
+    std::cout<<"18752 "<<nt_freqs[18752]<<std::endl;
+    std::cout<<"30938 "<<nt_freqs[30938]<<std::endl;
+    std::cout<<"47171 "<<nt_freqs[47171]<<std::endl;
+    std::cout<<"46466 "<<nt_freqs[46466]<<std::endl;
+    std::cout<<"49504 "<<nt_freqs[49504]<<std::endl;
+    std::cout<<"52087 "<<nt_freqs[52087]<<std::endl;
+    std::cout<<"27590 "<<nt_freqs[27590]<<std::endl;
+    std::cout<<"3439 "<<nt_freqs[3439]<<std::endl;
+    std::cout<<"3518 "<<nt_freqs[3518]<<std::endl;
+    std::cout<<"8522 "<<nt_freqs[8522]<<std::endl;
+    std::cout<<"25351 "<<nt_freqs[25351]<<std::endl;
+    std::cout<<"1021 "<<nt_freqs[1021]<<std::endl;
+    std::cout<<"2255 "<<nt_freqs[2255]<<std::endl;
+    std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;*/
+
+    off_t n_parsing_rounds = gram.lc_par_tree_height()-1;
+
     std::stack<rule_type> left_off_stack;
     std::stack<rule_type> right_off_stack;
 
-    std::vector<std::vector<new_rule_type>> edited_rules(gram.lc_par_tree_height());
+    std::vector<std::vector<new_rule_type>> edited_rules(n_parsing_rounds);
     std::vector<std::pair<off_t, std::vector<size_t>>> edited_strings;
     std::vector<std::pair<off_t, off_t>> int_par_trees;
+    size_t eff_new_rules=0;
 
     for(auto & coord : coordinates){
 
@@ -704,10 +701,10 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
             nt_freqs[lm_sym]--;
         }
 
-        off_t g_level=0, last_level = gram.lc_par_tree_height()-1;
+        off_t g_level=0;
         std::vector<size_t> rhs;
         std::vector<size_t> new_seq;
-        while(g_level<last_level){
+        while(g_level<n_parsing_rounds){
 
             rule_type * left_offset = &left_off_stack.top();
             rule_type * right_offset = &right_off_stack.top();
@@ -829,10 +826,29 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
             g_level++;
         }
         edited_strings.emplace_back(coord.str, new_seq);
-        find_grammar_places(edited_rules, edited_strings, gram, nt_freqs);
+        eff_new_rules +=find_grammar_places(edited_rules, edited_strings, gram, nt_freqs);
         subtract_int_par_trees(gram, nt_freqs, int_par_trees);
+
+        /*std::cout<<"71 "<<nt_freqs[71]<<std::endl;
+        std::cout<<"84 "<<nt_freqs[84]<<std::endl;
+        std::cout<<"1560 "<<nt_freqs[1560]<<std::endl;
+        std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;
+        std::cout<<"18752 "<<nt_freqs[18752]<<std::endl;
+        std::cout<<"30938 "<<nt_freqs[30938]<<std::endl;
+        std::cout<<"47171 "<<nt_freqs[47171]<<std::endl;
+        std::cout<<"46466 "<<nt_freqs[46466]<<std::endl;
+        std::cout<<"49504 "<<nt_freqs[49504]<<std::endl;
+        std::cout<<"52087 "<<nt_freqs[52087]<<std::endl;
+        std::cout<<"27590 "<<nt_freqs[27590]<<std::endl;
+        std::cout<<"3439 "<<nt_freqs[3439]<<std::endl;
+        std::cout<<"3518 "<<nt_freqs[3518]<<std::endl;
+        std::cout<<"8522 "<<nt_freqs[8522]<<std::endl;
+        std::cout<<"25351 "<<nt_freqs[25351]<<std::endl;
+        std::cout<<"1021 "<<nt_freqs[1021]<<std::endl;
+        std::cout<<"2255 "<<nt_freqs[2255]<<std::endl;
+        std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;*/
     }
-    //insert_edited_rules(edited_rules, edited_strings, gram);
+    insert_edited_rules(edited_rules, edited_strings, nt_freqs, gram);
 }
 
 void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem_coordinates){
