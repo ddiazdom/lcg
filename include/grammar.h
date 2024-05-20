@@ -240,11 +240,6 @@ struct lc_gram_t {
         return run_len_nt.first <= symbol && symbol < (run_len_nt.first + run_len_nt.second);
     }
 
-    [[nodiscard]] inline bool is_cg_nt(size_t sym) const {
-        auto res = nt2bitrange(sym);
-        return rule_stream.read(res.first, res.first + r_bits - 1) >= cg_mark;
-    }
-
     [[nodiscard]] inline size_t first_rl_sym() const {
         return run_len_nt.first;
     }

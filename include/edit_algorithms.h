@@ -260,28 +260,116 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
     return parse_size;
 }
 
-template<class gram_type>
-void recompute_exp_samples(std::vector<size_t>& rhs, gram_type& gram, uint8_t lvl,
-                           std::vector<std::vector<new_rule_type>>& edited_rules,
-                           size_t sampling_rate, bool is_str){
+template<bool nt_type, class gram_type>
+std::pair<off_t, off_t> store_new_rule(std::vector<size_t>& rhs, gram_type& gram, uint8_t lvl,
+                     std::vector<std::vector<new_rule_type>>& edited_rules, int_array<size_t>& new_nt_names,
+                     o_file_stream<size_t>& buffer){
 
-    size_t acc =0, j=1, pos=0;
-    for(size_t i=0;i<rhs.size();i++){
-        if(rhs[i]<gram.r){
-            acc += gram.exp_len(rhs[i]);
+    size_t j=0;
+    size_t last = rhs.size()-1;
+    for(auto s : rhs){
+        if(s<gram.r){
+            buffer.push_back(new_nt_names[s]<<1UL | (j==last));
         }else{
-            acc += edited_rules[lvl-1][rhs[i]-gram.r].exp_len;
-        }
-
-        if((j % sampling_rate)==0){
-            rhs[pos++] = acc;
+            buffer.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
         }
         j++;
     }
-    rhs.resize(pos);
-    if(!is_str){
-        rhs.push_back(acc);
+
+    off_t acc=0;
+    off_t n_samp, last_samp, samp_rate;
+
+    if constexpr (nt_type==STR_EXP){
+        samp_rate = gram.str_samp_rate;
+        n_samp=(rhs.size()/gram.str_samp_rate);
+    }else{
+        samp_rate = gram.rl_samp_rate;
+        n_samp=(rhs.size()/gram.rl_samp_rate)+1;
     }
+
+
+    j=1;
+    for(unsigned long & s : rhs){
+        if(s<gram.r){
+            acc += gram.exp_len(s);
+        }else{
+            acc += edited_rules[lvl-1][s-gram.r].exp_len;
+        }
+
+        if((j % samp_rate)==0){
+            buffer.push_back(acc);
+            last_samp=acc;
+        }
+        j++;
+
+        //TODO remove this
+        if(s<gram.r){
+            s = new_nt_names[s];
+        }else{
+            s = edited_rules[lvl-1][s-gram.r].nt;
+        }
+        //
+    }
+
+    if constexpr (nt_type==RULE_EXP){
+        buffer.push_back(acc);
+        last_samp=acc;
+    }
+
+    //this is a dummy symbol to indicate the end of the expansion samples for this rule
+    buffer.push_back(std::numeric_limits<size_t>::max());
+    return {rhs.size(), n_samp*sym_width(last_samp)};
+}
+
+template<bool nt_type, class gram_type>
+std::pair<off_t, off_t> store_old_rule(size_t nt, gram_type& gram, int_array<size_t>& new_nt_names, o_file_stream<size_t>& buffer){
+
+    size_t exp_sample, n_samp, rhs_len;
+
+    if constexpr (nt_type==STR_EXP){
+        auto res = gram.str2bitrange(nt);
+        rhs_len = (res.second-res.first+gram.r_bits)/gram.r_bits;
+        n_samp = rhs_len/gram.str_samp_rate;
+
+        //store the rule's rhs
+        for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
+            size_t s = gram.bitpos2symbol(j);
+            s=new_nt_names[s];
+            buffer.push_back((s<<1UL) | (j==res.second));
+        }
+
+        //store the expansion samples
+        auto e_data = gram.template nt2expdata<STR_EXP>(nt);
+        for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
+            exp_sample = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
+            buffer.push_back(exp_sample);
+        }
+        //this is a dummy symbol to indicate the end of the expansion samples for this rule
+        //we need the dummy as a compressed string of length < gram.str_samp_rate will have zero exp. samples
+        buffer.push_back(std::numeric_limits<size_t>::max());
+    } else {
+        auto res = gram.nt2bitrange(nt);
+        rhs_len = (res.second-res.first+gram.r_bits)/gram.r_bits;
+        n_samp = (rhs_len/gram.rl_samp_rate)+1;
+
+        //store the rule's rhs
+        for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
+            size_t sym = gram.bitpos2symbol(j);
+            sym = new_nt_names[sym];
+            buffer.push_back((sym<<1UL) | (j==res.second));
+        }
+
+        //store the expansion samples
+        auto e_data = gram.template nt2expdata<RULE_EXP>(nt);
+        for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
+            exp_sample = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
+            buffer.push_back(exp_sample);
+        }
+        //this is a dummy symbol to indicate the end of the expansion samples for this rule
+        buffer.push_back(std::numeric_limits<size_t>::max());
+    }
+
+    return {rhs_len, n_samp*sym_width(exp_sample)};
 }
 
 
@@ -400,20 +488,24 @@ size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules
 }
 
 template<class gram_type, class vector_type>
-void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules,
+void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
                          std::vector<std::pair<off_t, std::vector<size_t>>>& edited_strings,
-                         vector_type& nt_freqs, gram_type& gram){
+                         vector_type& nt_freqs, gram_type& gram, tmp_workspace& ws){
 
     off_t nt_name=0;
     int_array<size_t> new_nt_names(gram.r, sym_width(gram.r+edited_rules.size()));
-    o_file_stream<size_t> edited_gram("pepe.txt", BUFFER_SIZE, std::ios::binary | std::ios::out);
+    std::string gbuff_file = ws.get_file("gram_buffer");
+    o_file_stream<size_t> new_gram_buff(gbuff_file, BUFFER_SIZE, std::ios::binary | std::ios::out);
 
+    std::vector<size_t> new_lvl_rules;
+    size_t new_g_size=0;
     for(size_t i=0;i<=gram.max_tsym;i++){
-        new_nt_names[nt_name++] = i;
+        new_nt_names[nt_name] = nt_name++;
     }
+    new_g_size+=nt_name;
 
-    size_t lvl=0;
-    for(;lvl<(gram.lvl_rules.size()-1);lvl++) {
+    size_t lvl=0, par_rounds = gram.lvl_rules.size()-1, alloc_bits=0, r_samp_bits=0, str_samp_bits=0, exp_bits, rhs_len;
+    for(;lvl<par_rounds;lvl++) {
 
         //skip rules that exist in the grammar
         size_t er_pos=0;
@@ -422,46 +514,28 @@ void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
         off_t next_new_nt = er_pos<edited_rules[lvl].size()? edited_rules[lvl][er_pos].nt : -1;
 
+        new_lvl_rules.push_back(nt_name);
         off_t last_nt = gram.lvl_rules[lvl+1]-1;
         for(off_t nt=gram.lvl_rules[lvl];nt<=last_nt;nt++){
 
-            if(nt_freqs[nt]==0){
-                continue;
-            }
 
+
+            if(nt_freqs[nt]==0) continue;
             new_nt_names[nt] = nt_name++;
-            auto res = gram.nt2bitrange(nt);
-            for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
-                size_t sym = gram.bitpos2symbol(j);
-                sym = new_nt_names[sym];
-                edited_gram.push_back((sym<<1UL) | (j==res.second));
-            }
 
-            auto e_data = gram.template nt2expdata<RULE_EXP>(nt);
-            for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
-                size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
-                edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
-            }
+            std::tie(rhs_len, exp_bits) = store_old_rule<RULE_EXP>(nt, gram, new_nt_names, new_gram_buff);
+            if(exp_bits>r_samp_bits) r_samp_bits = exp_bits;
+            alloc_bits+=exp_bits;
+            new_g_size+=rhs_len;
 
             if(nt==next_new_nt){
-                size_t last = edited_rules[lvl][er_pos].rhs.size()-1, j = 0;
-                for(auto &s : edited_rules[lvl][er_pos].rhs){
-                    if(s<gram.r){
-                        edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
-                    }else{
-                        edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
-                    }
-                    j++;
-                }
-                recompute_exp_samples(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
-                last = edited_rules[lvl][er_pos].rhs.size()-1;
-                j=0;
-                for(auto exp_sample : edited_rules[lvl][er_pos].rhs){
-                    edited_gram.push_back((exp_sample<<1UL) | (j==last));
-                    j++;
-                }
-                edited_rules[lvl][er_pos].nt = nt_name++;
+                std::tie(rhs_len, exp_bits) = store_new_rule<RULE_EXP>(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, new_nt_names, new_gram_buff);
+                if(exp_bits>r_samp_bits) r_samp_bits = exp_bits;
+                alloc_bits+= exp_bits;
+                new_g_size+=rhs_len;
 
+
+                edited_rules[lvl][er_pos].nt = nt_name++;
                 er_pos++;
                 while(er_pos<edited_rules[lvl].size() && edited_rules[lvl][er_pos].exist){
                     er_pos++;
@@ -471,25 +545,13 @@ void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
 
         while(next_new_nt>0){
-            size_t last = edited_rules[lvl][er_pos].rhs.size()-1, j = 0;
-            for(auto &s : edited_rules[lvl][er_pos].rhs){
-                if(s<gram.r){
-                    edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
-                }else{
-                    edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
-                }
-                j++;
-            }
-            recompute_exp_samples(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
 
-            last = edited_rules[lvl][er_pos].rhs.size()-1;
-            j=0;
-            for(auto exp_sample : edited_rules[lvl][er_pos].rhs){
-                edited_gram.push_back((exp_sample<<1UL) | (j==last));
-                j++;
-            }
+            std::tie(rhs_len, exp_bits) = store_new_rule<RULE_EXP>(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, new_nt_names, new_gram_buff);
+            if(exp_bits>r_samp_bits) r_samp_bits = exp_bits;
+            alloc_bits+= exp_bits;
+            new_g_size+=rhs_len;
+
             edited_rules[lvl][er_pos].nt = nt_name++;
-
             er_pos++;
             while(er_pos<edited_rules[lvl].size() && edited_rules[lvl][er_pos].exist){
                 er_pos++;
@@ -498,65 +560,118 @@ void insert_edited_rules(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
     }
 
-    //TODO in case the edition create more grammar levels
+    //In case the edition create more grammar levels (i.e., when we add new sequences)
     for(;lvl<edited_rules.size();lvl++){
+        new_lvl_rules.push_back(nt_name);
         for(auto &new_rule: edited_rules[lvl]){
-            size_t j=0, last=new_rule.rhs.size()-1;
-            for(auto const& s: new_rule.rhs){
-                assert(s>=gram.r);
-                edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
-            }
-            recompute_exp_samples(new_rule.rhs, gram, lvl, edited_rules, gram.rl_samp_rate, false);
+            std::tie(rhs_len, exp_bits) = store_new_rule<RULE_EXP>(new_rule.rhs, gram, lvl, edited_rules, new_nt_names, new_gram_buff);
+            if(exp_bits>r_samp_bits) r_samp_bits=exp_bits;
+            alloc_bits+= exp_bits;
+            new_g_size+=rhs_len;
 
-            j=0, last = new_rule.rhs.size()-1;
-            for(auto exp_sample : new_rule.rhs){
-                edited_gram.push_back((exp_sample<<1UL) | (j==last));
-                j++;
-            }
             new_rule.nt = nt_name++;
+            //none of the rules in these levels should exist in the grammar, so we skip the step
+            // of looking the next existing rule
         }
     }
+    new_lvl_rules.push_back(nt_name);
+
+    //TODO handle run-length rules
+
 
     //insert the strings in the grammar (it is simpler than the rules)
     size_t e_str_pos=0;
     off_t next_edited_str=edited_strings[e_str_pos].first;
     for(off_t str=0;str<(off_t)gram.n_strings();str++){
         if(str==next_edited_str){
-            size_t j=0,last = edited_strings[e_str_pos].second.size()-1;
-            for(auto s : edited_strings[e_str_pos].second){
-                if(s<gram.r){
-                    edited_gram.push_back(new_nt_names[s]<<1UL | (j==last));
-                }else{
-                    edited_gram.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
-                }
-                j++;
-            }
-            recompute_exp_samples(edited_strings[e_str_pos].second, gram, lvl, edited_rules, gram.rl_samp_rate, true);
-            last = edited_strings[e_str_pos].second.size()-1;
-            size_t u=0;
-            for(auto e : edited_strings[e_str_pos].second){
-                edited_gram.push_back((e<<1UL) | (u==last));
-                u++;
-            }
+            std::tie(rhs_len, exp_bits) = store_new_rule<STR_EXP>(edited_strings[e_str_pos].second, gram, lvl, edited_rules, new_nt_names, new_gram_buff);
             e_str_pos++;
-            next_edited_str= e_str_pos<edited_strings.size()? edited_strings[e_str_pos].first : -1;
+            next_edited_str = e_str_pos<edited_strings.size()? edited_strings[e_str_pos].first : -1;
         } else {
-            auto res = gram.str2bitrange(str);
-            for(off_t j=res.first;j<=res.second;j+=gram.r_bits){
-                size_t s = gram.bitpos2symbol(j);
-                s=new_nt_names[s];
-                edited_gram.push_back((s<<1UL) | (j==res.second));
-            }
-            auto e_data = gram.template nt2expdata<STR_EXP>(str);
-            for(off_t j = std::get<0>(e_data);j<std::get<1>(e_data);j+=std::get<2>(e_data)){
-                size_t exp = gram.rule_stream.read(j, j+std::get<2>(e_data)-1);
-                edited_gram.push_back((exp<<1UL) | (j==std::get<1>(e_data)));
-            }
+            std::tie(rhs_len, exp_bits) = store_old_rule<STR_EXP>(str, gram, new_nt_names, new_gram_buff);
         }
+        if(exp_bits>str_samp_bits) str_samp_bits = exp_bits;
+        alloc_bits+= exp_bits;
+        new_g_size+=rhs_len;
     }
+    new_gram_buff.close();
     nt_name++;
 
-    std::cout<<"A total of "<<nt_name<<" | "<<nt_name<<" "<<gram.r<<std::endl;
+    //longest sampled expansion sequence (in bits) for rules and strings, respectively
+    r_samp_bits= sym_width(r_samp_bits);
+    str_samp_bits= sym_width(str_samp_bits);
+
+    //each sequence of exampled expansion lengths end with a field that tells the number of bits the expansion uses.
+    //the line below accounts for that field
+    alloc_bits+=r_samp_bits*(nt_name-(gram.max_tsym+1));
+    alloc_bits+=str_samp_bits*gram.n_strings();
+
+    //this value can change if the length of a run-length rule is bigger than r
+    size_t max_g_sym = nt_name;
+    alloc_bits+=new_g_size*sym_width(max_g_sym);
+
+    gram.lvl_rules.swap(new_lvl_rules);
+    gram.r = nt_name;
+    gram.r_bits = sym_width(gram.r);
+    gram.g = new_g_size;
+    gram.str_samp_bits = str_samp_bits;
+    gram.r_samp_bits = r_samp_bits;
+
+    gram.rl_ptr.set_width(sym_width(alloc_bits));
+    gram.rl_ptr.resize((gram.r+1)-(gram.max_tsym+1));
+    gram.rule_stream.reserve_in_bits(alloc_bits);
+
+    i_file_stream<size_t> new_rules(gbuff_file, BUFFER_SIZE);
+    size_t i=0, val, bit_pos=0;
+    uint8_t exp_samp_bits;
+    bool last;
+    std::vector<size_t> exp_samp;
+    size_t nt=gram.max_tsym+1, last_nt = gram.r-1, str=0, samp_bits;
+    while(i<new_rules.size()){
+        if(nt<last_nt){
+            gram.rl_ptr[nt-(gram.max_tsym+1)] = bit_pos;
+            samp_bits = gram.r_samp_bits;
+            nt++;
+        }else{
+            gram.str_boundaries[str] = bit_pos;
+            samp_bits = gram.str_samp_bits;
+            str++;
+        }
+
+        //store the rule's rhs
+        do{
+            val = new_rules.read(i++);
+            last = val & 1UL;
+            val>>1;
+            gram.rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, val);
+            bit_pos+=gram.r_bits;
+        }while(!last);
+
+        //store the expansion samples
+        exp_samp.clear();
+        val = new_rules.read(i);
+        while(val!=std::numeric_limits<size_t>::max()){
+            exp_samp.push_back(val);
+            val = new_rules.read(++i);
+        }
+        i++;
+
+        exp_samp_bits = sym_width(exp_samp.back());
+        for(auto const& es : exp_samp){
+            gram.rule_stream.write(bit_pos, bit_pos+exp_samp_bits-1, es);
+            bit_pos+=exp_samp_bits;
+        }
+        assert(sym_width(exp_samp.size()*exp_samp_bits)<=samp_bits);
+        gram.rule_stream.write(bit_pos, bit_pos+samp_bits-1, exp_samp.size()*exp_samp_bits);
+        bit_pos+=gram.r_samp_bits;
+    }
+
+    assert(nt==last_nt);
+    gram.rl_ptr[(nt++) - (gram.max_tsym+1)] = gram.str_boundaries[0];
+    gram.rl_ptr[nt - (gram.max_tsym+1)] = bit_pos;
+    gram.str_boundaries[str] = bit_pos;
+    assert(nt==gram.r && str==gram.n_strings());
+    new_rules.close(true);
 }
 
 template<class gram_t, class vector_t>
@@ -600,7 +715,7 @@ void subtract_int_par_trees(gram_t& gram, vector_t& nt_freqs, std::vector<std::p
 
 
 template<class gram_type>
-void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordinates){
+void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordinates, tmp_workspace& ws){
 
     size_t sym;
     off_t d_seq_s, d_seq_e;
@@ -848,10 +963,12 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
         std::cout<<"2255 "<<nt_freqs[2255]<<std::endl;
         std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;*/
     }
-    insert_edited_rules(edited_rules, edited_strings, nt_freqs, gram);
+    update_grammar(edited_rules, edited_strings, nt_freqs, gram, ws);
 }
 
-void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem_coordinates){
+void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem_coordinates, std::string& tmp_dir, std::string& o_file){
+
+    tmp_workspace ws(tmp_dir, true, "rm_lcg");
 
     bool has_rl_rules, has_cg_rules, has_rand_access;
     std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(input_gram);
@@ -860,22 +977,27 @@ void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem
         if(has_rl_rules){
             lc_gram_t<true, true, true> gram;
             load_from_file(input_gram, gram);
-            rem_txt_from_gram_int(gram, rem_coordinates);
+            rem_txt_from_gram_int(gram, rem_coordinates, ws);
+            store_to_file(o_file, gram);
         }else{
             lc_gram_t<true, false, true> gram;
             load_from_file(input_gram, gram);
-            rem_txt_from_gram_int(gram, rem_coordinates);
+            rem_txt_from_gram_int(gram, rem_coordinates, ws);
+            store_to_file(o_file, gram);
         }
     }else{
         if(has_rl_rules){
             lc_gram_t<false, true, true> gram;
             load_from_file(input_gram, gram);
-            rem_txt_from_gram_int(gram, rem_coordinates);
+            rem_txt_from_gram_int(gram, rem_coordinates, ws);
+            store_to_file(o_file, gram);
         }else{
             lc_gram_t<false, false, true> gram;
             load_from_file(input_gram, gram);
-            rem_txt_from_gram_int(gram, rem_coordinates);
+            rem_txt_from_gram_int(gram, rem_coordinates, ws);
+            store_to_file(o_file, gram);
         }
     }
+    std::cout<<"The edited grammar was stored in "<<o_file<<std::endl;
 }
 #endif //LCG_EDITION_ALGORITHMS_H

@@ -263,8 +263,16 @@ int main(int argc, char** argv) {
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
     } else if(app.got_subcommand("rem")){
+
+        if (args.output_file.empty()){
+            args.output_file = std::filesystem::path(args.input_file).filename();
+            args.output_file = std::filesystem::path(args.output_file).replace_extension("rm.lcg");
+        }else{
+            assert(args.output_file!=args.input_file);
+        }
+
         std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
-        rem_txt_from_gram(args.input_file, rem_coords);
+        rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
     }
 
     return 0;
