@@ -207,9 +207,16 @@ std::tuple<size_t, uint8_t, uint8_t> compute_exp_info(gram_t& gram, std::vector<
         if(samp_bits>max_str_samp_bits) max_str_samp_bits = samp_bits;
     }
 
-    size_t tot_samp_bits = r_samp_acc_bits + (sym_width(max_r_samp_bits))*(gram.r-gram.n_terminals()-1);
-    tot_samp_bits += str_samp_acc_bits + (sym_width(max_str_samp_bits))*gram.n_strings();
-    return {tot_samp_bits, sym_width(max_r_samp_bits), sym_width(max_str_samp_bits)};
+    max_r_samp_bits = sym_width(max_r_samp_bits);
+    // When all the string are compressed to one symbol,
+    // then the strings have zero expansion samples and hence max_str_samp_bits is 0.
+    // This situation happens when the grammar is not simplified, and produces inconsistency
+    max_str_samp_bits = std::max<uint8_t>(1, sym_width(max_str_samp_bits));
+
+    size_t tot_samp_bits = r_samp_acc_bits + max_r_samp_bits*(gram.r-gram.n_terminals()-1);
+    tot_samp_bits += str_samp_acc_bits + max_str_samp_bits*gram.n_strings();
+
+    return {tot_samp_bits, max_r_samp_bits, max_str_samp_bits};
 }
 
 template<class gram_t>

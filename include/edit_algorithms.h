@@ -269,10 +269,11 @@ std::pair<off_t, off_t> store_new_rule(std::vector<size_t>& rhs, gram_type& gram
     size_t last = rhs.size()-1;
     for(auto s : rhs){
         if(s<gram.r){
-            buffer.push_back(new_nt_names[s]<<1UL | (j==last));
+            s = new_nt_names[s];
         }else{
-            buffer.push_back(edited_rules[lvl-1][s-gram.r].nt | (j==last));
+            s = edited_rules[lvl-1][s-gram.r].nt;
         }
+        buffer.push_back((s<<1UL) | (j==last));
         j++;
     }
 
@@ -374,10 +375,9 @@ std::pair<off_t, off_t> store_old_rule(size_t nt, gram_type& gram, int_array<siz
 
 
 template<class gram_type, class vector_type>
-size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
+void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
                          std::vector<std::pair<off_t, std::vector<size_t>>>& edited_strings,
                          gram_type& gram, vector_type& nt_freqs){
-    size_t eff_new_rules = 0;
     size_t lvl=0;
 
     //first we will sort the new rules according their fingerprints
@@ -404,7 +404,7 @@ size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules
                 if (lvl > 0) {
                     for (auto &s: new_rule.rhs) {
                         if (s >= gram.r) {
-                            s = gram.r + prev_perm[s];
+                            s = gram.r + prev_perm[s-gram.r];
                         }
                     }
                 }
@@ -463,7 +463,6 @@ size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules
             std::cout<<" exist? "<<(new_rule.fp==fp_first)<<std::endl;
 
             new_rule.nt = middle;
-            eff_new_rules +=new_rule.fp!=fp_first;
             if(new_rule.fp==fp_first){
                 new_rule.exist = true;
                 //TODO handle collisions
@@ -483,8 +482,6 @@ size_t find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules
         }
         std::cout<<""<<std::endl;
     }
-    std::cout<<"There are "<<eff_new_rules<<" rules "<<std::endl;
-    return eff_new_rules;
 }
 
 template<class gram_type, class vector_type>
@@ -500,7 +497,8 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
     std::vector<size_t> new_lvl_rules;
     size_t new_g_size=0;
     for(size_t i=0;i<=gram.max_tsym;i++){
-        new_nt_names[nt_name] = nt_name++;
+        new_nt_names[nt_name] = nt_name;
+        nt_name++;
     }
     new_g_size+=nt_name;
 
@@ -517,8 +515,6 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
         new_lvl_rules.push_back(nt_name);
         off_t last_nt = gram.lvl_rules[lvl+1]-1;
         for(off_t nt=gram.lvl_rules[lvl];nt<=last_nt;nt++){
-
-
 
             if(nt_freqs[nt]==0) continue;
             new_nt_names[nt] = nt_name++;
@@ -545,7 +541,6 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
 
         while(next_new_nt>0){
-
             std::tie(rhs_len, exp_bits) = store_new_rule<RULE_EXP>(edited_rules[lvl][er_pos].rhs, gram, lvl, edited_rules, new_nt_names, new_gram_buff);
             if(exp_bits>r_samp_bits) r_samp_bits = exp_bits;
             alloc_bits+= exp_bits;
@@ -599,7 +594,7 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
 
     //longest sampled expansion sequence (in bits) for rules and strings, respectively
     r_samp_bits= sym_width(r_samp_bits);
-    str_samp_bits= sym_width(str_samp_bits);
+    str_samp_bits = std::max<uint8_t>(1, sym_width(str_samp_bits));
 
     //each sequence of exampled expansion lengths end with a field that tells the number of bits the expansion uses.
     //the line below accounts for that field
@@ -642,7 +637,7 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
         do{
             val = new_rules.read(i++);
             last = val & 1UL;
-            val>>1;
+            val>>=1;
             gram.rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, val);
             bit_pos+=gram.r_bits;
         }while(!last);
@@ -656,14 +651,18 @@ void update_grammar(std::vector<std::vector<new_rule_type>>& edited_rules,
         }
         i++;
 
-        exp_samp_bits = sym_width(exp_samp.back());
-        for(auto const& es : exp_samp){
-            gram.rule_stream.write(bit_pos, bit_pos+exp_samp_bits-1, es);
-            bit_pos+=exp_samp_bits;
+        size_t sampled_bits=0;
+        if(!exp_samp.empty()){
+            exp_samp_bits = sym_width(exp_samp.back());
+            for(auto const& es : exp_samp){
+                gram.rule_stream.write(bit_pos, bit_pos+exp_samp_bits-1, es);
+                bit_pos+=exp_samp_bits;
+            }
+            assert(sym_width(exp_samp.size()*exp_samp_bits)<=samp_bits);
+            sampled_bits = exp_samp.size()*exp_samp_bits;
         }
-        assert(sym_width(exp_samp.size()*exp_samp_bits)<=samp_bits);
-        gram.rule_stream.write(bit_pos, bit_pos+samp_bits-1, exp_samp.size()*exp_samp_bits);
-        bit_pos+=gram.r_samp_bits;
+        gram.rule_stream.write(bit_pos, bit_pos+samp_bits-1, sampled_bits);
+        bit_pos+=samp_bits;
     }
 
     assert(nt==last_nt);
@@ -754,7 +753,6 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
     std::vector<std::vector<new_rule_type>> edited_rules(n_parsing_rounds);
     std::vector<std::pair<off_t, std::vector<size_t>>> edited_strings;
     std::vector<std::pair<off_t, off_t>> int_par_trees;
-    size_t eff_new_rules=0;
 
     for(auto & coord : coordinates){
 
@@ -941,7 +939,7 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
             g_level++;
         }
         edited_strings.emplace_back(coord.str, new_seq);
-        eff_new_rules +=find_grammar_places(edited_rules, edited_strings, gram, nt_freqs);
+        find_grammar_places(edited_rules, edited_strings, gram, nt_freqs);
         subtract_int_par_trees(gram, nt_freqs, int_par_trees);
 
         /*std::cout<<"71 "<<nt_freqs[71]<<std::endl;
