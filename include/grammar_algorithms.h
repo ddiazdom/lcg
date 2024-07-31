@@ -1029,6 +1029,8 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 
+    //gram.print_parse_tree(0, true);
+
     /*if(gram_type::has_cg_rules){
         std::cout<<"Transforming the grammar into a college system"<<std::endl;
         start = std::chrono::steady_clock::now();
