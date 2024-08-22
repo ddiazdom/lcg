@@ -8,7 +8,7 @@
 #include "grammar.h"
 #include "se-build-strat/lc_parsing.h"
 #include "lz-like-build-strat/lc_parsing.h"
-#include "build_collage_system.h"
+#include "../old/build_collage_system.h"
 
 template<class gram_t>
 void make_gram_fix_free(gram_t& gram){
@@ -635,7 +635,7 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
     for(size_t str=0; str <gram.n_strings(); str++) {
 
         auto res = gram.str2bitrange(str);
-        for(size_t i=res.first;i<=res.second;i+=gram.r_bits){
+        for(off_t i=res.first;i<=res.second;i+=gram.r_bits){
             stack.push(gram.bitpos2symbol(i));
 
             while(!stack.empty()) {
@@ -665,11 +665,11 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
         size_t k=0;
         std::cout<<str<<std::endl;
         for(char sym : decompression){
-            if(gram_t::has_rand_access){
-                size_t sym2 = gram.in_memory_rand_access(str, k);
+            if (gram_t::has_rand_access){
+                size_t sym2 = gram.im_sym_rand_access(str, k);
                 if(sym2!=size_t(sym)){
                     std::cout<<"Error: decomp sym: "<<(int)sym<<", accessed sym: "<<sym2<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", position: "<<k<<std::endl;
-                    assert(sym==sym2);
+                    assert(size_t(sym)==sym2);
                 }
             }
             if(sym!=(char)if_stream.read(idx)){
@@ -1011,17 +1011,26 @@ void get_par_seed(std::string& gram_file){
  */
 template<class sym_type, class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads,
-                size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_build, bool skip_simp) {
+                size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_build, bool skip_simp, bool par_gram) {
 
-    // the grammar encoding with random access support works differently, so this is a hack
+    // the grammar encoding with random access support works differently, so this hack
     using tmp_gram_type = lc_gram_t<gram_type::has_cg_rules, gram_type::has_rl_rules, false>;
+
+    if(par_gram){
+        std::cout<<"Building a partial locally-consistent grammar"<<std::endl;
+        auto start = std::chrono::steady_clock::now();
+        lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, true);
+        auto end = std::chrono::steady_clock::now();
+        report_time(start, end, 2);
+        return;
+    }
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
     if(se_build){
         lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed);
     }else{
-        lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed);
+        lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, false);
     }
 
     tmp_gram_type gram;
@@ -1030,7 +1039,6 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     report_time(start, end, 2);
 
     //gram.print_parse_tree(0, true);
-
     /*if(gram_type::has_cg_rules){
         std::cout<<"Transforming the grammar into a college system"<<std::endl;
         start = std::chrono::steady_clock::now();
@@ -1072,8 +1080,6 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
 
     //std::string dc_string;
     //final_gram.im_str_rand_access(192, 147, 147, dc_string);
-
-
     //final_gram.breakdown(2);
     //final_gram.print_parse_tree(10565, false);
     //final_gram.get_fp(10565);

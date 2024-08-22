@@ -15,12 +15,13 @@
 #include "cds/ts_priority_queue.h"
 #include "cds/utils.h"
 #include "cds/cdt_common.hpp"
+#include "cds/mmap_allocator.h"
+#include "cds/vbyte_encoding.h"
 
 #include "text_handler.h"
 #include "lz_like_map.h"
 #include "grammar.h"
-#include "cds/mmap_allocator.h"
-#include "cds/vbyte_encoding.h"
+#include "merge_grams.h"
 
 namespace lz_like_strat {
 
@@ -959,7 +960,6 @@ namespace lz_like_strat {
 
         using p_gram_type = partial_gram<sym_type, true>;
 
-
         std::vector<std::pair<p_gram_type,
                     std::vector<std::pair<size_t, size_t>>>
                     > initial_grams(n_threads);
@@ -1028,7 +1028,7 @@ namespace lz_like_strat {
                 size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
 
                 for (size_t i = 1; i < n_threads; i++) {
-                    merge_two_grammars<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
+                    merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
                     //store the range of strings this partial gram covers
                     initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
                     initial_grams[i].first.destroy_gram();
@@ -1063,7 +1063,7 @@ namespace lz_like_strat {
             while (true) {
                 res = gram_to_merge_queue.pop(buff_id);
                 if (!res) break;
-                merge_two_grammars<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
+                merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
 
                 if(n_threads>1){//this step is to later reorder the strings in the final grammar
                     initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
@@ -1087,7 +1087,7 @@ namespace lz_like_strat {
     template<class sym_type, class gram_type>
     void lc_parsing_algo(std::string& i_file, std::string& o_file,
                          tmp_workspace& tmp_ws, size_t n_threads,
-                         size_t n_chunks, size_t chunk_size, size_t par_seed) {
+                         size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram) {
 
         parsing_opts p_opts;
         p_opts.n_threads = n_threads;
@@ -1126,12 +1126,14 @@ namespace lz_like_strat {
         std::string ct_p_grams_file = tmp_ws.get_file("concat_p_grams");
         build_partial_grammars<sym_type>(p_opts, i_file, ct_p_grams_file);
 
-        std::string mg_p_gram_file = tmp_ws.get_file("merged_p_grams");
+        std::string mg_p_gram_file = par_gram? o_file : tmp_ws.get_file("merged_p_grams");
         merge_partial_grammars<sym_type>(ct_p_grams_file, mg_p_gram_file, p_opts.p_seeds, p_opts.n_threads);
 
-        gram_type final_grammar;
-        make_gram(final_grammar, mg_p_gram_file, par_seed);
-        store_to_file(o_file, final_grammar);
+        if(!par_gram){
+            gram_type final_grammar;
+            partial2complete_gram(final_grammar, mg_p_gram_file, par_seed);
+            store_to_file(o_file, final_grammar);
+        }
     }
 }
 

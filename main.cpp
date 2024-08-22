@@ -1,7 +1,7 @@
 #include <thread>
 
 #include "external/CLI11.hpp"
-#include "edit_algorithms.h"
+#include "edit_gram.h"
 #include "grammar_algorithms.h"
 
 struct arguments{
@@ -16,6 +16,7 @@ struct arguments{
     bool rand_acc=false;
     bool skip_simp=false;
     bool skip_rl=false;
+    bool part=false;
     size_t seed=0;
 
     std::string p_file;
@@ -60,7 +61,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.formatter(fmt);
     app.add_flag("-v,--version", args.ver, "Print the software version and exit");
 
-    CLI::App* comp = app.add_subcommand("cmp", "compress text");
+    CLI::App* comp = app.add_subcommand("cmp", "Compress text");
     comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
@@ -71,6 +72,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
     comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support to the grammar");
+    comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     //other options
     comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
@@ -80,23 +82,15 @@ static void parse_app(CLI::App& app, struct arguments& args){
     CLI::App* meta = app.add_subcommand("met", "get the metadata of a grammar");
     meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
 
-    CLI::App* merge = app.add_subcommand("mrg", "merge grammars");
+    CLI::App* merge = app.add_subcommand("mrg", "Merge grammars");
     merge->add_option("GRAM LIST", args.grammars_to_merge, "Grammars to be merged")->check(CLI::ExistingFile)->required();
     merge->add_option("-o,--output-file", args.output_file, "Output grammar");
 
-    CLI::App* access = app.add_subcommand("acc", "random access");
+    CLI::App* access = app.add_subcommand("acc", "Random access");
     access->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
     access->add_option("STR:START-END", args.ra_positions, "Coordinates to be accessed");
-    //access->add_option("START", args.start, "First position inclusive");
-    //access->add_option("END", args.end, "Last position inclusive");
 
-    //CLI::App* group = access->add_option_group("asdas");
-    //group->add_option("-p,--position", args.position_list, "Area to access in format str_idx:start-end (0-based)");
-    //group->add_option("-f,--pos-file", args.coord_file, "File with the list of positions to access");
-    //access->add_option("-o,--output-file", args.output_file, "Output file");
-    //group->require_option(1,2);
-
-    CLI::App* rem = app.add_subcommand("rem", "remove text from the grammar");
+    CLI::App* rem = app.add_subcommand("edt", "Edit grammar-compressed text");
     rem->add_option("GRAM", args.input_file, "Grammar to be edited")->check(CLI::ExistingFile)->required();
     rem->add_option("STR:START-END", args.ra_positions, "Coordinates to be removed");
     rem->add_option("-o,--output-file", args.output_file, "Output grammar");
@@ -110,26 +104,25 @@ void comp_int(std::string& input_file, arguments& args) {
     tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
     if(args.skip_rl){
-
         if(args.rand_acc){
             build_gram<uint8_t, lc_gram_t<false, false, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
                                                                args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                               args.skip_simp);
+                                                               args.skip_simp, args.part);
         }else{
 
             build_gram<uint8_t, lc_gram_t<false, false, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
                                                                args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                               args.skip_simp);
+                                                               args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
             build_gram<uint8_t, lc_gram_t<false, true, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
                                                               args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                              args.skip_simp);
+                                                              args.skip_simp, args.part);
         }else{
             build_gram<uint8_t, lc_gram_t<false, true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
                                                               args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                              args.skip_simp);
+                                                              args.skip_simp, args.part);
         }
     }
 }
@@ -262,19 +255,15 @@ int main(int argc, char** argv) {
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
-    } else if(app.got_subcommand("rem")){
-
+    } else if(app.got_subcommand("edt")){
         if (args.output_file.empty()){
             args.output_file = std::filesystem::path(args.input_file).filename();
             args.output_file = std::filesystem::path(args.output_file).replace_extension("rm.lcg");
         }else{
             assert(args.output_file!=args.input_file);
         }
-
         std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
         rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
     }
-
     return 0;
-
 }
