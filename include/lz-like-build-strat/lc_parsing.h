@@ -31,6 +31,7 @@ namespace lz_like_strat {
         off_t chunk_size{};
         off_t page_cache_limit{};
         size_t sep_sym{};
+        uint64_t orig_seed;//this is the seed to create random seeds for p_seeds
         std::vector<uint64_t> p_seeds;
     };
 
@@ -819,6 +820,7 @@ namespace lz_like_strat {
 
                 //this value is enough for 4GB text chunks
                 text_chunks[chunk_id].p_gram.rules.resize(32);
+                text_chunks[chunk_id].p_gram.par_seed = p_opts.orig_seed;
 
                 buffers_to_process.push(chunk_id);
 #ifdef __linux__
@@ -1098,13 +1100,9 @@ namespace lz_like_strat {
         //p_opts.chunk_size = file_size(i_file);
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = 10;
+        p_opts.orig_seed = par_seed;
 
-        //if(!p_file.empty()) {
-        //    load_pl_vector(p_file, p_opts.p_seeds);
-        //    assert(!p_opts.p_seeds.empty());
-        //    seed_source = p_file;
-        //} else {
-        std::random_device rd;  // Will be used to obtain a seed for the random number engine
+        //std::random_device rd;  // Will be used to obtain a seed for the random number engine
         //std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
         std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
         std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
@@ -1112,13 +1110,11 @@ namespace lz_like_strat {
         for(size_t i=0;i<32;i++){
             p_opts.p_seeds[i] = distrib(gen);
         }
-        //TODO create the seeds
-        //store_pl_vector("fixed_hash_functions", p_opts.p_functions);
-        //}
 
         std::cout<<"  Settings"<<std::endl;
         std::cout<<"    Parsing mode              : short strings (<= 4 GBs)"<<std::endl;
         std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
+        std::cout<<"    Parsing seed              : "<<p_opts.orig_seed<<std::endl;
         std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
         std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
         std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;

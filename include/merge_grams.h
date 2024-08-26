@@ -7,10 +7,58 @@
 
 #include "partial_gram.h"
 
+struct merge_data_t{
+
+    std::vector<uint64_t> fps;
+    std::vector<uint32_t> map_a;
+    std::vector<uint32_t> map_b;
+    size_t lvl_sigma=0;
+    size_t longest_rule=0;
+    bitstream<size_t, true> buffer;
+
+    void initialize(size_t lvl_sigma_, size_t sym_bytes, uint64_t seed, size_t longest_rule_){
+        lvl_sigma = lvl_sigma_;
+        map_a.resize(lvl_sigma);
+        map_b.resize(lvl_sigma);
+        fps.resize(lvl_sigma);
+        for(size_t i=0;i<fps.size();i++){
+            fps[i] = XXH64(&i, sym_bytes, seed);
+            map_a[i] = i;
+            map_b[i] = i;
+        }
+        longest_rule = longest_rule_;
+    }
+
+    [[nodiscard]] size_t space_usage() const {
+        size_t bytes = fps.capacity()*sizeof(uint64_t);
+        bytes += map_a.capacity()*sizeof(uint32_t);
+        bytes += map_b.capacity()*sizeof(uint32_t);
+        return bytes;
+    }
+
+    /*void space_breakdown() const {
+        std::cout<<report_space(fps.size()*sizeof(uint64_t))<<" "<<report_space(fps.capacity()*sizeof(uint64_t))<<std::endl;
+        std::cout<<report_space(map_a.size()*sizeof(uint32_t))<<" "<<report_space(map_a.capacity()*sizeof(uint32_t))<<std::endl;
+        std::cout<<report_space(map_b.size()*sizeof(uint32_t))<<" "<<report_space(map_b.capacity()*sizeof(uint32_t))<<std::endl;
+    }*/
+
+    ~merge_data_t(){
+        destroy(fps);
+        destroy(map_a);
+        destroy(map_b);
+        buffer.destroy();
+
+#ifdef __linux__
+        malloc_trim(0);
+#endif
+    }
+};
+
 template<class p_gram_type>
 void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds) {
 
     size_t longest_rule = std::max(p_gram_a.longest_rule, p_gram_b.longest_rule);
+    assert(p_gram_a.par_seed == p_gram_b.par_seed);
 
     merge_data_t mg_data;
 
@@ -80,6 +128,7 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
 
     std::ifstream ifs_b(p_gram_b_file, std::ios::binary);
     p_gram_b.load_metadata(ifs_b);
+    assert(p_gram_a.par_seed == p_gram_b.par_seed);
 
     size_t longest_rule = std::max(p_gram_a.longest_rule, p_gram_b.longest_rule);
 
@@ -93,16 +142,22 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
     size_t max_lvl = std::max(p_gram_a.lvl, p_gram_b.lvl)-1;
     size_t min_lvl = std::min(p_gram_a.lvl, p_gram_b.lvl)-1;
 
+    bitstream<size_t> rules_buffer_a;
+    bitstream<size_t> rules_buffer_b;
+
     //pointer to the grammar with the least number of levels
     p_gram_type *st_gram = nullptr;
     std::vector<uint32_t> *st_gram_map = nullptr;
+    bitstream<size_t> *st_rules_buffer=nullptr;
 
     if(p_gram_a.lvl<p_gram_b.lvl){
         st_gram = &p_gram_a;
         st_gram_map = &mg_data.map_a;
+        st_rules_buffer = &rules_buffer_a;
     } else if(p_gram_b.lvl<p_gram_a.lvl) {
         st_gram = &p_gram_b;
         st_gram_map = &mg_data.map_b;
+        st_rules_buffer = &rules_buffer_b;
     }
 
     //we will move the compressed string to the back
@@ -116,13 +171,10 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
     }
 
     lvl_metadata_type buffer_metadata;
-    bitstream<size_t> rules_buffer_a;
-    bitstream<size_t> rules_buffer_b;
     p_gram_a.rules.resize(max_lvl+1);
 
     size_t i=0;
-    while(i<max_lvl) {
-
+    while(i<min_lvl) {
         p_gram_a.load_next_rule_set(ifs_a, i, rules_buffer_a);
         p_gram_b.load_next_rule_set(ifs_b, i, rules_buffer_b);
 
@@ -130,14 +182,19 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
                                       rules_buffer_b, p_gram_b.metadata[i+1],
                                       fp_seeds[i+1], mg_data);
         i++;
-        if(i>=min_lvl && i<max_lvl){
-            assert(st_gram!=nullptr && st_gram!= nullptr);
-            create_fake_level(*st_gram, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
-        }
-
         p_gram_a.metadata[i] = buffer_metadata;
         mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
     }
+
+    //TODO: fix this part
+    while(i<max_lvl){
+        if(i>=min_lvl && i<max_lvl){
+            assert(st_gram!=nullptr);
+            create_fake_level_se(*st_gram, st_rules_buffer, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+        }
+    }
+    //
+
     p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
                                                        p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
                                                        mg_data);
@@ -150,12 +207,28 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
     store_to_file(p_gram_c_file, p_gram_a);
 }
 
+void merge_gramms(std::vector<std::string>& grams_to_merge, std::string& merged_grammar){
+    std::vector<uint64_t> par_seeds;
+    uint64_t orig_seed = get_par_seed_par_gram(grams_to_merge[0]);
+
+    std::mt19937 gen(orig_seed); //Standard mersenne_twister_engine seeded with a fixed value
+    std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
+    par_seeds.resize(32);
+    for(size_t i=0;i<32;i++){
+        par_seeds[i] = distrib(gen);
+    }
+
+    merge_two_partial_grammars_semi_external<partial_gram<uint8_t>>(grams_to_merge[0], grams_to_merge[1], merged_grammar, par_seeds);
+    for(size_t i=2;i<grams_to_merge.size();i++){
+        merge_two_partial_grammars_semi_external<partial_gram<uint8_t>>(merged_grammar, grams_to_merge[i], merged_grammar, par_seeds);
+    }
+    get_breakdown(merged_grammar);
+}
+
 template<class stream_type>
 lvl_metadata_type concatenate_strings(stream_type &stream_a, lvl_metadata_type &lvl_met_a,
                                       stream_type &stream_b, lvl_metadata_type &lvl_met_b,
                                       merge_data_t& mg_data){
-
-    //std::cout<<"Buffer: "<<report_space(mg_data.buffer.capacity_in_bytes())<<" A:"<<report_space(stream_a.capacity_in_bytes())<<" B:"<<report_space(stream_b.capacity_in_bytes())<<std::endl;
 
     lvl_metadata_type c_string_lvl{};
     c_string_lvl.sym_width = sym_width(mg_data.lvl_sigma)+1;//+1 is to mark the end of each phrase in the stream of rules
@@ -444,6 +517,67 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
     std::vector<uint32_t> inv_perm(perm.size());
     for(size_t mt_sym=1;mt_sym<perm.size();mt_sym++){
         p_gram.rules[new_lvl].write(pos, pos+width-1, (std::get<0>(perm[mt_sym])<<1UL | 1));
+        mt_map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
+        pos+=width;
+        inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;
+    }
+    assert(pos==p_gram.metadata[new_lvl+1].n_bits());
+
+    //update the compressed string
+    size_t last_lvl = p_gram.rules.size()-1;
+    pos = 0;
+    width = p_gram.metadata[last_lvl+1].sym_width;
+    size_t n_bits = p_gram.metadata[last_lvl+1].n_bits();
+    size_t mt_sym;
+    bool last_sym;
+    while(pos<n_bits){
+        mt_sym = p_gram.rules[last_lvl].read(pos, pos+width-1);
+        last_sym = mt_sym & 1UL;
+        mt_sym>>=1UL;
+        mt_sym = inv_perm[mt_sym];
+        p_gram.rules[last_lvl].write(pos, pos+width-1, (mt_sym<<1UL | last_sym));
+        pos+=width;
+    }
+    assert(pos==p_gram.metadata[last_lvl+1].n_bits());
+}
+
+template<class gram_type>
+void create_fake_level_se(gram_type& p_gram, bitstream<size_t>* buffer, size_t new_lvl, std::vector<uint64_t>& prev_fps,
+                          uint64_t fp_seed, std::vector<uint32_t>& mt_map){
+
+    // new_level is to the previous level in the metadata because
+    // the first element of the metadata vector has the terminal alphabet
+    p_gram.metadata[new_lvl+1].sym_width = sym_width(p_gram.metadata[new_lvl].n_rules)+1;
+    p_gram.metadata[new_lvl+1].n_rules = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].tot_symbols = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].terminals = false;
+
+    assert((p_gram.metadata[new_lvl+1].n_rules+1) == mt_map.size());
+
+    buffer.reserve_in_bits(p_gram.metadata[new_lvl+1].n_bits());
+
+    std::vector<std::tuple<uint64_t, uint64_t, uint32_t>> perm(mt_map.size());
+    perm[0] = {0, 0, 0};
+    for(size_t i=1;i<mt_map.size();i++){
+        std::get<0>(perm[i]) = i;
+        uint64_t fp = prev_fps[mt_map[i]];
+        std::get<1>(perm[i]) = XXH64(&fp, sizeof(uint64_t), fp_seed);
+        std::get<2>(perm[i]) = mt_map[i];
+    }
+
+    std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
+        if(std::get<1>(a)!=std::get<1>(b)){
+            return std::get<1>(a) < std::get<1>(b);//break ties using the level fingerprint
+        }
+        assert(std::get<0>(a)==std::get<0>(b) ||
+               prev_fps[std::get<2>(a)]!=prev_fps[std::get<2>(b)]);
+        return prev_fps[std::get<2>(a)]<prev_fps[std::get<2>(b)];
+    });
+
+    size_t pos=0, width=p_gram.metadata[new_lvl+1].sym_width;
+    std::vector<uint32_t> inv_perm(perm.size());
+    for(size_t mt_sym=1;mt_sym<perm.size();mt_sym++){
+        buffer.write(pos, pos+width-1, (std::get<0>(perm[mt_sym])<<1UL | 1));
         mt_map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
         pos+=width;
         inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;

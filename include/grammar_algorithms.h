@@ -1022,6 +1022,8 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
         lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, true);
         auto end = std::chrono::steady_clock::now();
         report_time(start, end, 2);
+        get_breakdown(o_file);
+        std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
         return;
     }
 

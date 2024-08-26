@@ -4,55 +4,9 @@
 
 #ifndef LCG_PARTIAL_GRAM_H
 #define LCG_PARTIAL_GRAM_H
+
 #include "cds/bitstream.h"
 #include "lz-like-build-strat/lz_like_map.h"
-
-struct merge_data_t{
-
-    std::vector<uint64_t> fps;
-    std::vector<uint32_t> map_a;
-    std::vector<uint32_t> map_b;
-    size_t lvl_sigma=0;
-    size_t longest_rule=0;
-    bitstream<size_t, true> buffer;
-
-    void initialize(size_t lvl_sigma_, size_t sym_bytes, uint64_t seed, size_t longest_rule_){
-        lvl_sigma = lvl_sigma_;
-        map_a.resize(lvl_sigma);
-        map_b.resize(lvl_sigma);
-        fps.resize(lvl_sigma);
-        for(size_t i=0;i<fps.size();i++){
-            fps[i] = XXH64(&i, sym_bytes, seed);
-            map_a[i] = i;
-            map_b[i] = i;
-        }
-        longest_rule = longest_rule_;
-    }
-
-    [[nodiscard]] size_t space_usage() const {
-        size_t bytes = fps.capacity()*sizeof(uint64_t);
-        bytes += map_a.capacity()*sizeof(uint32_t);
-        bytes += map_b.capacity()*sizeof(uint32_t);
-        return bytes;
-    }
-
-    /*void space_breakdown() const {
-        std::cout<<report_space(fps.size()*sizeof(uint64_t))<<" "<<report_space(fps.capacity()*sizeof(uint64_t))<<std::endl;
-        std::cout<<report_space(map_a.size()*sizeof(uint32_t))<<" "<<report_space(map_a.capacity()*sizeof(uint32_t))<<std::endl;
-        std::cout<<report_space(map_b.size()*sizeof(uint32_t))<<" "<<report_space(map_b.capacity()*sizeof(uint32_t))<<std::endl;
-    }*/
-
-    ~merge_data_t(){
-        destroy(fps);
-        destroy(map_a);
-        destroy(map_b);
-        buffer.destroy();
-
-#ifdef __linux__
-        malloc_trim(0);
-#endif
-    }
-};
 
 struct lvl_metadata_type{
     size_t n_rules=0;
@@ -84,10 +38,18 @@ struct partial_gram {
     size_t lvl = 0;
     size_t longest_rule=0;
     size_t longest_str=0;
+    uint64_t par_seed=0;
     std::vector<lvl_metadata_type> metadata;
     std::vector<stream_type> rules;
 
-    partial_gram(){
+    partial_gram(): text_size(0),
+                    txt_id(0),
+                    max_tsym( std::numeric_limits<ter_type>::max()),
+                    sep_tsym(0),
+                    lvl(0),
+                    longest_rule(0),
+                    longest_str(0),
+                    par_seed(0){
         lvl_metadata_type ter{};
         ter.sym_width = std::numeric_limits<ter_type>::digits;
         ter.tot_symbols = std::numeric_limits<ter_type>::max()+1;
@@ -104,6 +66,7 @@ struct partial_gram {
         std::swap(lvl, other.lvl);
         std::swap(longest_rule, other.longest_rule);
         std::swap(longest_str, other.longest_str);
+        std::swap(par_seed, other.par_seed);
         metadata.swap(other.rules_metadata);
         rules.swap(other.rules);
         return *this;
@@ -118,6 +81,7 @@ struct partial_gram {
         written_bytes += serialize_elm(ofs, lvl);
         written_bytes += serialize_elm(ofs, longest_rule);
         written_bytes += serialize_elm(ofs, longest_str);
+        written_bytes += serialize_elm(ofs, par_seed);
 
         written_bytes+= serialize_plain_vector(ofs, metadata);
 
@@ -138,8 +102,46 @@ struct partial_gram {
         load_elm(ifs, lvl);
         load_elm(ifs, longest_rule);
         load_elm(ifs, longest_str);
+        load_elm(ifs, par_seed);
         load_plain_vector(ifs, metadata);
     }
+
+    size_t bytes_metadata(){
+        size_t bytes=0;
+        bytes+=sizeof(text_size);
+        bytes+=sizeof(txt_id);
+        bytes+=sizeof(max_tsym);
+        bytes+=sizeof(sep_tsym);
+        bytes+=sizeof(lvl);
+        bytes+=sizeof(longest_rule);
+        bytes+=sizeof(longest_str);
+        bytes+=sizeof(par_seed);
+
+        bytes+=metadata.size()*sizeof(lvl_metadata_type);
+        bytes+=sizeof(size_t);
+        return bytes;
+    }
+
+    void load_concat_string(std::ifstream &ifs, bitstream<size_t>& buffer){
+        size_t n_words=0;
+        for(size_t i=1;i<metadata.size()-1;i++){
+            n_words +=  buffer.bits2words(metadata[i].n_bits());
+        }
+        size_t bytes = buffer.words2bytes(n_words);
+        bytes+=ifs.tellg();
+        ifs.seekg(long(bytes));
+
+        buffer.reserve_in_words(n_words);
+        assert(buffer.stream!= nullptr);
+        ifs.read((char *)buffer.stream, long(buffer.words2bytes(n_words)));
+    }
+
+    /*void reset_file_to_first_level(std::ifstream &ifs){
+        size_t n_words =  buffer.bits2words(metadata[i+1].n_bits());;
+        buffer.reserve_in_words(n_words);
+        assert(buffer.stream!= nullptr);
+        ifs.read((char *)buffer.stream, long(buffer.words2bytes(n_words)));
+    }*/
 
     void load_next_rule_set(std::ifstream &ifs, size_t i, bitstream<size_t>& buffer){
         size_t n_words =  buffer.bits2words(metadata[i+1].n_bits());;
@@ -158,7 +160,6 @@ struct partial_gram {
 
     size_t serialize_to_fd(int fd){
         assert(lvl==(metadata.size()-1));
-
         write(fd, &text_size, sizeof(size_t));
         write(fd, &txt_id, sizeof(size_t));
         write(fd, &max_tsym, sizeof(size_t));
@@ -166,7 +167,8 @@ struct partial_gram {
         write(fd, &lvl, sizeof(size_t));
         write(fd, &longest_rule, sizeof(size_t));
         write(fd, &longest_str, sizeof(size_t));
-        size_t written_bytes = 7*sizeof(size_t);
+        write(fd, &par_seed, sizeof(uint64_t));
+        size_t written_bytes = 8*sizeof(size_t);
 
         write(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));
         written_bytes += metadata.size()*sizeof(lvl_metadata_type);
@@ -188,7 +190,8 @@ struct partial_gram {
         read(fd, &lvl, sizeof(size_t));
         read(fd, &longest_rule, sizeof(size_t));
         read(fd, &longest_str, sizeof(size_t));
-        size_t read_bytes = 7*sizeof(size_t);
+        read(fd, &par_seed, sizeof(uint64_t));
+        size_t read_bytes = 8*sizeof(size_t);
 
         for(size_t i=lvl;i<rules.size();i++){
             rules[i].destroy();
@@ -364,24 +367,16 @@ struct partial_gram {
         destroy_gram();
     }
 
-    size_t space_usage(){
-        size_t n_bytes=0;
-        for(auto & lvl_rules : rules){
-            n_bytes +=lvl_rules.capacity_in_bytes();
-        }
-        n_bytes+=metadata.size()+sizeof(lvl_metadata_type);
-        return n_bytes;
-    }
-
-    size_t gram_size_in_bytes(){
+    [[nodiscard]] size_t gram_size_in_bytes() const {
         size_t n_bits=0;
         for(auto & mt : metadata){
             n_bits +=mt.n_bits();
         }
+        n_bits += metadata.size()*sizeof(lvl_metadata_type);
         return (INT_CEIL(n_bits, 8));
     }
 
-    void print_stats(){
+    /*void print_stats(){
         for(size_t i=0;i<metadata.size();i++){
             if(i==0){
                 std::cout<<"Number of terminals: "<<metadata[i].tot_symbols<<std::endl;
@@ -391,8 +386,60 @@ struct partial_gram {
                 std::cout<<"Compressed string: number of strings: "<<metadata[i].tot_symbols<<std::endl;
             }
         }
+    }*/
+
+    void stats(size_t pad) const {
+
+        size_t g = gram_size();
+        size_t s = tot_strings();
+        size_t n = text_size;
+        size_t g_syms = tot_gram_symbols();
+        uint8_t r_bits = sym_width(g_syms);
+        size_t n_ter = max_terminal_symbol()+1;
+        size_t n_nter = g_syms - n_ter;
+        auto g_bytes = INT_CEIL(g * r_bits, 8);
+
+        float comp_ratio = float(n) / float(g_bytes);
+
+        std::string pad_string(pad, ' ');
+        std::cout << pad_string << "Number of compressed symbols:   " << n << " (" << report_space((off_t) n) << ")"<< std::endl;
+        std::cout << pad_string << "Number of compressed strings:   " << s <<std::endl;
+        std::cout << pad_string << "Separator symbol:               " << (int) sep_tsym << std::endl;
+        std::cout << pad_string << "Number of terminals:            " << n_ter << std::endl;
+        std::cout << pad_string << "Number of nonterminals:        " << n_nter<< std::endl;
+        std::cout << pad_string << "Grammar size:                   " << g <<std::endl;
+        std::cout << pad_string << "Space usage partial grammar:    " << report_space((off_t) gram_size_in_bytes())<< std::endl;
+        std::cout << pad_string << "Approx. compression ratio:      " << comp_ratio << std::endl;
+    }
+
+    void breakdown(size_t pad) {
+        std::cout<<"Breakdown of the partial gram"<<std::endl;
+        stats(pad);
+        std::string pad_string(pad, ' ');
+        size_t n_rules;
+        std::cout << pad_string << "Grammar rules per level" << std::endl;
+        for (size_t i = 0; i < metadata.size() - 1; i++) {
+            n_rules = metadata[i].n_rules;
+            if (n_rules > 0) {
+                std::cout << pad_string << "  Level " << (i + 1) << ": number of rules: " << n_rules << std::endl;
+            }
+        }
     }
 };
+
+uint64_t get_par_seed_par_gram(std::string& p_gram_file){
+    partial_gram<uint8_t> p_gram;
+    std::ifstream ifs(p_gram_file);
+    p_gram.load_metadata(ifs);
+    return p_gram.par_seed;
+}
+
+void get_breakdown(std::string& p_gram_file){
+    partial_gram<uint8_t> p_gram;
+    std::ifstream ifs(p_gram_file);
+    p_gram.load_metadata(ifs);
+    p_gram.breakdown(2);
+}
 
 template<class stream_type>
 inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
