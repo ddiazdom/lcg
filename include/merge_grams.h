@@ -119,8 +119,8 @@ void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_
 }
 
 template<class p_gram_type>
-void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::string& p_gram_b_file, std::string& p_gram_c_file,
-                                              std::vector<uint64_t>& fp_seeds) {
+void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::string& p_gram_b_file,
+                                              std::string& p_gram_c_file, std::vector<uint64_t>& fp_seeds) {
 
     p_gram_type p_gram_a, p_gram_b;
     std::ifstream ifs_a(p_gram_a_file, std::ios::binary);
@@ -131,9 +131,7 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
     assert(p_gram_a.par_seed == p_gram_b.par_seed);
 
     size_t longest_rule = std::max(p_gram_a.longest_rule, p_gram_b.longest_rule);
-
     merge_data_t mg_data;
-
     //in the first level, tot_symbols represents the alphabet of terminals
     mg_data.initialize(p_gram_a.metadata[0].tot_symbols, sizeof(typename p_gram_type::sym_type), fp_seeds[0], longest_rule);
 
@@ -144,34 +142,9 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
 
     bitstream<size_t> rules_buffer_a;
     bitstream<size_t> rules_buffer_b;
-
-    //pointer to the grammar with the least number of levels
-    p_gram_type *st_gram = nullptr;
-    std::vector<uint32_t> *st_gram_map = nullptr;
-    bitstream<size_t> *st_rules_buffer=nullptr;
-
-    if(p_gram_a.lvl<p_gram_b.lvl){
-        st_gram = &p_gram_a;
-        st_gram_map = &mg_data.map_a;
-        st_rules_buffer = &rules_buffer_a;
-    } else if(p_gram_b.lvl<p_gram_a.lvl) {
-        st_gram = &p_gram_b;
-        st_gram_map = &mg_data.map_b;
-        st_rules_buffer = &rules_buffer_b;
-    }
-
-    //we will move the compressed string to the back
-    if(st_gram!=nullptr){
-        st_gram->rules.resize(max_lvl+1);
-        st_gram->metadata.resize(max_lvl+2);
-        st_gram->rules[min_lvl].swap(st_gram->rules[max_lvl]);
-        st_gram->lvl = st_gram->rules.size();
-        //+1 because the first element is the terminals' metadata
-        std::swap(st_gram->metadata[min_lvl+1], st_gram->metadata[max_lvl+1]);
-    }
-
     lvl_metadata_type buffer_metadata;
     p_gram_a.rules.resize(max_lvl+1);
+
 
     size_t i=0;
     while(i<min_lvl) {
@@ -186,14 +159,61 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
         mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
     }
 
-    //TODO: fix this part
-    while(i<max_lvl){
-        if(i>=min_lvl && i<max_lvl){
-            assert(st_gram!=nullptr);
-            create_fake_level_se(*st_gram, st_rules_buffer, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+    if(min_lvl!=max_lvl){
+
+        //pointer to the grammar with the least number of levels
+        p_gram_type *st_gram;
+        std::vector<uint32_t> *st_gram_map;
+        bitstream<size_t> *st_rules_buffer;
+        std::ifstream * st_ifs;
+
+        p_gram_type *ht_gram;
+        bitstream<size_t> *ht_rules_buffer;
+        std::ifstream * ht_ifs;
+
+        if(p_gram_a.lvl<p_gram_b.lvl){
+            st_gram = &p_gram_a;
+            st_gram_map = &mg_data.map_a;
+            st_rules_buffer = &rules_buffer_a;
+            st_ifs = &ifs_a;
+
+            ht_gram = &p_gram_b;
+            ht_rules_buffer = &rules_buffer_b;
+            ht_ifs = &ifs_b;
+        } else {
+            st_gram = &p_gram_b;
+            st_gram_map = &mg_data.map_b;
+            st_rules_buffer = &rules_buffer_b;
+            st_ifs = &ifs_b;
+
+            ht_gram = &p_gram_a;
+            ht_rules_buffer = &rules_buffer_a;
+            ht_ifs = &ifs_a;
         }
+
+        //we will move the compressed string to the back
+        st_gram->rules.resize(max_lvl+1);
+        st_gram->metadata.resize(max_lvl+2);
+        //st_gram->rules[min_lvl].swap(st_gram->rules[max_lvl]);
+        st_gram->load_next_rule_set(*st_ifs, i, st_gram->rules[max_lvl]);
+        st_gram->lvl = st_gram->rules.size();
+        //+1 because the first element is the terminals' metadata
+        std::swap(st_gram->metadata[min_lvl+1], st_gram->metadata[max_lvl+1]);
+
+        while(i<max_lvl){
+            create_fake_level_se(*st_gram, *st_rules_buffer, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+            ht_gram->load_next_rule_set(*ht_ifs, i, *ht_rules_buffer);
+
+            buffer_metadata = merge_level(rules_buffer_a, p_gram_a.metadata[i+1],
+                                          rules_buffer_b, p_gram_b.metadata[i+1],
+                                          fp_seeds[i+1], mg_data);
+            i++;
+            p_gram_a.metadata[i] = buffer_metadata;
+            mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
+        }
+
+        ht_gram->load_next_rule_set(*ht_ifs, i, ht_gram->rules[max_lvl]);
     }
-    //
 
     p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
                                                        p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
@@ -542,7 +562,7 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
 }
 
 template<class gram_type>
-void create_fake_level_se(gram_type& p_gram, bitstream<size_t>* buffer, size_t new_lvl, std::vector<uint64_t>& prev_fps,
+void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t new_lvl, std::vector<uint64_t>& prev_fps,
                           uint64_t fp_seed, std::vector<uint32_t>& mt_map){
 
     // new_level is to the previous level in the metadata because
