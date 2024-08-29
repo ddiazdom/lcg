@@ -119,8 +119,8 @@ void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_
 }
 
 template<class p_gram_type>
-void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::string& p_gram_b_file,
-                                              std::string& p_gram_c_file, std::vector<uint64_t>& fp_seeds) {
+void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gram_b_file,
+                                   std::string& p_gram_c_file, std::vector<uint64_t>& fp_seeds) {
 
     p_gram_type p_gram_a, p_gram_b;
     std::ifstream ifs_a(p_gram_a_file, std::ios::binary);
@@ -145,7 +145,6 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
     lvl_metadata_type buffer_metadata;
     p_gram_a.rules.resize(max_lvl+1);
 
-
     size_t i=0;
     while(i<min_lvl) {
         p_gram_a.load_next_rule_set(ifs_a, i, rules_buffer_a);
@@ -157,16 +156,43 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
         i++;
         p_gram_a.metadata[i] = buffer_metadata;
         mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
+
+        //todo testing space
+        size_t tmp_bytes = rules_buffer_a.capacity_in_bytes();
+        tmp_bytes+=rules_buffer_b.capacity_in_bytes();
+        tmp_bytes+=mg_data.map_a.size()*sizeof(uint32_t);
+        tmp_bytes+=mg_data.map_b.size()*sizeof(uint32_t);
+        tmp_bytes+=mg_data.buffer.capacity_in_bytes();
+        for(size_t u=0;u<i;u++){
+            tmp_bytes+=p_gram_a.rules[u].capacity_in_bytes();
+        }
+        tmp_bytes+=mg_data.fps.size()*sizeof(uint64_t);
+        //
+        std::cout<<report_space((off_t)tmp_bytes)<<std::endl;
     }
+    //NOTE: now p_gram_a.rules[min_lvl] or p_gram_b.rules[min_lvl] contains the concatenated strings, and we do not merge them
 
-    if(min_lvl!=max_lvl){
+    if(min_lvl==max_lvl){
 
-        //pointer to the grammar with the least number of levels
+        //grammars have the same height, not need to deal with different heights.
+        //just read load the concatenated strings from disk, update their symbols and concatenate them
+        p_gram_a.load_next_rule_set(ifs_a, i, rules_buffer_a);
+        p_gram_b.load_next_rule_set(ifs_b, i, rules_buffer_b);
+
+        p_gram_a.metadata[max_lvl+1] = concatenate_strings(rules_buffer_a, p_gram_a.metadata[max_lvl+1],
+                                                           rules_buffer_b, p_gram_b.metadata[max_lvl+1],
+                                                           mg_data);
+        mg_data.buffer.copy(p_gram_a.metadata[max_lvl+1].n_bits(), p_gram_a.rules[max_lvl]);
+    } else {
+        //grammars have different heights, we need to deal with this
+
+        //pointers for the shortest grammar
         p_gram_type *st_gram;
         std::vector<uint32_t> *st_gram_map;
         bitstream<size_t> *st_rules_buffer;
         std::ifstream * st_ifs;
 
+        //pointers for the tallest grammar
         p_gram_type *ht_gram;
         bitstream<size_t> *ht_rules_buffer;
         std::ifstream * ht_ifs;
@@ -191,12 +217,10 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
             ht_ifs = &ifs_a;
         }
 
-        //we will move the compressed string to the back
-        st_gram->rules.resize(max_lvl+1);
-        st_gram->metadata.resize(max_lvl+2);
-        //st_gram->rules[min_lvl].swap(st_gram->rules[max_lvl]);
+        //we will move the concatenated strings to the last level, because we need to update them in each round
+        st_gram->rules.resize(max_lvl+1);//+1 because max_lvl does not consider the concatenated strings
+        st_gram->metadata.resize(max_lvl+2);//+2 because max_lvl does not consider the concat. strings and the terminals metadata
         st_gram->load_next_rule_set(*st_ifs, i, st_gram->rules[max_lvl]);
-        st_gram->lvl = st_gram->rules.size();
         //+1 because the first element is the terminals' metadata
         std::swap(st_gram->metadata[min_lvl+1], st_gram->metadata[max_lvl+1]);
 
@@ -212,15 +236,20 @@ void merge_two_partial_grammars_semi_external(std::string& p_gram_a_file, std::s
             mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
         }
 
-        ht_gram->load_next_rule_set(*ht_ifs, i, ht_gram->rules[max_lvl]);
+        ht_gram->load_next_rule_set(*ht_ifs, i, *ht_rules_buffer);
+
+        if(st_gram==&p_gram_b){
+            p_gram_a.metadata[max_lvl+1] = concatenate_strings(rules_buffer_a, p_gram_a.metadata[max_lvl+1],
+                                                               p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
+                                                               mg_data);
+        }else{
+            p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
+                                                               rules_buffer_b, p_gram_b.metadata[max_lvl+1],
+                                                               mg_data);
+        }
+
+        mg_data.buffer.copy(p_gram_a.metadata[max_lvl+1].n_bits(), p_gram_a.rules[max_lvl]);
     }
-
-    p_gram_a.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
-                                                       p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
-                                                       mg_data);
-    //p_gram_a.rules[max_lvl].swap(mg_data.buffer);
-    mg_data.buffer.copy(p_gram_a.metadata[max_lvl+1].n_bits(), p_gram_a.rules[max_lvl]);
-
     p_gram_a.lvl = p_gram_a.metadata.size()-1;
     p_gram_a.text_size += p_gram_b.text_size;
     p_gram_a.longest_rule = longest_rule;
@@ -238,11 +267,18 @@ void merge_gramms(std::vector<std::string>& grams_to_merge, std::string& merged_
         par_seeds[i] = distrib(gen);
     }
 
-    merge_two_partial_grammars_semi_external<partial_gram<uint8_t>>(grams_to_merge[0], grams_to_merge[1], merged_grammar, par_seeds);
+    std::cout << "Merged grammars: " <<0<<"/"<<grams_to_merge.size()<<std::flush;
+    merge_two_partial_grammars_se<partial_gram<uint8_t>>(grams_to_merge[0], grams_to_merge[1], merged_grammar,
+                                                         par_seeds);
+    std::cout << "\r" << "Merged grammars: " <<2<<"/"<<grams_to_merge.size()<<std::flush;
     for(size_t i=2;i<grams_to_merge.size();i++){
-        merge_two_partial_grammars_semi_external<partial_gram<uint8_t>>(merged_grammar, grams_to_merge[i], merged_grammar, par_seeds);
+        merge_two_partial_grammars_se<partial_gram<uint8_t>>(merged_grammar, grams_to_merge[i], merged_grammar,
+                                                             par_seeds);
+        std::cout << "\r" << "Merged grammars: " <<(i+1)<<"/"<<grams_to_merge.size()<<std::flush;
     }
+    std::cout<<""<<std::endl;
     get_breakdown(merged_grammar);
+    std::cout<<"The resulting grammar was stored in "<<merged_grammar<<std::endl;
 }
 
 template<class stream_type>
@@ -565,7 +601,7 @@ template<class gram_type>
 void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t new_lvl, std::vector<uint64_t>& prev_fps,
                           uint64_t fp_seed, std::vector<uint32_t>& mt_map){
 
-    // new_level is to the previous level in the metadata because
+    // new_level is new_lvl+1 in the metadata because
     // the first element of the metadata vector has the terminal alphabet
     p_gram.metadata[new_lvl+1].sym_width = sym_width(p_gram.metadata[new_lvl].n_rules)+1;
     p_gram.metadata[new_lvl+1].n_rules = p_gram.metadata[new_lvl].n_rules;
@@ -573,7 +609,6 @@ void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t n
     p_gram.metadata[new_lvl+1].terminals = false;
 
     assert((p_gram.metadata[new_lvl+1].n_rules+1) == mt_map.size());
-
     buffer.reserve_in_bits(p_gram.metadata[new_lvl+1].n_bits());
 
     std::vector<std::tuple<uint64_t, uint64_t, uint32_t>> perm(mt_map.size());
@@ -604,7 +639,7 @@ void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t n
     }
     assert(pos==p_gram.metadata[new_lvl+1].n_bits());
 
-    //update the compressed string
+    //update the compressed strings
     size_t last_lvl = p_gram.rules.size()-1;
     pos = 0;
     width = p_gram.metadata[last_lvl+1].sym_width;

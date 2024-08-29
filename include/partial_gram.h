@@ -402,14 +402,15 @@ struct partial_gram {
         float comp_ratio = float(n) / float(g_bytes);
 
         std::string pad_string(pad, ' ');
-        std::cout << pad_string << "Number of compressed symbols:   " << n << " (" << report_space((off_t) n) << ")"<< std::endl;
-        std::cout << pad_string << "Number of compressed strings:   " << s <<std::endl;
-        std::cout << pad_string << "Separator symbol:               " << (int) sep_tsym << std::endl;
-        std::cout << pad_string << "Number of terminals:            " << n_ter << std::endl;
-        std::cout << pad_string << "Number of nonterminals:        " << n_nter<< std::endl;
-        std::cout << pad_string << "Grammar size:                   " << g <<std::endl;
-        std::cout << pad_string << "Space usage partial grammar:    " << report_space((off_t) gram_size_in_bytes())<< std::endl;
-        std::cout << pad_string << "Approx. compression ratio:      " << comp_ratio << std::endl;
+        std::cout << pad_string << "Parsing seed:                 " << par_seed<<std::endl;
+        std::cout << pad_string << "Number of compressed symbols: " << n << " (" << report_space((off_t) n) << ")"<< std::endl;
+        std::cout << pad_string << "Number of compressed strings: " << s <<std::endl;
+        std::cout << pad_string << "Separator symbol:             " << (int) sep_tsym << std::endl;
+        std::cout << pad_string << "Number of terminals:          " << n_ter << std::endl;
+        std::cout << pad_string << "Number of nonterminals:       " << n_nter<< std::endl;
+        std::cout << pad_string << "Grammar size:                 " << g <<std::endl;
+        std::cout << pad_string << "Space usage partial grammar:  " << report_space((off_t) gram_size_in_bytes())<< std::endl;
+        std::cout << pad_string << "Approx. compression ratio:    " << comp_ratio << std::endl;
     }
 
     void breakdown(size_t pad) {
