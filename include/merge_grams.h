@@ -6,6 +6,7 @@
 #define LCG_MERGE_GRAMS_H
 
 #include "partial_gram.h"
+#include "malloc_count.h"
 
 struct merge_data_t{
 
@@ -168,8 +169,9 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
         }
         tmp_bytes+=mg_data.fps.size()*sizeof(uint64_t);
         //
-        std::cout<<report_space((off_t)tmp_bytes)<<std::endl;
+        std::cout<<report_space((off_t)tmp_bytes)<<" "<<malloc_count_peak()<<std::endl;
     }
+
     //NOTE: now p_gram_a.rules[min_lvl] or p_gram_b.rules[min_lvl] contains the concatenated strings, and we do not merge them
 
     if(min_lvl==max_lvl){
@@ -250,10 +252,18 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
 
         mg_data.buffer.copy(p_gram_a.metadata[max_lvl+1].n_bits(), p_gram_a.rules[max_lvl]);
     }
+
     p_gram_a.lvl = p_gram_a.metadata.size()-1;
     p_gram_a.text_size += p_gram_b.text_size;
     p_gram_a.longest_rule = longest_rule;
     store_to_file(p_gram_c_file, p_gram_a);
+
+    //destroy buffers
+    rules_buffer_a.destroy();
+    rules_buffer_b.destroy();
+#ifdef __linux__
+    malloc_trim(0);
+#endif
 }
 
 void merge_gramms(std::vector<std::string>& grams_to_merge, std::string& merged_grammar){
