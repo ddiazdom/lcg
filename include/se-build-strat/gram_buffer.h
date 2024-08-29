@@ -6,7 +6,15 @@
 #define SE_STRAT_GRAM_BUFFER_H
 
 #include "cds/file_streams.hpp"
-#include "../old/hashing.h"
+//#include "../old/hashing.h"
+
+struct rand_order{
+    size_t str_ptr;
+    size_t str_len;
+    size_t hash;
+    size_t orig_order;
+};
+
 
 struct lc_gram_buffer_t{
 

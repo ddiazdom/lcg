@@ -160,14 +160,22 @@ struct partial_gram {
 
     size_t serialize_to_fd(int fd){
         assert(lvl==(metadata.size()-1));
-        write(fd, &text_size, sizeof(size_t));
-        write(fd, &txt_id, sizeof(size_t));
-        write(fd, &max_tsym, sizeof(size_t));
-        write(fd, &sep_tsym, sizeof(size_t));
-        write(fd, &lvl, sizeof(size_t));
-        write(fd, &longest_rule, sizeof(size_t));
-        write(fd, &longest_str, sizeof(size_t));
-        write(fd, &par_seed, sizeof(uint64_t));
+        size_t wbytes = write(fd, &text_size, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &txt_id, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &max_tsym, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &sep_tsym, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &lvl, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &longest_rule, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &longest_str, sizeof(size_t));
+        assert(wbytes>0);
+        wbytes = write(fd, &par_seed, sizeof(uint64_t));
+        assert(wbytes>0);
         size_t written_bytes = 8*sizeof(size_t);
 
         write(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));

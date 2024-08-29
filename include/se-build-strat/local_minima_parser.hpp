@@ -5,6 +5,7 @@
 #ifndef SE_STRAT_LOCAL_MINIMA_PARSER_HPP
 #define SE_STRAT_LOCAL_MINIMA_PARSER_HPP
 
+#include <algorithm>
 #include "text_handler.h"
 #include "cds/utils.h"
 #include "cds/int_decoders.h"

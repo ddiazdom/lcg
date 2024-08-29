@@ -1312,7 +1312,7 @@ struct lc_gram_t {
         std::random_device rd;
         std::mt19937 gen(par_seed);
         std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
-        for(unsigned long long & seed : p_seeds){
+        for(uint64_t & seed : p_seeds){
             seed = distrib(gen);
         }
         return p_seeds;
