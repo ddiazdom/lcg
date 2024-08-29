@@ -34,5 +34,5 @@ endif()
 target_include_directories(lcg PUBLIC include external/xxHash-dev external/malloc_count)
 
 add_executable(test_gram test_gram_functions.cpp external/xxHash-dev/xxhash.c lib/cdt_common.cpp lib/utils.cpp)
-target_include_directories(test_gram PRIVATE external/xxHash-dev include)
+target_include_directories(test_gram PRIVATE include external/xxHash-dev external/malloc_count)
 
