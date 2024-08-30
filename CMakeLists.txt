@@ -14,7 +14,7 @@ set(SOURCE_FILES main.cpp
 # Add executable target with source files listed in SOURCE_FILES variable
 add_executable(lcg ${SOURCE_FILES})
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
-        -O3
+        #-O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -25,7 +25,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(lcg PUBLIC -march=native)
 endif()
 
-target_link_libraries(lcg LINK_PUBLIC pthread)
+target_link_libraries(lcg LINK_PUBLIC pthread dl)
 #for the file_system functionality on Linux
 if(UNIX AND NOT APPLE)
         target_link_libraries(lcg LINK_PUBLIC stdc++fs)
@@ -40,4 +40,4 @@ add_executable(test_gram
         lib/cdt_common.cpp lib/utils.cpp
 )
 target_include_directories(test_gram PRIVATE include external/xxHash-dev external/malloc_count)
-
+target_link_libraries(test_gram LINK_PUBLIC dl)

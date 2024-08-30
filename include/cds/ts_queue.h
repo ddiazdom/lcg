@@ -47,7 +47,7 @@ public:
                     return false;
                 }else{
                     q_lock.clear(std::memory_order_release);
-                    std::this_thread::yield();
+                    //std::this_thread::yield();
                 }
             }
         }

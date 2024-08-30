@@ -73,7 +73,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
-    comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support to the grammar");
+    comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support for the grammar");
     comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);

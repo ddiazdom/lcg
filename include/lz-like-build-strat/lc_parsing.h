@@ -8,7 +8,7 @@
 #include <random>
 #include <fcntl.h>
 #include <cstring>
-#include "../external/xxHash-dev/xxhash.h"
+#include "xxhash.h"
 
 #include "cds/macros.h"
 #include "cds/ts_queue.h"
@@ -90,9 +90,9 @@ namespace lz_like_strat {
         off_t prev_pos=0, tot_phrases=off_t(perm.size());
         off_t n_cols =0;
         for(off_t i=1; i<tot_phrases; i++){
+
             if(prev_hash!=perm[i].second){
                 if((i-prev_pos)>1){
-
                     n_cols +=(i-prev_pos);
                     std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     //TODO testing
