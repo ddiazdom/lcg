@@ -17,6 +17,10 @@ struct lvl_metadata_type{
     [[nodiscard]] inline size_t n_bits() const {
         return tot_symbols*sym_width;
     }
+
+    [[nodiscard]] inline size_t uint32_bytes() const {
+        return tot_symbols*4;
+    }
 };
 
 struct str_perm_val{
@@ -179,6 +183,7 @@ struct partial_gram {
             write(fd, rules[i].stream,  rules[i].words2bytes(n_words));
             written_bytes += rules[i].words2bytes(n_words);
         }
+
         return written_bytes;
     }
 
@@ -342,6 +347,14 @@ struct partial_gram {
         return g_size;
     }
 
+    [[nodiscard]] inline size_t gram_uint32_bytes() const {
+        size_t bytes=0;
+        for(const auto & i : metadata){
+            bytes+=i.uint32_bytes();
+        }
+        return bytes;
+    }
+
     [[nodiscard]] inline size_t tot_gram_symbols() const {
         size_t n_rules=0;
         for(const auto & i : metadata){
@@ -448,27 +461,26 @@ void get_breakdown(std::string& p_gram_file){
 template<class stream_type>
 inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
                           std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map, size_t fp_seed,
-                          std::vector<uint64_t>& phrase_fp_buff, std::vector<uint64_t>& phrase_buff,
+                          std::vector<uint64_t>& fp_seq, std::vector<uint32_t>& phrase,
                           uint64_t& fp, size_t& len){
     size_t sym;
     len=0;
 
     do{
         sym = rule_stream.read(pos, pos+width-1);
-        size_t tmp = sym>>1UL;
-        //assert(tmp<mt_map.size());
-        tmp = mt_map[tmp];
-        //assert(tmp<prev_fps.size());
-        phrase_buff[len] = tmp;
-        phrase_fp_buff[len] = prev_fps[tmp];
+        phrase[len] = mt_map[sym>>1UL];
         pos+=width;
         len++;
     } while(!(sym & 1UL));
 
-    fp = XXH64(phrase_fp_buff.data(), sizeof(uint64_t)*len, fp_seed);
+    for(size_t i=0;i<len;i++){
+        fp_seq[i] = prev_fps[phrase[i]];
+    }
+
+    fp = XXH64(fp_seq.data(), sizeof(uint64_t)*len, fp_seed);
 }
 
-bool rules_lex_comp(std::vector<uint64_t>& phrase_a, size_t len_a, std::vector<uint64_t>& phrase_b, size_t len_b){
+bool rules_lex_comp(std::vector<uint32_t>& phrase_a, size_t len_a, std::vector<uint32_t>& phrase_b, size_t len_b){
     size_t n_comparisons = std::min(len_a, len_b);
     for(size_t i=0;i<n_comparisons;i++){
         if(phrase_a[i]!=phrase_b[i]){
@@ -479,7 +491,7 @@ bool rules_lex_comp(std::vector<uint64_t>& phrase_a, size_t len_a, std::vector<u
 }
 
 template<class stream_type>
-void append_rule(std::vector<uint64_t>& s_phrase, size_t s_len, size_t& d_pos, size_t d_width, stream_type& dest){
+void append_rule(std::vector<uint32_t>& s_phrase, size_t s_len, size_t& d_pos, size_t d_width, stream_type& dest){
 
     //check the appended rule fits the buffer of merged rules
     size_t min_bits = d_pos+(s_len*d_width);

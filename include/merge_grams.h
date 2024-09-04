@@ -374,8 +374,6 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
     uint8_t m_width = lvl_met_c.sym_width;
     size_t curr_pos_m=0;
 
-    //std::cout<<"Buffer: "<<report_space(mg_data.buffer.capacity_in_bytes())<<" A:"<<report_space(stream_a.capacity_in_bytes())<<" B:"<<report_space(stream_b.capacity_in_bytes())<<std::endl;
-
     mg_data.buffer.reserve_in_bits(std::max(lvl_met_a.n_bits(), lvl_met_b.n_bits()));
 
     std::vector<uint8_t> merge_marks;
@@ -388,14 +386,14 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
     uint8_t a_width = lvl_met_a.sym_width;
     uint8_t b_width = lvl_met_b.sym_width;
 
-    std::vector<uint64_t> phrase_fp_buff(mg_data.longest_rule, 0);
-    std::vector<uint64_t> phrase_a(mg_data.longest_rule, 0);
-    std::vector<uint64_t> phrase_b(mg_data.longest_rule, 0);
+    std::vector<uint64_t> fp_seq(mg_data.longest_rule, 0);
+    std::vector<uint32_t> phrase_a(mg_data.longest_rule, 0);
+    std::vector<uint32_t> phrase_b(mg_data.longest_rule, 0);
 
-    get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, phrase_fp_buff,
+    get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, fp_seq,
                   phrase_a, fp_a, len_a);
     assert(len_a<=mg_data.longest_rule);
-    get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, phrase_fp_buff,
+    get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
                   phrase_b, fp_b, len_b);
     assert(len_b<=mg_data.longest_rule);
 
@@ -422,7 +420,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
             merge_marks.push_back(2);
         } else {
 
-            bool eq = len_a==len_b && (memcmp(phrase_a.data(), phrase_b.data(), len_a*sizeof(uint64_t))==0);
+            bool eq = len_a==len_b && (memcmp(phrase_a.data(), phrase_b.data(), len_a*sizeof(uint32_t))==0);
 
             if(eq){
                 //write rule from A
@@ -462,14 +460,14 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
         }
 
         if((merge_marks.back() & 1) && curr_rule_a<lvl_met_a.n_rules){
-            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, phrase_fp_buff,
+            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, fp_seq,
                           phrase_a, fp_a, len_a);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
 
         if((merge_marks.back() & 2) && curr_rule_b<lvl_met_b.n_rules){
-            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, phrase_fp_buff,
+            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
                           phrase_b, fp_b, len_b);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
@@ -487,7 +485,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
 
         if(curr_rule_a<lvl_met_a.n_rules){
             get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed,
-                          phrase_fp_buff, phrase_a, fp_a, len_a);
+                          fp_seq, phrase_a, fp_a, len_a);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
@@ -503,7 +501,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
         merge_marks.push_back(2);
 
         if(curr_rule_b<lvl_met_b.n_rules){
-            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, phrase_fp_buff,
+            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
                           phrase_b, fp_b, len_b);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
