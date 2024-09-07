@@ -150,6 +150,60 @@ namespace lz_like_strat {
         return n_cols;
     }
 
+    void finish_byte_parse(uint8_t*& text, uint32_t txt_size, off_t& buffer_size,
+                           uint32_t parse_size, lz_like_map<uint8_t>& dict,
+                           off_t &parse_distance, std::vector<uint32_t>& perm,
+                           uint32_t *&parse, std::vector<phrase_overflow>& phr_with_ovf){
+
+        uint32_t mt_sym=1;
+        uint8_t v_len;
+
+        for(auto const& phrase : dict.phrase_set){
+            v_len = vbyte_len(mt_sym);
+            if(v_len<=phrase.len){
+                vbyte_decoder<uint32_t>::write_right2left(&text[phrase.source], mt_sym, v_len);
+                memset(&text[phrase.source+v_len], 0, phrase.len-v_len);
+            }
+            mt_sym++;
+        }
+
+        parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
+        if(parse_distance>buffer_size){
+            text = (uint8_t *)realloc(text, parse_distance);
+            buffer_size = parse_distance;
+        }
+
+        off_t ovf_idx=0, next_ovf=-1;
+        if(!phr_with_ovf.empty()){
+            next_ovf = phr_with_ovf[ovf_idx].right_end();
+        }
+
+        off_t pos = txt_size-1;
+        parse = (uint32_t *)(text+parse_distance);
+        parse--;
+
+        while(pos>=0){
+            if(pos==next_ovf){
+                pos -= phr_with_ovf[ovf_idx].length;
+                *parse = perm[phr_with_ovf[ovf_idx].metasymbol];
+                next_ovf=-1;
+                if(ovf_idx<off_t(phr_with_ovf.size()-1)){
+                    next_ovf = phr_with_ovf[++ovf_idx].right_end();
+                }
+            }  else {
+                pos-=vbyte_decoder<uint32_t>::read_right2left(&text[pos], mt_sym);
+                assert(mt_sym<perm.size());
+                *parse = perm[mt_sym];
+            }
+            parse--;
+            while(pos>next_ovf && text[pos]==0) pos--;
+        }
+        assert(pos==-1);
+        parse++;
+        assert(parse[parse_size-1]==0);
+        assert((uintptr_t)text<= (uintptr_t)parse && (uintptr_t)parse<= (uintptr_t)&text[txt_size-1]);
+    }
+
     // this method parses the text and store the parse in the text itself.
     // It only works for parsing rounds other than the first one because the length of symbol each
     // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
@@ -294,14 +348,10 @@ namespace lz_like_strat {
         off_t txt_pos = txt_size-1, parse_size = 0, lb, rb;
         lz_like_map map(text);
         uint32_t phrase_len;
-        //off_t longest_str = 0, str_len, prev_sep_sym=txt_pos;
 
         off_t parse_distance=0, offset;
         std::vector<phrase_overflow> phr_with_ovf;
         uint8_t v_len;
-
-        //std::vector<std::pair<uint32_t, uint32_t>> breaks;
-        //std::cout<<int(text[txt_pos])<<std::endl;
 
         bool inserted;
         n_strings = 0;
@@ -314,8 +364,6 @@ namespace lz_like_strat {
             parse_distance = offset>parse_distance ? offset : parse_distance ;
 
             text[txt_pos] = 128;//vbyte code for 0 (the separator symbol in the next levels)
-            //breaks.emplace_back(txt_pos, parse_size);
-
             parse_size++;
             n_strings++;
 
@@ -460,6 +508,7 @@ namespace lz_like_strat {
 
         std::vector<uint32_t> perm;
         create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+        //finish_byte_parse(text, txt_size, buffer_size, parse_size, map, parse_distance, perm, parse, phr_with_ovf);
 
         mt_sym=1;
         for(auto const& phrase : map.phrase_set){
@@ -657,7 +706,7 @@ namespace lz_like_strat {
             while (rem_bytes > 0) {
                 buffers_to_reuse.pop(buff_id);
                 size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
-                std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
+                std::cout<<"\r  "<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<" (speed: "<<report_speed(text_chunks[buff_id].text_bytes, text_chunks[buff_id].t_start, text_chunks[buff_id].t_end)<<", ratio: )"<<std::endl;
 #ifdef __linux__
                w_page_cache_bytes += g_bytes;
                    if(w_page_cache_bytes>p_opts.page_cache_limit){
@@ -670,7 +719,9 @@ namespace lz_like_strat {
                 text_chunks[buff_id].p_gram.reset_grammar();
 
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
-                std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"    "<<rem_bytes<<std::endl;
+                std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
+                std::cout << "\033[F\033[F";
+
 
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
                 text_chunks[buff_id].id = chunk_id++;
@@ -743,9 +794,11 @@ namespace lz_like_strat {
                     break;
                 }
                 assert(text_chunks[buff_id].text_bytes > 0);
+
+                text_chunks[buff_id].t_start = std::chrono::steady_clock::now();
                 compress_text_chunk<sym_type>(text_chunks[buff_id], p_opts.p_seeds);
                 memset(text_chunks[buff_id].text, 0, text_chunks[buff_id].buffer_bytes);
-
+                text_chunks[buff_id].t_end = std::chrono::steady_clock::now();
                 buffers_to_reuse.push(buff_id);
             }
         };

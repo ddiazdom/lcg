@@ -451,6 +451,36 @@ uint64_t get_par_seed_par_gram(std::string& p_gram_file){
     return p_gram.par_seed;
 }
 
+size_t vbyte_size(partial_gram<uint8_t>& p_gram){
+
+    size_t pos, n_bits;
+    uint8_t width;
+    uint32_t sym;
+    size_t n_bytes=0;
+
+    for(size_t i=0;i<p_gram.lvl;i++) {
+
+        pos = 0;
+        width = p_gram.metadata[i+1].sym_width;
+        n_bits = p_gram.metadata[i+1].n_bits();
+        bool last;
+
+        while(pos<n_bits){
+            sym = p_gram.rules[i].read(pos, pos+width-1);
+            last = sym & 1UL;
+            sym = sym>>1;
+            n_bytes+= vbyte_len(sym);
+            pos+=width;
+
+            if(last){
+                n_bytes++;
+            }
+        }
+        assert(pos==n_bits);
+    }
+    return n_bytes;
+}
+
 void get_breakdown(std::string& p_gram_file){
     partial_gram<uint8_t> p_gram;
     std::ifstream ifs(p_gram_file);

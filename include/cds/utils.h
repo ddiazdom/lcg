@@ -133,6 +133,37 @@ void report_time(time_t start, time_t end, size_t padding){
     }
 }
 
+template<class time_t>
+std::string report_speed(off_t bytes, time_t start, time_t end){
+
+    auto dur = end - start;
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(dur);
+    std::vector<std::string> byte_units = {"B", "KB", "MB", "GB", "TB"};
+    std::vector<std::string> time_units = {"us", "ms", "s", "min", "h"};
+
+    float byte_scale = 1024.0;
+    std::vector<float> time_scales = {1000, 1000, 60, 60, 24};
+
+    auto b = (float) bytes;
+    size_t byte_unit_index =0;
+    while(b >= byte_scale && byte_unit_index < (byte_units.size()-1)){
+        b /= byte_scale;
+        byte_unit_index += 1;
+    }
+
+    auto t = (float) us.count();
+    size_t time_unit_index=0;
+    while(t >= time_scales[time_unit_index] && time_unit_index < (time_scales.size()-1)){
+        t /= time_scales[time_unit_index++];
+    }
+
+    float speed = b/t;
+
+    std::ostringstream result;
+    result <<std::fixed << std::setprecision(2) << speed<< " " << byte_units[byte_unit_index] << "/" << time_units[time_unit_index];
+    return result.str();
+}
+
 std::string report_space(off_t bytes);
 
 void report_mem_peak();

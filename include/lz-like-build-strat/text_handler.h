@@ -30,6 +30,9 @@ namespace lz_like_strat {
        //todo make it compatible with uint16_t
        partial_gram<uint8_t> p_gram;
 
+       std::chrono::steady_clock::time_point t_start;
+       std::chrono::steady_clock::time_point t_end;
+
        [[nodiscard]] off_t eff_buff_bytes() const{
            return e_bytes;
        }
