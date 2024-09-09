@@ -61,9 +61,6 @@ namespace lz_like_strat {
             source = phrase_set[i].source;
             end = source + phrase_set[i].len;
             for(size_t j=source;j<end;j++){
-                if constexpr (!p_round){
-                    text[j]>>=1;
-                }
                 assert(text[j]>0);
                 assert(text[j]<prev_fps.size());
                 fp_sequence.push_back(prev_fps[text[j]]);
@@ -142,7 +139,7 @@ namespace lz_like_strat {
         for(size_t i=0, mt_sym=1;i<perm.size();i++, mt_sym++){
             size_t perm_mt_sym =  perm[i].first+1;
             assert(perm_mt_sym<mt_perm.size());
-            mt_perm[perm_mt_sym] = (mt_sym)<<1UL | !phrase_set[perm[i].first].repeated;
+            mt_perm[perm_mt_sym] = mt_sym;
             prev_fps[mt_sym] = perm[i].second;
         }
         prev_fps.shrink_to_fit();
@@ -150,8 +147,8 @@ namespace lz_like_strat {
         return n_cols;
     }
 
-    void finish_byte_parse(uint8_t*& text, uint32_t txt_size, off_t& buffer_size,
-                           uint32_t parse_size, lz_like_map<uint8_t>& dict,
+    void finish_byte_parse(uint8_t*& text, off_t txt_size, off_t& buffer_size,
+                           off_t parse_size, lz_like_map<uint8_t>& dict,
                            off_t &parse_distance, std::vector<uint32_t>& perm,
                            uint32_t *&parse, std::vector<phrase_overflow>& phr_with_ovf){
 
@@ -169,7 +166,7 @@ namespace lz_like_strat {
 
         parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
         if(parse_distance>buffer_size){
-            text = (uint8_t *)realloc(text, parse_distance);
+            text = (uint8_t *)mmap_reallocate(text, buffer_size, parse_distance);
             buffer_size = parse_distance;
         }
 
@@ -204,125 +201,189 @@ namespace lz_like_strat {
         assert((uintptr_t)text<= (uintptr_t)parse && (uintptr_t)parse<= (uintptr_t)&text[txt_size-1]);
     }
 
+    //this function scans a text with a byte alphabet from right to left and parses it according its randomized LMS phrases.
+    // we perform the parsing in place, meaning that we store the parse in directly in the input text reinterpreted as an unit32_t sequence.
+    // this strategy is space-efficient but challenging to implement because the metasymbol mt we assign to a phrase F could use more bytes
+    // if n_bytes(F)>4 and 4<=n_bytes(mt)> n_bytes(F). We encode the metasymbols using vbyte encoding and those codes not fitting their phrases are treated as
+    // with overflow and handled separately
+    //Parameters:
+    // text: text to be parsed
+    // txt_size: number of symbols in the text
+    // buffer_size: number of bytes for the buffer containing the text
+    // parse: uin32_t pointer that will point to the resulting parsing
+    // n_strings: number of strings in text. It will be filled during the parsing
+    // sep_sym: byte symbol in text representing the sentinel separating the strings
+    // fp_seed: integer that we use as seed to create fingerprints for the phrases resulted from the parse
+    // prev_fps: the fingerprints for the alphabet symbols that we use to compute the parsing breaks
+    // p_gram: partial gram that will store the set of phrases resulted from the parsing
+    off_t byte_par_r2l(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
+                       off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                       std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
+
+        off_t parse_size, lb, rb = txt_size-1, i=txt_size-2, max_byte_offset, byte_offset;
+        uint8_t v_len;
+        lz_like_map dict(text);
+        assert(text[i+1]==sep_sym && text[i]>text[i+1]);
+
+        text[rb] = 128;//the vbyte code of the metasymbol mt=0 representing a separator in the next round of parsing
+        n_strings=1;
+        parse_size=1;
+        max_byte_offset=4;
+
+        //given a phrase T[a..b-1], byte_offset tells the number of bytes (4 per mt) used by the metasymbols after T[b-1].
+        //This value defines the new size for text, now with the parse
+        //max_byte_offset tells the maximum offset
+
+        std::vector<phrase_overflow> phr_with_ovf;
+        bool r_cmp = true, l_cmp, inserted, new_str;
+        uint32_t mt_sym, phrase_len;
+        uint8_t mid_sym = text[i];
+        while(--i>0 && text[i]==mid_sym);
+
+        while(i>=0){
+            l_cmp = prev_fps[text[i]]>prev_fps[mid_sym];
+            if(l_cmp && !r_cmp){
+                lb = i+1;
+                new_str = mid_sym==sep_sym;
+                lb += new_str;
+                phrase_len=rb-lb;
+
+                byte_offset = rb + (parse_size << 2);
+                max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
+
+                mt_sym = dict.insert(lb, phrase_len, inserted) + 1;
+
+                v_len = vbyte_len(mt_sym);
+                if(__builtin_expect(v_len>phrase_len, 0)){
+                    //metasymbol does not fit its phrase
+                    phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                }else if(!inserted){
+                    vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                    memset(&text[lb+v_len], 0, phrase_len-v_len);
+                }
+
+                parse_size++;
+                rb = i+1;
+                if(new_str){
+                    assert(text[rb]==sep_sym);
+                    text[rb] = 128;//vbyte code for 0 (the separator symbol in the next levels)
+                    n_strings++;
+                    parse_size++;
+                }
+            }
+
+            r_cmp = l_cmp;
+            mid_sym = text[i];
+            while(--i>0 && text[i]==mid_sym);
+        }
+
+        lb = 0;
+        phrase_len=rb-lb;
+        byte_offset = rb + (parse_size << 2);
+        max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
+
+        mt_sym = dict.insert(lb, phrase_len, inserted)+1;
+        v_len = vbyte_len(mt_sym);
+        if(__builtin_expect(v_len>phrase_len, 0)){
+            phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+        }else if(!inserted){
+            vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+            memset(&text[lb+v_len], 0, phrase_len-v_len);
+        }
+        parse_size++;
+
+        dict.shrink_to_fit();
+        dict.destroy_table();
+
+        std::vector<uint32_t> perm;
+        create_meta_sym<uint8_t, true>(perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
+        finish_byte_parse(text, txt_size, buffer_size, parse_size, dict, max_byte_offset, perm, parse, phr_with_ovf);
+        return parse_size;
+    }
+
     // this method parses the text and store the parse in the text itself.
     // It only works for parsing rounds other than the first one because the length of symbol each
     // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
-    off_t int_p_round_fwd(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
-                          std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
+    off_t int_par_l2r(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
+                      std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
 
         uint32_t mt_sym, sep_sym=0;
-        size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
-        off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
-        lz_like_map<uint32_t> map(text);
+        size_t left_sym, middle_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
+        off_t i=0, parse_size = 0, phrase_len, lb, rb;
+        lz_like_map<uint32_t> dict(text);
 
-        bool inserted;
+        bool inserted, new_str;
         n_strings = 0;
         off_t sym_bytes = sizeof(uint32_t);
-        uint32_t n_unique= 0;
 
-        while(txt_pos<txt_size) {
+        lb = 0;
+        left_sym = text[i];
+        while(++i<txt_size && text[i]==left_sym);
+        assert(i<txt_size);
 
-            lb = txt_pos;
-            prev_sym = text[txt_pos++];
-            n_unique+= (prev_sym & 1UL);
+        middle_sym = text[i];
+        rb=i;
+        while(++i<txt_size && text[i]==middle_sym);
 
-            curr_sym = text[txt_pos++];
-            while(curr_sym==prev_sym) curr_sym = text[txt_pos++];
-            rb = txt_pos-1;
+        while(i<txt_size) {
+            if(left_sym>middle_sym && middle_sym<text[i]){//local minimum
 
-            if(curr_sym==sep_sym){
                 phrase_len = rb-lb;
-                mt_sym = map.insert(lb, phrase_len, inserted);
-                assert(text[rb]==sep_sym);
+                mt_sym = dict.insert(lb, phrase_len, inserted);
+
+                //we can not replace the first phrase occurrence as we use it as source for the dictionary
                 if(!inserted){
-                    //we can not replace the first phrase occurrence as we use it as source for the dictionary
                     assert(text[lb]!=dummy_sym);
-                    text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-                }
-                text[rb] = sep_sym;
-                parse_size+=2;//+1 for the separator symbol
-                n_strings++;
-                n_unique=0;
-                continue;
-            }
-
-            next_sym = text[txt_pos++];
-            while(next_sym==curr_sym) next_sym = text[txt_pos++];
-
-            while(next_sym!=sep_sym){
-                uint32_t tmp_p = prev_sym>>1;
-                uint32_t tmp_c = curr_sym>>1;
-                uint32_t tmp_n = next_sym>>1;
-
-                if(tmp_p>tmp_c && tmp_c<tmp_n){//local minimum
-
-                    phrase_len = rb-lb;
-
-                    if(n_unique==0){
-                        mt_sym = map.insert(lb, phrase_len, inserted);
-                        if(!inserted){
-                            //we can not replace the first phrase occurrence as we use it as source for the dictionary
-                            assert(text[lb]!=dummy_sym);
-                            text[lb] = mt_sym+1;
-                            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
-                        }
-                    }else{
-                        map.unhashed_insert(lb, phrase_len);
-                        n_unique=0;
-                    }
-                    parse_size++;
-                    lb = rb;
+                    text[lb] = mt_sym+1;
+                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
                 }
 
-                rb = txt_pos-1;
-                prev_sym = curr_sym;
-                n_unique+= prev_sym & 1UL;
+                new_str = text[rb]==sep_sym;
+                parse_size+=1+new_str;
+                n_strings+=new_str;
 
-                curr_sym = next_sym;
-                next_sym = text[txt_pos++];
-                while(next_sym==curr_sym) next_sym = text[txt_pos++];
+                lb = rb+new_str;
             }
 
-            phrase_len = txt_pos-1-lb;
-            assert(text[lb+phrase_len]==sep_sym);
-            if(n_unique==0){
-                mt_sym = map.insert(lb, phrase_len, inserted);
-                if(!inserted){
-                    //we can not replace the first phrase occurrence as we use it as source for the dictionary
-                    assert(text[lb]!=dummy_sym);
-                    text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-                }
-            }else{
-                map.unhashed_insert(lb, phrase_len);
-                n_unique=0;
-            }
-            text[lb+phrase_len] = sep_sym;
-            parse_size+=2;//+1 for the separator symbol
-            n_strings++;
+            left_sym = middle_sym;
+            middle_sym = text[i];
+            rb = i;
+            while(++i<txt_size && text[i]==middle_sym);
         }
+        assert(rb==(txt_size-1) && text[rb]==sep_sym);
 
-        map.shrink_to_fit();
-        map.destroy_table();
+        phrase_len = rb-lb;
+        mt_sym = dict.insert(lb, phrase_len, inserted);
+        //we can not replace the first phrase occurrence as we use it as source for the dictionary
+        if(!inserted){
+            assert(text[lb]!=dummy_sym);
+            text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
+            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+        }
+        parse_size+=2;//+1 for the separator symbol
+        n_strings++;
 
-        assert(map.phrase_set.size()<dummy_sym);
+        dict.shrink_to_fit();
+        dict.destroy_table();
+
+        assert(dict.phrase_set.size()<dummy_sym);
         std::vector<uint32_t> mt_perm;
-        create_meta_sym<uint32_t, false>(mt_perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+        create_meta_sym<uint32_t, false>(mt_perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
 
         // create the parse in place
-        map.insert_dummy_entry({uint32_t(txt_size), 0, false, false});
-        size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
+        dict.insert_dummy_entry({uint32_t(txt_size), 0, false, false});
+        size_t tot_phrases = dict.phrase_set.size()-1;//do not count the dummy
         mt_sym = 0, lb = 0;
-        off_t i=0, k=0;
+        off_t k=0;
+        i=0;
 
         while(mt_sym<tot_phrases) {
             assert(i==lb);
             text[k++] = mt_perm[mt_sym+1];
-            i+= map.phrase_set[mt_sym].len;//move out of the phrase boundary
+            i+= dict.phrase_set[mt_sym].len;//move out of the phrase boundary
 
             mt_sym++;
-            lb = map.phrase_set[mt_sym].source;//position for the next phrase
+            lb = dict.phrase_set[mt_sym].source;//position for the next phrase
 
             while(i<lb){//process the text area between consecutive phrases
                 assert(text[i]<mt_perm.size());
@@ -336,252 +397,6 @@ namespace lz_like_strat {
         return parse_size;
     }
 
-
-    off_t byte_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
-                           off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                           std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
-
-        size_t prev_sym, curr_sym, next_sym;
-        uint64_t prev_hash, curr_hash, next_hash;
-
-        text_chunk::size_type mt_sym;
-        off_t txt_pos = txt_size-1, parse_size = 0, lb, rb;
-        lz_like_map map(text);
-        uint32_t phrase_len;
-
-        off_t parse_distance=0, offset;
-        std::vector<phrase_overflow> phr_with_ovf;
-        uint8_t v_len;
-
-        bool inserted;
-        n_strings = 0;
-
-        while(txt_pos>0){
-
-            assert(text[txt_pos]==sep_sym);
-
-            offset = txt_pos+1+(parse_size*4);
-            parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-            text[txt_pos] = 128;//vbyte code for 0 (the separator symbol in the next levels)
-            parse_size++;
-            n_strings++;
-
-            rb = txt_pos;
-            prev_sym = text[--txt_pos];
-
-            curr_sym = text[--txt_pos];
-            while(curr_sym==prev_sym && txt_pos>0) curr_sym = text[--txt_pos];
-
-            if(curr_sym==sep_sym){
-                lb = txt_pos+1;
-                phrase_len = rb-lb;
-
-                offset = rb+(parse_size*4);
-                parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-                mt_sym = map.insert(lb, phrase_len, inserted)+1;
-
-                v_len = vbyte_len(mt_sym);
-                if(__builtin_expect(v_len>phrase_len, 0)){
-                    phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                }else if(!inserted){
-                    vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                    memset(&text[lb+v_len], 0, phrase_len-v_len);
-                    //test
-                    //uint32_t tmp;
-                    //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                    //assert(tmp==mt_sym);
-                    //breaks.emplace_back(lb+v_len-1, parse_size);
-                    //
-                }
-                parse_size++;
-                continue;
-            }
-
-            next_sym = text[--txt_pos];
-            while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
-
-            prev_hash = prev_fps[prev_sym];
-            curr_hash = prev_fps[curr_sym];
-
-            bool local_minimum;
-
-            while(next_sym!=sep_sym && txt_pos>0){
-
-                next_hash = prev_fps[next_sym];
-                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
-                if(local_minimum){
-                    lb = txt_pos+1;
-                    phrase_len = rb-lb;
-
-                    offset = rb+(parse_size*4);
-                    parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
-                    v_len = vbyte_len(mt_sym);
-                    if(__builtin_expect(v_len>phrase_len, 0)){
-                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                    }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                        //test
-                        //uint32_t tmp;
-                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                        //assert(tmp==mt_sym);
-                        //breaks.emplace_back(lb+v_len-1, parse_size);
-                        //
-                        memset(&text[lb+v_len], 0, phrase_len-v_len);
-                    }
-                    parse_size++;
-                    rb = lb;
-                }
-
-                prev_hash = curr_hash;
-                curr_hash = next_hash;
-
-                curr_sym = next_sym;
-                next_sym = text[--txt_pos];
-                while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
-            }
-
-            if(txt_pos==0){
-                next_hash = prev_fps[next_sym];
-                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
-                if(local_minimum){
-                    lb = txt_pos+1;
-                    phrase_len = rb-lb;
-
-                    offset = rb+(parse_size*4);
-                    parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
-                    v_len = vbyte_len(mt_sym);
-                    if(__builtin_expect(v_len>phrase_len, 0)){
-                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                    }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                        memset(&text[lb+v_len], 0, phrase_len-v_len);
-                        //test
-                        //uint32_t tmp;
-                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                        //assert(tmp==mt_sym);
-                        //breaks.emplace_back(lb+v_len-1, parse_size);
-                        //
-                    }
-                    parse_size++;
-                    rb = lb;
-                }
-                lb = 0;
-            }else{
-                lb=txt_pos+1;
-            }
-
-            phrase_len = rb-lb;
-
-            offset = rb+(parse_size*4);
-            parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-            mt_sym = map.insert(lb, phrase_len, inserted)+1;
-            v_len = vbyte_len(mt_sym);
-            if(__builtin_expect(v_len>phrase_len, 0)){
-                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-            }else if(!inserted){
-                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                memset(&text[lb+v_len], 0, phrase_len-v_len);
-                //test
-                //uint32_t tmp;
-                //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                //assert(tmp==mt_sym);
-                //breaks.emplace_back(lb+v_len-1, parse_size);
-                //
-            }
-
-            parse_size++;
-
-            //str_len = prev_sep_sym-txt_pos-1;
-            //longest_str = str_len>longest_str ? str_len : longest_str;
-            //prev_sep_sym = txt_pos;
-        }
-
-        map.shrink_to_fit();
-        map.destroy_table();
-
-        std::vector<uint32_t> perm;
-        create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
-        //finish_byte_parse(text, txt_size, buffer_size, parse_size, map, parse_distance, perm, parse, phr_with_ovf);
-
-        mt_sym=1;
-        for(auto const& phrase : map.phrase_set){
-            v_len = vbyte_len(mt_sym);
-            if(v_len<=phrase.len){
-                vbyte_decoder<uint32_t>::write_right2left(&text[phrase.source], mt_sym, v_len);
-                memset(&text[phrase.source+v_len], 0, phrase.len-v_len);
-                //test
-                //uint32_t tmp;
-                //vbyte_decoder<uint32_t>::read_right2left(&text[phrase.source+v_len-1], tmp);
-                //assert(tmp==mt_sym);
-                //breaks.emplace_back(phrase.source+v_len-1, 0);
-                //
-            }
-            mt_sym++;
-        }
-
-        //std::sort(breaks.begin(), breaks.end(), std::greater<>());
-
-        parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
-        if(parse_distance>buffer_size){
-            text = (uint8_t *)mmap_reallocate(text, buffer_size, parse_distance);
-            buffer_size = parse_distance;
-        }
-
-        off_t ovf_idx=0, next_ovf;
-        if(!phr_with_ovf.empty()){
-            next_ovf = phr_with_ovf[ovf_idx].right_end();
-        }else{
-            next_ovf=-1;
-        }
-
-        off_t pos = txt_size-1;
-        parse = (uint32_t *)(text+parse_distance);
-        parse--;
-
-        //size_t br_pos=0;
-        //size_t p_pos=0;
-
-        while(pos>=0){
-            if(pos==next_ovf){
-                pos -= phr_with_ovf[ovf_idx].length;
-                *parse =  perm[phr_with_ovf[ovf_idx].metasymbol];
-
-                if(ovf_idx<off_t(phr_with_ovf.size()-1)){
-                    next_ovf = phr_with_ovf[++ovf_idx].right_end();
-                }else{
-                    next_ovf=-1;
-                }
-                //std::cout<<*parse<<std::endl;
-            }  else {
-                //std::cout<<pos<<"=="<<breaks[br_pos].first<<std::endl;//" "<<(parse_distance-(p_pos*sizeof(uint32_t)))<<" "<<parse_size-p_pos<<" "<<p_pos<<"=="<<breaks[br_pos].second<<std::endl;
-                //if(breaks[br_pos].second!=0){
-                //    assert(p_pos==breaks[br_pos].second);
-                //}
-                //assert(pos==breaks[br_pos].first);
-                //br_pos++;
-                pos-=vbyte_decoder<uint32_t>::read_right2left(&text[pos], mt_sym);
-                assert(mt_sym<perm.size());
-                *parse = perm[mt_sym];
-                //std::cout<<*parse<<std::endl;
-            }
-            //p_pos++;
-            parse--;
-            while(pos>next_ovf && text[pos]==0) pos--;
-        }
-        assert(pos==-1);
-        parse++;
-        assert(parse[parse_size-1]==0);
-        assert((uintptr_t)text<= (uintptr_t)parse && (uintptr_t)parse<= (uintptr_t)&text[txt_size-1]);
-        return parse_size;
-    }
-
     template<class sym_type>
     void compress_text_chunk(text_chunk& chunk, std::vector<uint64_t>& fp_seeds){
 
@@ -590,7 +405,9 @@ namespace lz_like_strat {
 
         for(size_t i=0;i<alpha_size;i++){
             prev_fps[i] = XXH64(&i, sizeof(sym_type), fp_seeds[0]);
+            assert(prev_fps[i]!=0);
         }
+        prev_fps[chunk.sep_sym]=0;
 
         off_t n_strings=0;
         size_t p_round=0;
@@ -602,11 +419,8 @@ namespace lz_like_strat {
         chunk.p_gram.txt_id = chunk.id;
 
         //auto start = std::chrono::steady_clock::now();
-        off_t parse_size = byte_p_round_bck(chunk.text, chunk.text_bytes / sizeof(sym_type), chunk.buffer_bytes,
-                                            chunk.parse, n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps, chunk.p_gram);
-
-        //off_t parse_size = first_p_round_fwd(chunk.text, chunk.text_bytes/sizeof(sym_type), chunk.parse,
-        //                                    n_strings, sep_sym, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+        off_t parse_size = byte_par_r2l(chunk.text, chunk.text_bytes / sizeof(sym_type), chunk.buffer_bytes,
+                                        chunk.parse, n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps, chunk.p_gram);
         //auto end = std::chrono::steady_clock::now();
         //report_time(start, end , 2);
 
@@ -617,7 +431,7 @@ namespace lz_like_strat {
             assert(parse_size>=size_limit);
 
             //start = std::chrono::steady_clock::now();
-            parse_size = int_p_round_fwd(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+            parse_size = int_par_l2r(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
             //end = std::chrono::steady_clock::now();
             //report_time(start, end , 2);
 
@@ -706,7 +520,7 @@ namespace lz_like_strat {
             while (rem_bytes > 0) {
                 buffers_to_reuse.pop(buff_id);
                 size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
-                std::cout<<"\r  "<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<" (speed: "<<report_speed(text_chunks[buff_id].text_bytes, text_chunks[buff_id].t_start, text_chunks[buff_id].t_end)<<", ratio: )"<<std::endl;
+                //std::cout<<"\r  "<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<" (speed: "<<report_speed(text_chunks[buff_id].text_bytes, text_chunks[buff_id].t_start, text_chunks[buff_id].t_end)<<", ratio: )"<<std::endl;
 #ifdef __linux__
                w_page_cache_bytes += g_bytes;
                    if(w_page_cache_bytes>p_opts.page_cache_limit){
@@ -719,9 +533,7 @@ namespace lz_like_strat {
                 text_chunks[buff_id].p_gram.reset_grammar();
 
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
-                std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
-                std::cout << "\033[F\033[F";
-
+                //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
 
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
                 text_chunks[buff_id].id = chunk_id++;
@@ -759,7 +571,7 @@ namespace lz_like_strat {
 
                 buffers_to_reuse.pop(buff_id);
                 size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
-                std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
+                //std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
                 w_page_cache_bytes += g_bytes;
                 if(w_page_cache_bytes>p_opts.page_cache_limit){
@@ -770,7 +582,7 @@ namespace lz_like_strat {
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
-                std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
+                //std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
             }
             buffers_to_reuse.done();
 
@@ -872,7 +684,7 @@ namespace lz_like_strat {
                     gram_to_merge_queue.push(buff_id);
                     rem_bytes-=read_bytes;
                     prog_bytes+=read_bytes;
-                    std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
+                    //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
                 }
                 while(av_buff_queue.size()<n_threads);
                 gram_to_merge_queue.done();
@@ -901,7 +713,7 @@ namespace lz_like_strat {
                     destroy(initial_grams[i].second);
 
                     prog_bytes+=rem_prog_bytes;
-                    std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
+                    //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
                 }
                 initial_grams[0].second.shrink_to_fit();
 #ifdef __linux__
@@ -913,7 +725,7 @@ namespace lz_like_strat {
             store_to_file(mg_p_gram_file, initial_grams[0].first);
             initial_grams[0].first.destroy_gram();
 
-            std::cout<<"Processed data: "<<100<<std::endl;
+            //std::cout<<"Processed data: "<<100<<std::endl;
 
 #ifdef __linux__
             malloc_trim(0);
@@ -959,17 +771,15 @@ namespace lz_like_strat {
 
         parsing_opts p_opts;
         p_opts.n_threads = n_threads;
-        p_opts.n_chunks = n_chunks==0? n_threads*2 : n_chunks;
+        p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
         p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
         p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
         //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
         //p_opts.chunk_size = file_size(i_file);
         p_opts.page_cache_limit = 1024*1024*1024;
-        p_opts.sep_sym = 10;
+        p_opts.sep_sym = '\n';
         p_opts.orig_seed = par_seed;
 
-        //std::random_device rd;  // Will be used to obtain a seed for the random number engine
-        //std::mt19937 gen(rd()); // Standard mersenne_twister_engine seeded with rd()
         std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
         std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
         p_opts.p_seeds.resize(32);
@@ -999,4 +809,298 @@ namespace lz_like_strat {
     }
 }
 
+/*
+    off_t byte_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
+                           off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
+                           std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+
+        size_t prev_sym, curr_sym, next_sym;
+        uint64_t prev_hash, curr_hash, next_hash;
+
+        text_chunk::size_type mt_sym;
+        off_t txt_pos = txt_size-1, parse_size = 0, lb, rb;
+        lz_like_map map(text);
+        uint32_t phrase_len;
+
+        off_t parse_distance=0, offset;
+        std::vector<phrase_overflow> phr_with_ovf;
+        uint8_t v_len;
+
+        bool inserted;
+        n_strings = 0;
+
+        while(txt_pos>0){
+
+            assert(text[txt_pos]==sep_sym);
+
+            offset = txt_pos+1+(parse_size*4);
+            parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+            text[txt_pos] = 128;//vbyte code for 0 (the separator symbol in the next levels)
+            parse_size++;
+            n_strings++;
+
+            rb = txt_pos;
+            prev_sym = text[--txt_pos];
+
+            curr_sym = text[--txt_pos];
+            while(curr_sym==prev_sym && txt_pos>0) curr_sym = text[--txt_pos];
+
+            if(curr_sym==sep_sym){
+                lb = txt_pos+1;
+                phrase_len = rb-lb;
+
+                offset = rb+(parse_size*4);
+                parse_distance = offset>parse_distance ? offset : parse_distance ;
+                //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
+                mt_sym = map.insert(lb, phrase_len, inserted)+1;
+
+                v_len = vbyte_len(mt_sym);
+                if(__builtin_expect(v_len>phrase_len, 0)){
+                    phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                }else if(!inserted){
+                    vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                    memset(&text[lb+v_len], 0, phrase_len-v_len);
+                    //test
+                    //uint32_t tmp;
+                    //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                    //assert(tmp==mt_sym);
+                    //breaks.emplace_back(lb+v_len-1, parse_size);
+                    //
+                }
+                parse_size++;
+                continue;
+            }
+
+            next_sym = text[--txt_pos];
+            while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
+
+            prev_hash = prev_fps[prev_sym];
+            curr_hash = prev_fps[curr_sym];
+
+            bool local_minimum;
+
+            while(next_sym!=sep_sym && txt_pos>0){
+
+                next_hash = prev_fps[next_sym];
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
+                if(local_minimum){
+                    lb = txt_pos+1;
+                    phrase_len = rb-lb;
+
+                    offset = rb+(parse_size*4);
+                    parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+                    //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
+                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
+                    v_len = vbyte_len(mt_sym);
+                    if(__builtin_expect(v_len>phrase_len, 0)){
+                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                    }else if(!inserted){
+                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                        //test
+                        //uint32_t tmp;
+                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                        //assert(tmp==mt_sym);
+                        //breaks.emplace_back(lb+v_len-1, parse_size);
+                        //
+                        memset(&text[lb+v_len], 0, phrase_len-v_len);
+                    }
+                    parse_size++;
+                    rb = lb;
+                }
+
+                prev_hash = curr_hash;
+                curr_hash = next_hash;
+
+                curr_sym = next_sym;
+                next_sym = text[--txt_pos];
+                while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
+            }
+
+            if(txt_pos==0){
+                next_hash = prev_fps[next_sym];
+                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
+                if(local_minimum){
+                    lb = txt_pos+1;
+                    phrase_len = rb-lb;
+
+                    offset = rb+(parse_size*4);
+                    parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+                    //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
+                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
+                    v_len = vbyte_len(mt_sym);
+                    if(__builtin_expect(v_len>phrase_len, 0)){
+                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                    }else if(!inserted){
+                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                        memset(&text[lb+v_len], 0, phrase_len-v_len);
+                        //test
+                        //uint32_t tmp;
+                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                        //assert(tmp==mt_sym);
+                        //breaks.emplace_back(lb+v_len-1, parse_size);
+                        //
+                    }
+                    parse_size++;
+                    rb = lb;
+                }
+                lb = 0;
+            }else{
+                lb=txt_pos+1;
+            }
+
+            phrase_len = rb-lb;
+
+            offset = rb+(parse_size*4);
+            parse_distance = offset>parse_distance ? offset : parse_distance ;
+
+            //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
+            mt_sym = map.insert(lb, phrase_len, inserted)+1;
+            v_len = vbyte_len(mt_sym);
+            if(__builtin_expect(v_len>phrase_len, 0)){
+                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+            }else if(!inserted){
+                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                memset(&text[lb+v_len], 0, phrase_len-v_len);
+                //test
+                //uint32_t tmp;
+                //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
+                //assert(tmp==mt_sym);
+                //breaks.emplace_back(lb+v_len-1, parse_size);
+                //
+            }
+
+            parse_size++;
+
+            //str_len = prev_sep_sym-txt_pos-1;
+            //longest_str = str_len>longest_str ? str_len : longest_str;
+            //prev_sep_sym = txt_pos;
+        }
+
+        map.shrink_to_fit();
+        map.destroy_table();
+
+        std::vector<uint32_t> perm;
+        create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+        finish_byte_parse(text, txt_size, buffer_size, parse_size, map, parse_distance, perm, parse, phr_with_ovf);
+        return parse_size;
+    }
+    */
+
+/*
+// this method parses the text and store the parse in the text itself.
+// It only works for parsing rounds other than the first one because the length of symbol each
+// cell is the same as the length of cell where we store the metasymbols, so there is no overflow
+off_t int_p_round_fwd(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
+                      std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
+
+    uint32_t mt_sym, sep_sym=0;
+    size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
+    off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
+    lz_like_map<uint32_t> map(text);
+
+    bool inserted;
+    n_strings = 0;
+    off_t sym_bytes = sizeof(uint32_t);
+
+    while(txt_pos<txt_size) {
+
+        lb = txt_pos;
+        prev_sym = text[txt_pos++];
+
+        curr_sym = text[txt_pos++];
+        while(curr_sym==prev_sym) curr_sym = text[txt_pos++];
+        rb = txt_pos-1;
+
+        if(curr_sym==sep_sym){
+            phrase_len = rb-lb;
+            mt_sym = map.insert(lb, phrase_len, inserted);
+            assert(text[rb]==sep_sym);
+            if(!inserted){
+                //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                assert(text[lb]!=dummy_sym);
+                text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
+                memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+            }
+            text[rb] = sep_sym;
+            parse_size+=2;//+1 for the separator symbol
+            n_strings++;
+            continue;
+        }
+
+        next_sym = text[txt_pos++];
+        while(next_sym==curr_sym) next_sym = text[txt_pos++];
+
+        while(next_sym!=sep_sym){
+            uint32_t tmp_p = prev_sym;
+            uint32_t tmp_c = curr_sym;
+            uint32_t tmp_n = next_sym;
+
+            if(tmp_p>tmp_c && tmp_c<tmp_n){//local minimum
+                phrase_len = rb-lb;
+                mt_sym = map.insert(lb, phrase_len, inserted);
+                //we can not replace the first phrase occurrence as we use it as source for the dictionary
+                if(!inserted){
+                    assert(text[lb]!=dummy_sym);
+                    text[lb] = mt_sym+1;
+                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
+                }
+                parse_size++;
+                lb = rb;
+            }
+            rb = txt_pos-1;
+            prev_sym = curr_sym;
+            curr_sym = next_sym;
+            next_sym = text[txt_pos++];
+            while(next_sym==curr_sym) next_sym = text[txt_pos++];
+        }
+
+        phrase_len = txt_pos-1-lb;
+        assert(text[lb+phrase_len]==sep_sym);
+        mt_sym = map.insert(lb, phrase_len, inserted);
+        //we can not replace the first phrase occurrence as we use it as source for the dictionary
+        if(!inserted){
+            assert(text[lb]!=dummy_sym);
+            text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
+            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
+        }
+        text[lb+phrase_len] = sep_sym;
+        parse_size+=2;//+1 for the separator symbol
+        n_strings++;
+    }
+
+    map.shrink_to_fit();
+    map.destroy_table();
+
+    assert(map.phrase_set.size()<dummy_sym);
+    std::vector<uint32_t> mt_perm;
+    create_meta_sym<uint32_t, false>(mt_perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
+
+    // create the parse in place
+    map.insert_dummy_entry({uint32_t(txt_size), 0, false, false});
+    size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
+    mt_sym = 0, lb = 0;
+    off_t i=0, k=0;
+
+    while(mt_sym<tot_phrases) {
+        assert(i==lb);
+        text[k++] = mt_perm[mt_sym+1];
+        i+= map.phrase_set[mt_sym].len;//move out of the phrase boundary
+
+        mt_sym++;
+        lb = map.phrase_set[mt_sym].source;//position for the next phrase
+
+        while(i<lb){//process the text area between consecutive phrases
+            assert(text[i]<mt_perm.size());
+            text[k++] = mt_perm[text[i]];
+            i++;
+            while(text[i]==dummy_sym && i<lb) i++;
+        }
+    }
+
+    assert(k==parse_size);
+    return parse_size;
+}*/
 #endif //LCG_LZ_LIKE_LC_PARSING_H

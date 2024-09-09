@@ -26,20 +26,13 @@ public:
 
     struct phrase_t {
         uint32_t source = null_source;
-        uint32_t len:30;
-        bool repeated:1;
-        bool bypassed:1;
-        phrase_t(uint32_t _source, uint32_t _len, bool _repeated, bool _bypassed): source(_source), len(_len), repeated(_repeated), bypassed(_bypassed){}
+        uint32_t len;
+        phrase_t(uint32_t _source, uint32_t _len, bool _repeated, bool _bypassed): source(_source), len(_len){}
 
         [[nodiscard]] std::string to_string() const{
             std::string str;
             str+="source: "+std::to_string(source)+", ";
             str+="len: "+std::to_string(len)+", ";
-            str+="repeated: "+std::to_string(repeated)+", ";
-            str+="bypassed: "+std::to_string(bypassed);
-
-
-
             return str;
         }
     };
@@ -54,7 +47,6 @@ private:
     float m_max_load_factor = 0.6;
     size_t elm_threshold=0;
     size_t frac_lf = 60;
-    size_t n_hashed=0;
 
     void rehash(size_t new_tab_size) {
 
@@ -65,9 +57,7 @@ private:
         //rehash the values
         uint32_t p_idx=0;
         for(auto const & phrase : phrases) {
-            if(!phrase.bypassed){
-                insert_entry_in_table_bucket(phrase, p_idx);
-            }
+            insert_entry_in_table_bucket(phrase, p_idx);
             p_idx++;
         }
 
@@ -110,7 +100,6 @@ public:
     }
 
      inline uint32_t insert(off_t q_source, size_t q_len, bool& inserted) {
-
         size_t q_bytes = q_len*data_bytes;
         size_t hash = XXH3_64bits(&data[q_source], q_bytes);
 
@@ -120,7 +109,7 @@ public:
             if(q_len == phrases[m_table[idx]].len &&
                memcmp(&data[q_source], &data[phrases[m_table[idx]].source], q_bytes)==0){
                 inserted = false;
-                phrases[m_table[idx]].repeated=true;
+                //phrases[m_table[idx]].repeated=true;
                 // the reference is always the rightmost occurrence
                 // in the text's scan
                 // phrase.source = q_source;
@@ -132,10 +121,9 @@ public:
 
         m_table[idx] = phrases.size();
         phrases.emplace_back(q_source, q_len, false, false);
-        n_hashed++;
 
         //the insertion exceeds the max. load factor (i.e., rehash)
-        if(n_hashed>=elm_threshold) {
+        if(phrases.size()>=elm_threshold) {
             rehash(next_power_of_two(m_table.size()));
         }
 
@@ -143,10 +131,11 @@ public:
         return phrases.size()-1;
     }
 
-    inline uint32_t unhashed_insert(off_t q_source, size_t q_len) {
+    /*inline uint32_t unhashed_insert(off_t q_source, size_t q_len) {
+        assert(q_len<=1073741823);
         phrases.emplace_back(q_source, q_len, false, true);
         return phrases.size()-1;
-    }
+    }*/
 
     void set_min_capacity(size_t new_cap){
         new_cap = round_to_power_of_two(new_cap);
@@ -178,7 +167,7 @@ public:
     }
 
     [[nodiscard]] inline float load_factor() const {
-        return float(n_hashed)/float(m_table.size());
+        return float(phrases.size())/float(m_table.size());
     }
 
     [[nodiscard]] inline float max_load_factor() const {
@@ -199,10 +188,6 @@ public:
 
     size_t table_mem_usage(){
         return m_table.size()*sizeof(uint32_t);
-    }
-
-    float hashed_fraction(){
-        return float(n_hashed)/float(phrases.size());
     }
 
     size_t phrases_mem_usage(){

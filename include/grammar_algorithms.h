@@ -632,6 +632,9 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
     std::stack<size_t> stack;
     size_t idx=0;
     std::string decompression;
+
+    //gram.print_parse_tree(0, true);
+
     for(size_t str=0; str <gram.n_strings(); str++) {
 
         auto res = gram.str2bitrange(str);
@@ -663,7 +666,7 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
         }
 
         size_t k=0;
-        std::cout<<str<<std::endl;
+        std::cout<<"Checking string "<<str+1<<std::endl;
         for(char sym : decompression){
             if (gram_t::has_rand_access){
                 size_t sym2 = gram.im_sym_rand_access(str, k);
@@ -1117,7 +1120,7 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
         dc_string_2.clear();
     }*/
     //optional check
-    check_plain_grammar(final_gram, i_file);
+    //check_plain_grammar(final_gram, i_file);
     //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;
