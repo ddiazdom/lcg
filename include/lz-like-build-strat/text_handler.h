@@ -26,8 +26,6 @@ namespace lz_like_strat {
        off_t text_bytes{}; //number of bytes the buffer can hold
 
        size_type * parse = nullptr;
-
-       //todo make it compatible with uint16_t
        partial_gram<uint8_t> p_gram;
 
        std::chrono::steady_clock::time_point t_start;
@@ -90,10 +88,10 @@ namespace lz_like_strat {
            // where ``text_len'' is the number of input symbols that fits the buffer
            //off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
 
-           size_t old_byte_size = chunk.buffer_bytes;
+           //size_t old_byte_size = chunk.buffer_bytes;
            chunk.buffer_bytes = tmp_ck_size;
            //chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
-           chunk.text = (uint8_t *) mmap_reallocate(chunk.text, old_byte_size, chunk.buffer_bytes);
+           chunk.text = (uint8_t *) realloc(chunk.text, chunk.buffer_bytes);
            //chunk.text = (sym_type *)chunk.buffer;
            data = &chunk.text[chunk.text_bytes-chunk_bytes];
        }

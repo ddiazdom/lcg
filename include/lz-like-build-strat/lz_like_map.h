@@ -6,6 +6,7 @@
 #define LCG_LZL_MAP_H
 #include "../../external/xxHash-dev/xxhash.h"
 #include "cds/cdt_common.hpp"
+#include "buff_vector.h"
 #include <vector>
 #include <cstring>
 #include <cstdlib>
@@ -14,20 +15,20 @@
 #include <malloc.h>
 #endif
 
-template<class data_type>
+template<class seq_type>
 class lz_like_map {
 
 public:
 
-    data_type *data;//pointer to the source sequence
-    static constexpr uint8_t data_bytes=sizeof(data_type);
+    seq_type *seq;//pointer to the source sequence
+    static constexpr uint8_t seq_bytes=sizeof(seq_type);
 
     static constexpr uint32_t null_source = std::numeric_limits<uint32_t>::max();
 
     struct phrase_t {
         uint32_t source = null_source;
         uint32_t len;
-        phrase_t(uint32_t _source, uint32_t _len, bool _repeated, bool _bypassed): source(_source), len(_len){}
+        phrase_t(uint32_t _source, uint32_t _len): source(_source), len(_len){}
 
         [[nodiscard]] std::string to_string() const{
             std::string str;
@@ -38,7 +39,8 @@ public:
     };
 
     typedef std::vector<uint32_t> table_t;
-    typedef std::vector<phrase_t> phrase_list_t;
+    typedef buff_vector<phrase_t> phrase_list_t;
+    //typedef std::vector<phrase_t> phrase_list_t;
 
 private:
 
@@ -69,7 +71,7 @@ private:
 
     inline void insert_entry_in_table_bucket(const phrase_t& phrase, const uint32_t p_idx) {
 
-        size_t hash = XXH3_64bits(&data[phrase.source], phrase.len*data_bytes);
+        size_t hash = XXH3_64bits(&seq[phrase.source], phrase.len*seq_bytes);
         size_t idx = hash & (m_table.size()-1);
 
         if(m_table[idx]==null_source){
@@ -93,21 +95,23 @@ public:
 
     const phrase_list_t& phrase_set = phrases;
 
-    explicit lz_like_map(data_type* _data, size_t min_cap=4, float max_lf=0.6) : data(_data), m_max_load_factor(max_lf) {
+    explicit lz_like_map(seq_type* _seq, char * buffer=nullptr, size_t buff_bytes=0, size_t min_cap=4, float max_lf=0.6) : seq(_seq),
+                                                                                                                           phrases(buffer, buff_bytes),
+                                                                                                                           m_max_load_factor(max_lf){
         m_table = table_t(round_to_power_of_two(min_cap), null_source);
         frac_lf = size_t(m_max_load_factor*100);
         elm_threshold = (m_table.size()*frac_lf)/100;
     }
 
      inline uint32_t insert(off_t q_source, size_t q_len, bool& inserted) {
-        size_t q_bytes = q_len*data_bytes;
-        size_t hash = XXH3_64bits(&data[q_source], q_bytes);
+        size_t q_bytes = q_len*seq_bytes;
+        size_t hash = XXH3_64bits(&seq[q_source], q_bytes);
 
         size_t j = 0;
         size_t idx = hash & (m_table.size()-1);
         while(m_table[idx]!=null_source) {
             if(q_len == phrases[m_table[idx]].len &&
-               memcmp(&data[q_source], &data[phrases[m_table[idx]].source], q_bytes)==0){
+               memcmp(&seq[q_source], &seq[phrases[m_table[idx]].source], q_bytes)==0){
                 inserted = false;
                 //phrases[m_table[idx]].repeated=true;
                 // the reference is always the rightmost occurrence
@@ -120,7 +124,7 @@ public:
         }
 
         m_table[idx] = phrases.size();
-        phrases.emplace_back(q_source, q_len, false, false);
+        phrases.emplace_back(q_source, q_len);
 
         //the insertion exceeds the max. load factor (i.e., rehash)
         if(phrases.size()>=elm_threshold) {
@@ -146,7 +150,7 @@ public:
 
     bool find(off_t source, size_t len, size_t& mt) const {
 
-        size_t hash = XXH3_64bits(&data[source], len*data_bytes);
+        size_t hash = XXH3_64bits(&seq[source], len*seq_bytes);
         size_t j=0;
         size_t idx = hash & (m_table.size()-1);
 
@@ -156,7 +160,7 @@ public:
             }else{
                 const phrase_t & phrase = phrases[m_table[idx]];
                 if(len==phrase.len &&
-                   memcmp(&data[source], &data[phrase.source], len*data_bytes)==0) {
+                   memcmp(&seq[source], &seq[phrase.source], len*seq_bytes)==0) {
                     mt = m_table[idx];
                     return true;
                 }
@@ -196,9 +200,6 @@ public:
 
     void shrink_to_fit(){
         phrases.shrink_to_fit();
-#ifdef __linux__
-        malloc_trim(0);
-#endif
     }
 
     void insert_dummy_entry(phrase_t dummy){

@@ -7,7 +7,7 @@
 
 #include<iostream>
 #include <limits>
-#include <string.h>
+#include <cstring>
 #include "macros.h"
 #include "cdt_common.hpp"
 #include "mmap_allocator.h"

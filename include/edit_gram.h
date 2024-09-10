@@ -223,7 +223,7 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
     std::vector<size_t> new_phrase;
 
     // create the parse in place
-    map.insert_dummy_entry({uint32_t(txt_size-1), 0, false, false});
+    map.insert_dummy_entry({uint32_t(txt_size-1), 0});
     size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
     mt_sym = 0, lb = 0;
     off_t i=0, parse_size=0;

@@ -143,7 +143,10 @@ namespace lz_like_strat {
             prev_fps[mt_sym] = perm[i].second;
         }
         prev_fps.shrink_to_fit();
-        p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, perm);
+        off_t lvl_bytes = p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, perm);
+
+        std::cout<<report_space(off_t(perm.size())*12)<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
+
         return n_cols;
     }
 
@@ -166,9 +169,10 @@ namespace lz_like_strat {
 
         parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
         if(parse_distance>buffer_size){
-            text = (uint8_t *)mmap_reallocate(text, buffer_size, parse_distance);
             buffer_size = parse_distance;
+            text = (uint8_t *)realloc(text, buffer_size);
         }
+        std::cout<<"the buffer uses: "<<report_space(buffer_size)<<std::endl;
 
         off_t ovf_idx=0, next_ovf=-1;
         if(!phr_with_ovf.empty()){
@@ -298,6 +302,10 @@ namespace lz_like_strat {
         std::vector<uint32_t> perm;
         create_meta_sym<uint8_t, true>(perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
         finish_byte_parse(text, txt_size, buffer_size, parse_size, dict, max_byte_offset, perm, parse, phr_with_ovf);
+
+        uintptr_t av_bytes = (uintptr_t)(text+buffer_size) - (uintptr_t)(parse+parse_size);
+        std::cout<<"there are "<<report_space((off_t)av_bytes)<<" available"<<std::endl;
+
         return parse_size;
     }
 
@@ -363,6 +371,8 @@ namespace lz_like_strat {
         parse_size+=2;//+1 for the separator symbol
         n_strings++;
 
+        std::cout<<"available for the next round: "<<report_space(parse_size*4)<<" --> "<<report_space((txt_size-parse_size)*4)<<std::endl;
+
         dict.shrink_to_fit();
         dict.destroy_table();
 
@@ -371,7 +381,7 @@ namespace lz_like_strat {
         create_meta_sym<uint32_t, false>(mt_perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
 
         // create the parse in place
-        dict.insert_dummy_entry({uint32_t(txt_size), 0, false, false});
+        dict.insert_dummy_entry({uint32_t(txt_size), 0});
         size_t tot_phrases = dict.phrase_set.size()-1;//do not count the dummy
         mt_sym = 0, lb = 0;
         off_t k=0;
@@ -482,7 +492,7 @@ namespace lz_like_strat {
 
                 text_chunks[chunk_id].buffer_bytes = (tmp_ck_size*115)/100;
                 //text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
-                text_chunks[chunk_id].text = (uint8_t *) mmap_allocate(text_chunks[chunk_id].buffer_bytes);
+                text_chunks[chunk_id].text = (uint8_t *) malloc(text_chunks[chunk_id].buffer_bytes);
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
@@ -627,7 +637,7 @@ namespace lz_like_strat {
         }
 
         for(auto &chunk : text_chunks){
-            mmap_deallocate(chunk.text, chunk.buffer_bytes);
+            free(chunk.text);
             chunk.text=nullptr;
         }
     }
@@ -769,13 +779,19 @@ namespace lz_like_strat {
                          tmp_workspace& tmp_ws, size_t n_threads,
                          size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram) {
 
+        off_t f_size = file_size(i_file);
         parsing_opts p_opts;
-        p_opts.n_threads = n_threads;
-        p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
-        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(file_size(i_file)))) : (off_t)chunk_size;
+        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(f_size))) : (off_t)chunk_size;
         p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
-        //p_opts.chunk_size = std::min<off_t>(1020*1024*100, file_size(i_file));
-        //p_opts.chunk_size = file_size(i_file);
+
+        size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
+        n_threads = std::min(n_threads, tot_chunks);
+
+        p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
+        p_opts.n_chunks = std::min<unsigned long>(p_opts.n_chunks, tot_chunks);
+
+        p_opts.n_threads = n_threads;
+
         p_opts.page_cache_limit = 1024*1024*1024;
         p_opts.sep_sym = '\n';
         p_opts.orig_seed = par_seed;
