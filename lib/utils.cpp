@@ -3,6 +3,7 @@
 //
 #include "cds/utils.h"
 #include "cds/macros.h"
+#include "cds/memory_handler.hpp"
 #include <filesystem>
 #include <unistd.h>
 #include <random>
@@ -103,13 +104,14 @@ str_collection collection_stats(std::string& input_file){
 
     off_t buffer_size = 1024*1024*8;
     off_t last_block = INT_CEIL(fsz, buffer_size);
-    uint8_t *buffer={};
+    uint8_t *buffer= nullptr;
 
 #ifdef __linux__
     long page_size = sysconf(_SC_PAGESIZE);
     posix_memalign((void **)&buffer, page_size, buffer_size);
 #else
-    buffer = (uint8_t*)malloc(buffer_size);
+    //buffer = (uint8_t*)malloc(buffer_size);
+    buffer = alloc<uint8_t>::allocate(buffer_size);
 #endif
 
 #ifdef __linux__
@@ -146,7 +148,8 @@ str_collection collection_stats(std::string& input_file){
 #endif
     }
 
-    free(buffer);
+    //free(buffer);
+    alloc<uint8_t>::deallocate(buffer);
     close(fd_in);
 
     /*

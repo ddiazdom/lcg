@@ -11,6 +11,7 @@
 #include "macros.h"
 #include "cdt_common.hpp"
 #include "mmap_allocator.h"
+#include "memory_handler.hpp"
 
 template<class word_t,
          bool mmap_allocator=false,
@@ -66,14 +67,16 @@ struct bitstream{
                 if constexpr (mmap_allocator){
                     stream = (word_t *)mmap_allocate(words2bytes(n_words));
                 }else{
-                    stream = (word_t *)malloc(words2bytes(n_words));
+                    //stream = (word_t *)malloc(words2bytes(n_words));
+                    stream = alloc<word_t>::allocate(n_words);
                 }
             }else{
                 assert(stream_size!=0);
                 if constexpr (mmap_allocator){
                     stream = (word_t *)mmap_reallocate(stream, words2bytes(stream_size), words2bytes(n_words));
                 }else{
-                    stream = (word_t *)realloc(stream, words2bytes(n_words));
+                    //stream = (word_t *)realloc(stream, words2bytes(n_words));
+                    stream = alloc<word_t>::reallocate(stream, n_words);
                 }
             }
             stream_size = n_words;
@@ -93,7 +96,8 @@ struct bitstream{
             if constexpr (mmap_allocator){
                 mmap_deallocate(stream, stream_size*sizeof(word_t));
             }else{
-                free(stream);
+                //free(stream);
+                alloc<word_t>::deallocate(stream);
             }
             stream = nullptr;
         }

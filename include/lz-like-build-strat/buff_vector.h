@@ -2,13 +2,14 @@
 // Created by Diaz, Diego on 10.9.2024.
 //
 
-#ifndef LCG_BUFF_INT_VECTOR_H
-#define LCG_BUFF_INT_VECTOR_H
+#ifndef LCG_BUFF_VECTOR_H
+#define LCG_BUFF_VECTOR_H
+
 #include <cstdlib>
 #include <cassert>
 #include <algorithm>
 
-template<class type>
+template<class type, class alloc_t=alloc<type>>
 struct buff_vector{
 
     type *data= nullptr;
@@ -68,8 +69,8 @@ struct buff_vector{
 
     void shrink_to_fit(){
         if(mem_alloc){
+            data = alloc_t::reallocate(data, len);
             cap = len;
-            data = (type *)realloc(data, cap*sizeof(type));
         }
     }
 
@@ -79,17 +80,17 @@ struct buff_vector{
 
     void increase_capacity(size_t new_cap){
         if(new_cap>cap){
-            cap = new_cap;
             if(!mem_alloc || data==nullptr){
-                auto *tmp = (type *) malloc(cap*sizeof(type));
+                auto *tmp = alloc_t::allocate(new_cap);
                 if(!mem_alloc && len>0){
                     memcpy(tmp, data, len*sizeof(type));
                 }
                 data = tmp;
                 mem_alloc=true;
             }else{
-                data = (type *) realloc(data, cap*sizeof(type));
+                data = alloc_t::reallocate(data, new_cap);
             }
+            cap = new_cap;
         }
 #ifdef __linux__
         malloc_trim(0);
@@ -113,10 +114,7 @@ struct buff_vector{
 
     ~buff_vector(){
         if(mem_alloc){
-            free(data);
-#ifdef __linux__
-            malloc_trim(0);
-#endif
+            alloc_t::deallocate(data);
         }
     }
 
@@ -173,4 +171,4 @@ struct buff_vector{
         return iterator(data + len);
     }
 };
-#endif //LCG_BUFF_INT_VECTOR_H
+#endif //LCG_BUFF_VECTOR_H

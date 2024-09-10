@@ -170,7 +170,7 @@ namespace lz_like_strat {
         parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
         if(parse_distance>buffer_size){
             buffer_size = parse_distance;
-            text = (uint8_t *)realloc(text, buffer_size);
+            text = alloc<uint8_t>::reallocate(text, buffer_size);
         }
         std::cout<<"the buffer uses: "<<report_space(buffer_size)<<std::endl;
 
@@ -492,7 +492,7 @@ namespace lz_like_strat {
 
                 text_chunks[chunk_id].buffer_bytes = (tmp_ck_size*115)/100;
                 //text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
-                text_chunks[chunk_id].text = (uint8_t *) malloc(text_chunks[chunk_id].buffer_bytes);
+                text_chunks[chunk_id].text = alloc<uint8_t>::allocate(text_chunks[chunk_id].buffer_bytes);
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
@@ -637,7 +637,8 @@ namespace lz_like_strat {
         }
 
         for(auto &chunk : text_chunks){
-            free(chunk.text);
+            //free(chunk.text);
+            alloc<uint8_t>::deallocate(chunk.text);
             chunk.text=nullptr;
         }
     }

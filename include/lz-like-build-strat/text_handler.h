@@ -37,7 +37,7 @@ namespace lz_like_strat {
 
        ~text_chunk(){
            if(text!=nullptr){
-               free(text);
+               alloc<uint8_t>::deallocate(text);
            }
        }
    };
@@ -91,7 +91,7 @@ namespace lz_like_strat {
            //size_t old_byte_size = chunk.buffer_bytes;
            chunk.buffer_bytes = tmp_ck_size;
            //chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
-           chunk.text = (uint8_t *) realloc(chunk.text, chunk.buffer_bytes);
+           chunk.text = alloc<uint8_t>::reallocate(chunk.text, chunk.buffer_bytes);
            //chunk.text = (sym_type *)chunk.buffer;
            data = &chunk.text[chunk.text_bytes-chunk_bytes];
        }

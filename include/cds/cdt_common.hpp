@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <fstream>
+#include "memory_handler.hpp"
 
 #define BUFFER_SIZE 8388608
 
@@ -89,9 +90,11 @@ template<class size_type, class len_type>
 void load_raw_vector(std::istream& ifs, size_type*& vector, len_type& len){
     ifs.read((char *)&len, sizeof(len_type));
     if(vector== nullptr){
-        vector = (size_type *) malloc(sizeof(size_type)*len);
+        //vector = (size_type *) malloc(sizeof(size_type)*len);
+        vector = alloc<size_type>::allocate(len);
     }else{
-        vector = (size_type *) realloc(vector, sizeof(size_type)*len);
+        //vector = (size_type *) realloc(vector, sizeof(size_type)*len);
+        vector = alloc<size_type>::reallocate(vector, len);
     }
     ifs.read((char *)vector, (std::streamsize)(sizeof(size_type)*len));
 }
