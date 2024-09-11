@@ -4,7 +4,11 @@
 
 #ifndef CDS_MEMORY_HANDLER_HPP
 #define CDS_MEMORY_HANDLER_HPP
+#ifdef __linux__
+#include <malloc.h>
+#endif
 
+#endif
 class allocator{
 public:
     template<class value_t>
