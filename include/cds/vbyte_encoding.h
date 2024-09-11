@@ -363,6 +363,7 @@ struct vbyte_decoder{
         switch (vb_len) {
             case 1:
                 c = (x & 127)+128;
+                break;
             case 2:
                 c = (x & 127)+128;
                 x>>=7;
@@ -399,7 +400,6 @@ struct vbyte_decoder{
             --ptr;
         }
         sym = (sym<<7) + (*ptr-128);
-
         return tmp-ptr+1;
     }
 
