@@ -18,7 +18,7 @@ struct buff_vector{
     unsigned long offset=0;
     bool mem_alloc=true;
 
-    unsigned long get_aligned_addr(uint8_t *& addr, size_t n_bytes){
+    unsigned long next_aligned_addr(uint8_t *& addr, size_t n_bytes){
         auto curr_addr = (uintptr_t)addr;
         uintptr_t alg_addr = ((curr_addr + (sizeof(type) - 1))/sizeof(type))*sizeof(type);
         uintptr_t diff = alg_addr-curr_addr;
@@ -33,12 +33,12 @@ struct buff_vector{
 
     buff_vector()= default;
 
-    buff_vector(uint8_t * address, size_t n_bytes){
-        if(address!= nullptr){
-            uint8_t * tmp = address;
-            offset = get_aligned_addr(tmp, n_bytes);
-            if(tmp != nullptr){
-                data = (type *) tmp;
+    buff_vector(uint8_t * addr, size_t n_bytes){
+        if(addr!= nullptr){
+            size_t new_offset = next_aligned_addr(addr, n_bytes);
+            if(addr != nullptr){
+                data = (type *) addr;
+                offset = new_offset;
                 cap = (n_bytes-offset)/sizeof(type);
                 mem_alloc = false;
             }
@@ -50,6 +50,44 @@ struct buff_vector{
             std::cout<<0<<" -- "<<0<<std::endl;
         }else{
             std::cout<<(uintptr_t)data<<" -- "<<(uintptr_t)(data+len)<<std::endl;
+        }
+    }
+
+    buff_vector& swap(buff_vector& other){
+        std::swap(data, other.data);
+        std::swap(len, other.len);
+        std::swap(cap, other.cap);
+        std::swap(offset, other.offset);
+        std::swap(mem_alloc, other.mem_alloc);
+        return *this;
+    }
+
+    void move_buffer(uint8_t * new_addr, size_t new_bytes){
+        bool success_move=false;
+        if(new_addr!= nullptr){
+            size_t new_offset = next_aligned_addr(new_addr, new_bytes);
+            size_t new_cap = (new_bytes-new_offset)/sizeof(type);
+            if(new_addr != nullptr && len<=new_cap){
+                type * old_data = data;
+                data = (type *)new_addr;
+                memcpy(data, old_data, len*sizeof(type));
+                offset = new_offset;
+                cap = new_cap;
+                if(mem_alloc){
+                    mem_alloc = false;//we are now in static memory
+                    alloc_t::deallocate(old_data);
+                }
+                success_move = true;
+            }
+        }
+
+        if(!success_move && !mem_alloc){//data was not moved and was originally in static memory
+            mem_alloc = true;//move to dynamic memory
+            cap = len;
+            offset = 0;
+            type *tmp = alloc_t::allocate(len);
+            memcpy(tmp, data, len*sizeof(type));
+            data = tmp;
         }
     }
 
@@ -136,7 +174,7 @@ struct buff_vector{
         }
     }
 
-    [[nodiscard]] inline size_t buff_usage() const {
+    [[nodiscard]] inline size_t static_buff_usage() const {
         if(mem_alloc){
             return 0;
         }else{

@@ -29,11 +29,11 @@ struct str_perm_val{
     size_t last_str;
 };
 
-template<class ter_type, bool mmap_allocator=false>
+template<class ter_type>
 struct partial_gram {
 
-    typedef ter_type                            sym_type;
-    typedef bitstream<size_t, mmap_allocator> stream_type;
+    typedef ter_type                  sym_type;
+    typedef bitstream<size_t>         stream_type;
 
     size_t text_size=0;
     size_t txt_id=0;

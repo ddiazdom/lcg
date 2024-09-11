@@ -71,7 +71,7 @@ namespace lz_like_strat {
                }else{
                    text = alloc<uint8_t>::reallocate(text, buffer_bytes);
                }
-               std::cout<<"now the buffer uses: "<<report_space(buffer_bytes)<<std::endl;
+               //std::cout<<"now the buffer uses: "<<report_space(buffer_bytes)<<std::endl;
            }
        }
 

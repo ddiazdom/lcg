@@ -21,7 +21,7 @@ struct int_array{
     typedef size_t size_type;
     typedef word_t value_type;
     //typedef typename std::conditional<w_bits==1, bool, typename std::conditional<w_bits<=8, uint8_t, typename std::conditional<w_bits<=16, uint16_t, typename std::conditional<w_bits<=32, uint32_t, uint64_t>::type>::type>::type>::type v_type;
-    typedef bitstream<word_t, false, w_bits> stream_t;
+    typedef bitstream<word_t, w_bits> stream_t;
 
     size_t m_cap = 0;
     size_t m_size = 0;

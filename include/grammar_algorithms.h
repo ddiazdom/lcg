@@ -1120,7 +1120,7 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
         dc_string_2.clear();
     }*/
     //optional check
-    check_plain_grammar(final_gram, i_file);
+    //check_plain_grammar(final_gram, i_file);
     //
 
     std::cout<<"Stats for the final grammar:"<<std::endl;
