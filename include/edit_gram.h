@@ -278,7 +278,7 @@ std::pair<off_t, off_t> store_new_rule(std::vector<size_t>& rhs, gram_type& gram
     }
 
     off_t acc=0;
-    off_t n_samp, last_samp, samp_rate;
+    off_t n_samp, last_samp=0, samp_rate;
 
     if constexpr (nt_type==STR_EXP){
         samp_rate = gram.str_samp_rate;
@@ -325,7 +325,7 @@ std::pair<off_t, off_t> store_new_rule(std::vector<size_t>& rhs, gram_type& gram
 template<bool nt_type, class gram_type>
 std::pair<off_t, off_t> store_old_rule(size_t nt, gram_type& gram, int_array<size_t>& new_nt_names, o_file_stream<size_t>& buffer){
 
-    size_t exp_sample, n_samp, rhs_len;
+    size_t exp_sample=0, n_samp, rhs_len;
 
     if constexpr (nt_type==STR_EXP){
         auto res = gram.str2bitrange(nt);
@@ -417,7 +417,7 @@ void find_grammar_places(std::vector<std::vector<new_rule_type>>& edited_rules,
     //now we will find for each new rule r the rule with the greatest fingerprint that is equal or smaller to r's fingerprint
     lvl=0;
     for(;lvl<(gram.lvl_rules.size()-1);lvl++) {
-        off_t middle;
+        off_t middle=0;
         off_t left = gram.lvl_rules[lvl];
         off_t right = gram.lvl_rules[lvl + 1] - 1;
         off_t end_nt = gram.lvl_rules[lvl + 1];
