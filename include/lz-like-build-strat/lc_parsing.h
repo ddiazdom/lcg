@@ -46,18 +46,32 @@ namespace lz_like_strat {
     };
 
     template<class sym_type, bool p_round>
-    off_t create_meta_sym(std::vector<uint32_t>& mt_perm, uint64_t pf_seed,
+    off_t create_meta_sym(text_chunk& chunk, buff_vector<uint32_t>& mt_perm, uint64_t pf_seed,
                          const typename lz_like_map<sym_type>::phrase_list_t& phrase_set,
-                         sym_type * text, off_t txt_size,
-                         std::vector<uint64_t>& prev_fps,
-                         partial_gram<uint8_t>& p_gram){
+                         std::vector<uint64_t>& prev_fps){
+
+        sym_type* text;
+        off_t txt_size;
+        if constexpr (p_round){
+            text = chunk.text;
+            txt_size = chunk.text_bytes;
+        }else{
+            text = chunk.parse;
+            txt_size = chunk.parse_size;
+        }
+
+        auto avb_addr = chunk.get_free_mem_area();
+        buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm(avb_addr.first, avb_addr.second);
+        inv_mt_perm.resize(phrase_set.size());
+        chunk.add_used_bytes((off_t)inv_mt_perm.buff_usage());
+
+        std::cout<<inv_mt_perm.called_malloc()<<" /// "<<mt_perm.called_malloc()<<" /// "<<phrase_set.called_malloc()<<" "<< report_space((off_t)chunk.av_bytes())<<std::endl;
+        std::cout<<report_space((off_t)inv_mt_perm.buff_usage())<<" /// "<<report_space((off_t)mt_perm.buff_usage())<<" /// "<<report_space((off_t)phrase_set.buff_usage())<<std::endl;
 
         size_t source, end, tot_symbols=0;
-        std::vector<std::pair<uint32_t, uint64_t>> perm(phrase_set.size());
         std::vector<uint64_t> fp_sequence;
-
         for(size_t i=0;i<phrase_set.size();i++) {
-            perm[i].first = i;
+            inv_mt_perm[i].first = i;
             source = phrase_set[i].source;
             end = source + phrase_set[i].len;
             for(size_t j=source;j<end;j++){
@@ -65,30 +79,30 @@ namespace lz_like_strat {
                 assert(text[j]<prev_fps.size());
                 fp_sequence.push_back(prev_fps[text[j]]);
             }
-            perm[i].second = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+            inv_mt_perm[i].second = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
             tot_symbols+=fp_sequence.size();
             fp_sequence.clear();
         }
 
         //sort the phrases according their hash values
-        std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
+        std::sort(inv_mt_perm.get_data(), inv_mt_perm.get_data()+inv_mt_perm.size(), [&](auto const &a, auto const& b) -> bool{
             return a.second<b.second;
         });
 
-        size_t prev_hash = perm[0].second;
-        off_t prev_pos=0, tot_phrases=off_t(perm.size());
+        size_t prev_hash = inv_mt_perm[0].second;
+        off_t prev_pos=0, tot_phrases=off_t(inv_mt_perm.size());
         off_t n_cols =0;
         for(off_t i=1; i<tot_phrases; i++){
 
-            if(prev_hash!=perm[i].second){
+            if(prev_hash!=inv_mt_perm[i].second){
                 if((i-prev_pos)>1){
                     n_cols +=(i-prev_pos);
                     std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     //TODO testing
                     for(off_t k=prev_pos;k<i;k++) {
-                        std::cout<<"\tsorted pos:"<<k<<" orig pos:"<<perm[k].first<<", "<<phrase_set[perm[k].first].to_string()<<", phrase: ";
-                        off_t s = phrase_set[perm[k].first].source;
-                        off_t len = phrase_set[perm[k].first].len;
+                        std::cout<<"\tsorted pos:"<<k<<" orig pos:"<<inv_mt_perm[k].first<<", "<<phrase_set[inv_mt_perm[k].first].to_string()<<", phrase: ";
+                        off_t s = phrase_set[inv_mt_perm[k].first].source;
+                        off_t len = phrase_set[inv_mt_perm[k].first].len;
                         assert(s<txt_size);
 
                         fp_sequence.clear();
@@ -98,13 +112,13 @@ namespace lz_like_strat {
                         }
                         std::cout<<""<<std::endl;
                         uint64_t test_hash = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
-                        assert(perm[k].second==test_hash);
+                        assert(inv_mt_perm[k].second==test_hash);
                     }
                     std::cout<<""<<std::endl;
                     //
 
                     //sort the range [prev_pos..i-1]
-                    std::sort(perm.begin()+prev_pos, perm.begin()+i, [&](auto a, auto b) -> bool{
+                    std::sort(inv_mt_perm.get_data()+prev_pos, inv_mt_perm.get_data()+i, [&](auto const &a, auto const&b) -> bool{
 
                         typename lz_like_map<sym_type>::phrase_t phrase_a = phrase_set[a.first];
                         sym_type * data_a = &text[phrase_a.source];
@@ -126,53 +140,42 @@ namespace lz_like_strat {
                         }
                     });
                 }
-
                 prev_pos = i;
-                prev_hash = perm[i].second;
+                prev_hash = inv_mt_perm[i].second;
             }
         }
 
-        prev_fps.resize(perm.size()+1);
-        mt_perm.resize(perm.size()+1);
+        prev_fps.resize(inv_mt_perm.size()+1);
         prev_fps[0] = 0;
         mt_perm[0] = 0;
-        for(size_t i=0, mt_sym=1;i<perm.size();i++, mt_sym++){
-            size_t perm_mt_sym =  perm[i].first+1;
+        for(size_t i=0, mt_sym=1;i<inv_mt_perm.size();i++, mt_sym++){
+            size_t perm_mt_sym =  inv_mt_perm[i].first+1;
             assert(perm_mt_sym<mt_perm.size());
             mt_perm[perm_mt_sym] = mt_sym;
-            prev_fps[mt_sym] = perm[i].second;
+            prev_fps[mt_sym] = inv_mt_perm[i].second;
         }
         prev_fps.shrink_to_fit();
-        off_t lvl_bytes = p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, perm);
-
-        std::cout<<report_space(off_t(perm.size())*12)<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
-
+        off_t lvl_bytes = chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, inv_mt_perm);
+        std::cout<<report_space(off_t(inv_mt_perm.size())*off_t(sizeof(std::pair<uint32_t, uint64_t>)))<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
         return n_cols;
     }
 
-    void finish_byte_parse(uint8_t*& text, off_t txt_size, off_t& buffer_size,
-                           off_t parse_size, lz_like_map<uint8_t>& dict,
-                           off_t &parse_distance, std::vector<uint32_t>& perm,
-                           uint32_t *&parse, std::vector<phrase_overflow>& phr_with_ovf){
+    void finish_byte_parse(text_chunk& chunk, lz_like_map<uint8_t>& dict,
+                           off_t &parse_distance, buff_vector<uint32_t>& mt_perm,
+                           std::vector<phrase_overflow>& phr_with_ovf){
 
         uint32_t mt_sym=1;
         uint8_t v_len;
+        off_t txt_size = chunk.text_bytes;
 
         for(auto const& phrase : dict.phrase_set){
             v_len = vbyte_len(mt_sym);
             if(v_len<=phrase.len){
-                vbyte_decoder<uint32_t>::write_right2left(&text[phrase.source], mt_sym, v_len);
-                memset(&text[phrase.source+v_len], 0, phrase.len-v_len);
+                vbyte_decoder<uint32_t>::write_right2left(&chunk.text[phrase.source], mt_sym, v_len);
+                memset(&chunk.text[phrase.source+v_len], 0, phrase.len-v_len);
             }
             mt_sym++;
         }
-
-        parse_distance = INT_CEIL(parse_distance, sizeof(uint32_t))*sizeof(uint32_t);
-        if(parse_distance>buffer_size){
-            buffer_size = parse_distance;
-            text = alloc<uint8_t>::reallocate(text, buffer_size);
-        }
-        std::cout<<"the buffer uses: "<<report_space(buffer_size)<<std::endl;
 
         off_t ovf_idx=0, next_ovf=-1;
         if(!phr_with_ovf.empty()){
@@ -180,29 +183,33 @@ namespace lz_like_strat {
         }
 
         off_t pos = txt_size-1;
-        parse = (uint32_t *)(text+parse_distance);
-        parse--;
+        chunk.parse = (uint32_t *)(chunk.text+parse_distance);
+        chunk.parse--;
 
         while(pos>=0){
             if(pos==next_ovf){
                 pos -= phr_with_ovf[ovf_idx].length;
-                *parse = perm[phr_with_ovf[ovf_idx].metasymbol];
+                *chunk.parse = mt_perm[phr_with_ovf[ovf_idx].metasymbol];
                 next_ovf=-1;
                 if(ovf_idx<off_t(phr_with_ovf.size()-1)){
                     next_ovf = phr_with_ovf[++ovf_idx].right_end();
                 }
             }  else {
-                pos-=vbyte_decoder<uint32_t>::read_right2left(&text[pos], mt_sym);
-                assert(mt_sym<perm.size());
-                *parse = perm[mt_sym];
+                pos-=vbyte_decoder<uint32_t>::read_right2left(&chunk.text[pos], mt_sym);
+                assert(mt_sym<mt_perm.size());
+                *chunk.parse = mt_perm[mt_sym];
             }
-            parse--;
-            while(pos>next_ovf && text[pos]==0) pos--;
+            chunk.parse--;
+            while(pos>next_ovf && chunk.text[pos]==0) pos--;
         }
         assert(pos==-1);
-        parse++;
-        assert(parse[parse_size-1]==0);
-        assert((uintptr_t)text<= (uintptr_t)parse && (uintptr_t)parse<= (uintptr_t)&text[txt_size-1]);
+        chunk.parse++;
+        assert(chunk.parse[chunk.parse_size-1]==0);
+        assert((uintptr_t) chunk.text<= (uintptr_t)chunk.parse && (uintptr_t)chunk.parse<= (uintptr_t)&chunk.text[txt_size-1]);
+        assert((uintptr_t) chunk.text<= (uintptr_t)(chunk.parse+chunk.parse_size) &&
+               (uintptr_t) (chunk.parse+chunk.parse_size) <= (uintptr_t)(chunk.text+chunk.buffer_bytes));
+        assert(parse_distance==(off_t)chunk.dist(reinterpret_cast<uint8_t*>(chunk.parse+chunk.parse_size)));
+        chunk.update_used_bytes((off_t)chunk.dist(reinterpret_cast<uint8_t*>(chunk.parse+chunk.parse_size)));
     }
 
     //this function scans a text with a byte alphabet from right to left and parses it according its randomized LMS phrases.
@@ -220,11 +227,10 @@ namespace lz_like_strat {
     // fp_seed: integer that we use as seed to create fingerprints for the phrases resulted from the parse
     // prev_fps: the fingerprints for the alphabet symbols that we use to compute the parsing breaks
     // p_gram: partial gram that will store the set of phrases resulted from the parsing
-    off_t byte_par_r2l(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
-                       off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                       std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
+    void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym, uint64_t fp_seed, std::vector<uint64_t>& prev_fps) {
 
-        off_t parse_size, lb, rb = txt_size-1, i=txt_size-2, max_byte_offset, byte_offset;
+        uint8_t * text = chunk.text;
+        off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, max_byte_offset, byte_offset, parse_size;
         uint8_t v_len;
         lz_like_map dict(text);
         assert(text[i+1]==sep_sym && text[i]>text[i+1]);
@@ -298,27 +304,37 @@ namespace lz_like_strat {
 
         dict.shrink_to_fit();
         dict.destroy_table();
+        chunk.parse_size = parse_size;
 
-        std::vector<uint32_t> perm;
-        create_meta_sym<uint8_t, true>(perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
-        finish_byte_parse(text, txt_size, buffer_size, parse_size, dict, max_byte_offset, perm, parse, phr_with_ovf);
+        //computes how many bytes we require for the parse
+        max_byte_offset = INT_CEIL(max_byte_offset, sizeof(uint32_t))*sizeof(uint32_t);
+        chunk.increase_capacity(max_byte_offset);
+        chunk.update_used_bytes(max_byte_offset);//update the amount of used bytes
 
-        uintptr_t av_bytes = (uintptr_t)(text+buffer_size) - (uintptr_t)(parse+parse_size);
-        std::cout<<"there are "<<report_space((off_t)av_bytes)<<" available"<<std::endl;
+        auto avb_addr = chunk.get_free_mem_area();
+        buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
+        mt_perm.resize(dict.size()+1);
+        chunk.add_used_bytes((off_t)mt_perm.buff_usage());
 
-        return parse_size;
+        create_meta_sym<uint8_t, true>(chunk, mt_perm, fp_seed, dict.phrase_set, prev_fps);
+        finish_byte_parse(chunk, dict, max_byte_offset, mt_perm, phr_with_ovf);
     }
 
     // this method parses the text and store the parse in the text itself.
     // It only works for parsing rounds other than the first one because the length of symbol each
     // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
-    off_t int_par_l2r(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
-                      std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
+    void int_par_l2r(text_chunk& chunk, off_t& n_strings,
+                      uint64_t fp_seed, std::vector<uint64_t>& prev_fps){
 
-        uint32_t mt_sym, sep_sym=0;
+        std::cout<<"We have "<<report_space((off_t)chunk.av_bytes())<<" for the round"<<std::endl;
+
+        uint32_t *text = chunk.parse;
+        uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
         size_t left_sym, middle_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
-        lz_like_map<uint32_t> dict(text);
+
+        auto av_addr = chunk.get_free_mem_area();
+        lz_like_map<uint32_t> dict(text, av_addr.first, av_addr.second);
 
         bool inserted, new_str;
         n_strings = 0;
@@ -371,23 +387,28 @@ namespace lz_like_strat {
         parse_size+=2;//+1 for the separator symbol
         n_strings++;
 
-        std::cout<<"available for the next round: "<<report_space(parse_size*4)<<" --> "<<report_space((txt_size-parse_size)*4)<<std::endl;
-
         dict.shrink_to_fit();
         dict.destroy_table();
 
+        //std::cout<<"we called malloc? "<<dict.called_malloc()<<" "<<dict.phrases_buff_usage()<<" "<<chunk.boundary()<<" "<<dict.size()<<std::endl;
         assert(dict.phrase_set.size()<dummy_sym);
-        std::vector<uint32_t> mt_perm;
-        create_meta_sym<uint32_t, false>(mt_perm, fp_seed, dict.phrase_set, text, txt_size, prev_fps, p_gram);
+
+        chunk.add_used_bytes(off_t(dict.phrase_set.buff_usage()));
+
+        av_addr = chunk.get_free_mem_area();
+        buff_vector<uint32_t> mt_perm(av_addr.first, av_addr.second);
+        mt_perm.resize(dict.size()+1);
+        chunk.add_used_bytes((off_t)mt_perm.buff_usage());
+
+        create_meta_sym<uint32_t, false>(chunk, mt_perm, fp_seed, dict.phrase_set, prev_fps);
 
         // create the parse in place
-        dict.insert_dummy_entry({uint32_t(txt_size), 0});
-        size_t tot_phrases = dict.phrase_set.size()-1;//do not count the dummy
+        size_t last_phrase = dict.phrase_set.size()-1;
         mt_sym = 0, lb = 0;
         off_t k=0;
         i=0;
 
-        while(mt_sym<tot_phrases) {
+        while(mt_sym<last_phrase) {
             assert(i==lb);
             text[k++] = mt_perm[mt_sym+1];
             i+= dict.phrase_set[mt_sym].len;//move out of the phrase boundary
@@ -398,13 +419,34 @@ namespace lz_like_strat {
             while(i<lb){//process the text area between consecutive phrases
                 assert(text[i]<mt_perm.size());
                 text[k++] = mt_perm[text[i]];
-                i++;
-                while(text[i]==dummy_sym && i<lb) i++;
+                while(text[++i]==dummy_sym && i<lb);
             }
+        }
+        //process the rightmost phrase and the parsed text that follows
+        assert(mt_sym==last_phrase && i==dict.phrase_set[mt_sym].source);
+        text[k++] = mt_perm[mt_sym+1];
+        i+= dict.phrase_set[mt_sym].len;
+        lb = txt_size;
+        while(i<lb){
+            assert(text[i]<mt_perm.size());
+            text[k++] = mt_perm[text[i]];
+            while(text[++i]==dummy_sym && i<lb);
         }
 
         assert(k==parse_size);
-        return parse_size;
+        chunk.parse_size = parse_size;
+        chunk.update_used_bytes((off_t)chunk.dist(reinterpret_cast<uint8_t*>(chunk.parse+chunk.parse_size)));
+        //buffer.update_pos(reinterpret_cast<uint8_t*>(text+parse_size));
+        //std::cout<<"available for the next round: "<<report_space((off_t)buffer.get_addr().second)<<std::endl;
+
+        /*bytes_av_in_buff = (uintptr_t)(text+parse_size) - (uintptr_t)(text+parse_size);
+        if(bytes_av_in_buff>0){
+            buffer =  reinterpret_cast<uint8_t *>(text+parse_size);
+            assert((uintptr_t)text<= (uintptr_t)buffer && (uintptr_t)buffer<= (uintptr_t)&text[buffer_size-1]);
+        }else{
+            buffer = nullptr;
+        }
+        std::cout<<"there are "<<report_space((off_t)bytes_av_in_buff)<<" available"<<std::endl;*/
     }
 
     template<class sym_type>
@@ -429,26 +471,25 @@ namespace lz_like_strat {
         chunk.p_gram.txt_id = chunk.id;
 
         //auto start = std::chrono::steady_clock::now();
-        off_t parse_size = byte_par_r2l(chunk.text, chunk.text_bytes / sizeof(sym_type), chunk.buffer_bytes,
-                                        chunk.parse, n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps, chunk.p_gram);
+        byte_par_r2l(chunk, n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps);
         //auto end = std::chrono::steady_clock::now();
         //report_time(start, end , 2);
 
         off_t size_limit = n_strings*2;
         p_round++;
 
-        while(parse_size!=size_limit){
-            assert(parse_size>=size_limit);
+        while(chunk.parse_size!=size_limit){
+            assert(chunk.parse_size>=size_limit);
 
             //start = std::chrono::steady_clock::now();
-            parse_size = int_par_l2r(chunk.parse, parse_size, n_strings, fp_seeds[p_round+1], prev_fps, chunk.p_gram);
+            int_par_l2r(chunk, n_strings, fp_seeds[p_round+1], prev_fps);
             //end = std::chrono::steady_clock::now();
             //report_time(start, end , 2);
 
             p_round++;
         }
         //start = std::chrono::steady_clock::now();
-        chunk.p_gram.add_compressed_string(chunk.parse, parse_size);
+        chunk.p_gram.add_compressed_string(chunk.parse, chunk.parse_size);
         //end = std::chrono::steady_clock::now();
         //report_time(start, end , 2);
     }
@@ -485,22 +526,10 @@ namespace lz_like_strat {
 
                 text_chunks[chunk_id].text_bytes = tmp_ck_size;
                 text_chunks[chunk_id].sep_sym = (text_chunk::size_type) p_opts.sep_sym;
-
-                //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
-                // where ``text_len'' is the number of input symbols that fits the buffer
-                //off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
-
-                text_chunks[chunk_id].buffer_bytes = (tmp_ck_size*115)/100;
-                //text_chunks[chunk_id].buffer = (text_chunk::size_type *) malloc(text_chunks[chunk_id].buffer_bytes);
-                text_chunks[chunk_id].text = alloc<uint8_t>::allocate(text_chunks[chunk_id].buffer_bytes);
+                text_chunks[chunk_id].increase_capacity((tmp_ck_size*115)/100);
                 text_chunks[chunk_id].id = chunk_id;
 
                 read_chunk_from_file(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
-                //std::cout<<text_chunks[chunk_id].text_bytes<<" "<<text_chunks[chunk_id].n_bytes_before<<" "<<rem_bytes<<std::endl;
-
-                //next aligned position within the buffer
-                //size_t parse_start =  INT_CEIL(text_chunks[chunk_id].text_bytes, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type);
-                //text_chunks[chunk_id].parse = (text_chunk::size_type *) &text_chunks[chunk_id].text[parse_start/sizeof(sym_type)];
 
                 //this value is enough for 4GB text chunks
                 text_chunks[chunk_id].p_gram.rules.resize(32);

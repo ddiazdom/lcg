@@ -18,13 +18,13 @@ struct buff_vector{
     unsigned long offset=0;
     bool mem_alloc=true;
 
-    unsigned long get_aligned_addr(char *& addr, size_t n_bytes){
+    unsigned long get_aligned_addr(uint8_t *& addr, size_t n_bytes){
         auto curr_addr = (uintptr_t)addr;
         uintptr_t alg_addr = ((curr_addr + (sizeof(type) - 1))/sizeof(type))*sizeof(type);
         uintptr_t diff = alg_addr-curr_addr;
         uintptr_t boundary = curr_addr + n_bytes;
         if(alg_addr<boundary){
-            addr = (char *)alg_addr;
+            addr = (uint8_t *)alg_addr;
         }else{
             addr = nullptr;
         }
@@ -33,15 +33,23 @@ struct buff_vector{
 
     buff_vector()= default;
 
-    buff_vector(char* address, size_t n_bytes){
+    buff_vector(uint8_t * address, size_t n_bytes){
         if(address!= nullptr){
-            char * tmp = address;
+            uint8_t * tmp = address;
             offset = get_aligned_addr(tmp, n_bytes);
             if(tmp != nullptr){
                 data = (type *) tmp;
                 cap = (n_bytes-offset)/sizeof(type);
                 mem_alloc = false;
             }
+        }
+    }
+
+    void report_buff_area() const{
+        if(mem_alloc){
+            std::cout<<0<<" -- "<<0<<std::endl;
+        }else{
+            std::cout<<(uintptr_t)data<<" -- "<<(uintptr_t)(data+len)<<std::endl;
         }
     }
 
@@ -87,14 +95,19 @@ struct buff_vector{
                 }
                 data = tmp;
                 mem_alloc=true;
+                offset=0;
             }else{
                 data = alloc_t::reallocate(data, new_cap);
             }
             cap = new_cap;
-        }
 #ifdef __linux__
-        malloc_trim(0);
+            malloc_trim(0);
 #endif
+        }
+    }
+
+    inline type* get_data(){
+        return data;
     }
 
     inline void push_back(type& new_val){
@@ -112,14 +125,31 @@ struct buff_vector{
         data[len++] = type(std::forward<Args>(args)...);
     }
 
+    void resize(size_t new_len){
+        increase_capacity(new_len);
+        len = new_len;
+    }
+
     ~buff_vector(){
         if(mem_alloc){
             alloc_t::deallocate(data);
         }
     }
 
-    [[nodiscard]] inline size_t byte_usage() const {
-        return (len*sizeof(type))+offset;
+    [[nodiscard]] inline size_t buff_usage() const {
+        if(mem_alloc){
+            return 0;
+        }else{
+            return (len*sizeof(type))+offset;
+        }
+    }
+
+    [[nodiscard]] inline size_t mem_usage() const {
+        if(mem_alloc){
+            return cap*sizeof(type);
+        } else{
+            return (len*sizeof(type))+offset;
+        }
     }
 
     // Define the iterator class within the container
@@ -169,6 +199,10 @@ struct buff_vector{
     // End iterator (points one past the last element)
     iterator end() const {
         return iterator(data + len);
+    }
+
+    [[nodiscard]] bool called_malloc() const{
+        return mem_alloc;
     }
 };
 #endif //LCG_BUFF_VECTOR_H

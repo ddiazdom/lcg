@@ -218,9 +218,9 @@ struct partial_gram {
         return read_bytes;
     }
 
-    template<class sym_type>
+    template<class sym_type, class perm_type>
     off_t append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols,
-                         std::vector<std::pair<uint32_t, uint64_t>>& perm){
+                         perm_type& perm){
 
         lvl_metadata_type lvl_met{};
         lvl_met.n_rules = phrase_set.size();

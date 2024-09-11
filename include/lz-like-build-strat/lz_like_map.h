@@ -20,7 +20,7 @@ class lz_like_map {
 
 public:
 
-    seq_type *seq;//pointer to the source sequence
+    seq_type *&seq;//pointer to the source sequence
     static constexpr uint8_t seq_bytes=sizeof(seq_type);
 
     static constexpr uint32_t null_source = std::numeric_limits<uint32_t>::max();
@@ -95,9 +95,9 @@ public:
 
     const phrase_list_t& phrase_set = phrases;
 
-    explicit lz_like_map(seq_type* _seq, char * buffer=nullptr, size_t buff_bytes=0, size_t min_cap=4, float max_lf=0.6) : seq(_seq),
-                                                                                                                           phrases(buffer, buff_bytes),
-                                                                                                                           m_max_load_factor(max_lf){
+    explicit lz_like_map(seq_type*& _seq, uint8_t * buffer=nullptr, size_t buff_bytes=0, size_t min_cap=4, float max_lf=0.6) : seq(_seq),
+                                                                                                                               phrases(buffer, buff_bytes),
+                                                                                                                               m_max_load_factor(max_lf){
         m_table = table_t(round_to_power_of_two(min_cap), null_source);
         frac_lf = size_t(m_max_load_factor*100);
         elm_threshold = (m_table.size()*frac_lf)/100;
@@ -195,7 +195,11 @@ public:
     }
 
     size_t phrases_mem_usage(){
-        return phrases.capacity()*sizeof(phrase_t);
+        return phrases.men_usage();
+    }
+
+    size_t phrases_buff_usage(){
+        return phrases.buff_usage();
     }
 
     void shrink_to_fit(){
@@ -208,6 +212,10 @@ public:
 
     size_t mem_usage(){
         return table_mem_usage()+phrases_mem_usage();
+    }
+
+    [[nodiscard]] bool called_malloc() const {
+        return phrases.called_malloc();
     }
 
     void destroy_table(){

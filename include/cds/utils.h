@@ -2,8 +2,8 @@
 // Created by Diaz, Diego on 27.10.2021.
 //
 
-#ifndef PARALLEL_PARSER_H
-#define PARALLEL_PARSER_H
+#ifndef CDS_UTILS_H
+#define CDS_UTILS_H
 
 #include <chrono>
 #include <iostream>
@@ -168,4 +168,4 @@ std::string report_space(off_t bytes);
 
 void report_mem_peak();
 
-#endif //PARALLEL_PARSER_H
+#endif //CDS_UTILS_H

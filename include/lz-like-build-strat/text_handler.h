@@ -26,13 +26,63 @@ namespace lz_like_strat {
        off_t text_bytes{}; //number of bytes the buffer can hold
 
        size_type * parse = nullptr;
+       off_t parse_size=0;
        partial_gram<uint8_t> p_gram;
 
+       //to measure time
        std::chrono::steady_clock::time_point t_start;
        std::chrono::steady_clock::time_point t_end;
 
+       //area of the buffer free for satellite data
+       off_t used_bytes=0;
+
        [[nodiscard]] off_t eff_buff_bytes() const{
            return e_bytes;
+       }
+
+       [[nodiscard]] size_t av_bytes() const{
+           return buffer_bytes-used_bytes;
+       }
+
+       void add_used_bytes(off_t n_bytes){
+           used_bytes+=n_bytes;
+           assert(used_bytes<=buffer_bytes);
+       }
+
+       [[nodiscard]] std::pair<uint8_t*, size_t> get_free_mem_area() const {
+           if(used_bytes==buffer_bytes){
+               return {nullptr, 0};
+           }else{
+               return {text+used_bytes, av_bytes()};
+           }
+       }
+
+       void update_used_bytes(off_t new_used_bytes){
+           //std::cout<<(uintptr_t) text<<" "<<(uintptr_t) next_av_byte<<" "<< (uintptr_t) boundary<<std::endl;
+           //assert((uintptr_t) text<= (uintptr_t) new_pos && (uintptr_t) new_pos <= (uintptr_t) boundary);
+           used_bytes = new_used_bytes;
+       }
+
+       void increase_capacity(off_t new_cap){
+           if(new_cap>buffer_bytes){
+               buffer_bytes = new_cap;
+               if(text== nullptr){
+                   text = alloc<uint8_t>::allocate(buffer_bytes);
+               }else{
+                   text = alloc<uint8_t>::reallocate(text, buffer_bytes);
+               }
+               std::cout<<"now the buffer uses: "<<report_space(buffer_bytes)<<std::endl;
+           }
+       }
+
+        uintptr_t dist(uint8_t* position) const {
+           //std::cout<<(uintptr_t) text<<" "<< (uintptr_t) position <<" "<<(uintptr_t) (text+buffer_bytes)<<std::endl;
+           assert((uintptr_t) text<= (uintptr_t) position && (uintptr_t) position <= (uintptr_t) (text+buffer_bytes));
+           return (uintptr_t) position - (uintptr_t) text;
+       }
+
+       [[nodiscard]] uintptr_t boundary() const {
+           return (uintptr_t) (text+buffer_bytes);
        }
 
        ~text_chunk(){
@@ -72,7 +122,7 @@ namespace lz_like_strat {
            }
            assert(chunk.text_bytes==acc_bytes);
 
-           //go to the rightmost separators symbol
+           //go to the rightmost separator symbol
            i = chunk.text_bytes-1;
            while(i>limit && chunk.text[i]!=chunk.sep_sym){
                i--;
@@ -84,15 +134,10 @@ namespace lz_like_strat {
            chunk_bytes = tmp_ck_size-chunk.text_bytes;
            chunk.text_bytes =  tmp_ck_size;
 
-           //the parse size is (text_len/2)*(sizeof(size_type)/sizeof(sym_type)),
-           // where ``text_len'' is the number of input symbols that fits the buffer
-           //off_t parse_bytes = INT_CEIL((tmp_ck_size/sizeof(sym_type)), 2)*(sizeof(text_chunk::size_type)/sizeof(sym_type));
+           chunk.increase_capacity(chunk.text_bytes);
+           //chunk.buffer_bytes = tmp_ck_size;
+           //chunk.text = alloc<uint8_t>::reallocate(chunk.text, chunk.buffer_bytes);
 
-           //size_t old_byte_size = chunk.buffer_bytes;
-           chunk.buffer_bytes = tmp_ck_size;
-           //chunk.buffer = (text_chunk::size_type *) realloc(chunk.buffer, chunk.buffer_bytes);
-           chunk.text = alloc<uint8_t>::reallocate(chunk.text, chunk.buffer_bytes);
-           //chunk.text = (sym_type *)chunk.buffer;
            data = &chunk.text[chunk.text_bytes-chunk_bytes];
        }
 
@@ -104,6 +149,7 @@ namespace lz_like_strat {
        rem_text_bytes-= eff_bytes;
 
        read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
+       chunk.update_used_bytes(chunk.text_bytes);
    }
 }
 #endif //LCG_TEXT_HANDLER_H
