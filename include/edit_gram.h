@@ -241,7 +241,7 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
             new_phrase.push_back(text[j]);
             exp_len += text[j]<gram.r?  gram.exp_len(text[j]) : new_gram_rules[p_level-1][text[j]-gram.r].exp_len;
         }
-        fp = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+        fp = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
         new_gram_rules[p_level].emplace_back(0, fp, p_level, exp_len, false, new_phrase);
         fp_sequence.clear();
         new_phrase.clear();
@@ -892,7 +892,7 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
                             fp_seq.push_back(all_fps[s]);
                         }
                     }
-                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
+                    uint64_t new_fp = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*fp_seq.size());
                     rm_sym = next_av_nt++;
                     new_gram_rules[rm_sym] = {left_offset->rhs, new_fp};
                 }

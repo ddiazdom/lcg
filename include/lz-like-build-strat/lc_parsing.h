@@ -82,7 +82,8 @@ namespace lz_like_strat {
                 assert(text[j]<prev_fps.size());
                 fp_sequence.push_back(prev_fps[text[j]]);
             }
-            inv_mt_perm[i].fp = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+            //inv_mt_perm[i].fp = XXH3_64bits_withSeed(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+            inv_mt_perm[i].fp = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
             tot_symbols+=fp_sequence.size();
             fp_sequence.clear();
         }
@@ -114,7 +115,7 @@ namespace lz_like_strat {
                             fp_sequence.push_back(prev_fps[text[u]]);
                         }
                         std::cout<<""<<std::endl;
-                        uint64_t test_hash = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+                        uint64_t test_hash = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
                         assert(inv_mt_perm[k].fp==test_hash);
                     }
                     std::cout<<""<<std::endl;
@@ -477,7 +478,7 @@ namespace lz_like_strat {
         prev_fps.resize(alpha_size);
 
         for(size_t i=0;i<alpha_size;i++){
-            prev_fps[i] = XXH64(&i, sizeof(sym_type), fp_seeds[0]);
+            prev_fps[i] = XXH3_64bits(&i, sizeof(sym_type));
             assert(prev_fps[i]!=0);
         }
         prev_fps[chunk.sep_sym]=0;
@@ -851,7 +852,8 @@ namespace lz_like_strat {
         std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
         p_opts.p_seeds.resize(32);
         for(size_t i=0;i<32;i++){
-            p_opts.p_seeds[i] = distrib(gen);
+            //p_opts.p_seeds[i] = distrib(gen);
+            p_opts.p_seeds[i] = 0;
         }
 
         std::cout<<"  Settings"<<std::endl;

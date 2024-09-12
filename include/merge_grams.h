@@ -23,7 +23,7 @@ struct merge_data_t{
         map_b.resize(lvl_sigma);
         fps.resize(lvl_sigma);
         for(size_t i=0;i<fps.size();i++){
-            fps[i] = XXH64(&i, sym_bytes, seed);
+            fps[i] = XXH3_64bits(&i, sym_bytes);
             map_a[i] = i;
             map_b[i] = i;
         }
@@ -564,7 +564,7 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
     for(size_t i=1;i<mt_map.size();i++){
         std::get<0>(perm[i]) = i;
         uint64_t fp = prev_fps[mt_map[i]];
-        std::get<1>(perm[i]) = XXH64(&fp, sizeof(uint64_t), fp_seed);
+        std::get<1>(perm[i]) = XXH3_64bits(&fp, sizeof(uint64_t));
         std::get<2>(perm[i]) = mt_map[i];
     }
 
@@ -624,7 +624,7 @@ void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t n
     for(size_t i=1;i<mt_map.size();i++){
         std::get<0>(perm[i]) = i;
         uint64_t fp = prev_fps[mt_map[i]];
-        std::get<1>(perm[i]) = XXH64(&fp, sizeof(uint64_t), fp_seed);
+        std::get<1>(perm[i]) = XXH3_64bits(&fp, sizeof(uint64_t));
         std::get<2>(perm[i]) = mt_map[i];
     }
 

@@ -1129,7 +1129,7 @@ struct lc_gram_t {
 
         //corner case: the buffer has only one symbol
         if((e_pos-pos)==1){
-            buffer[0] = XXH64(buffer.data(), sizeof(uint64_t), seed);
+            buffer[0] = XXH3_64bits(buffer.data(), sizeof(uint64_t));
             return 1;
         }
 
@@ -1144,7 +1144,7 @@ struct lc_gram_t {
         //corner case: the buffer is a sequence of one symbol
         if (pos == e_pos) {
             phrase_len = rb - lb + 1;
-            buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+            buffer[ps_pos++] = XXH3_64bits(buffer.data() + lb, phrase_len * sizeof(uint64_t));
             return ps_pos-first_pos;
         }
 
@@ -1154,7 +1154,7 @@ struct lc_gram_t {
 
             if (prev_sym > curr_sym && curr_sym < next_sym) {
                 phrase_len = rb - lb;
-                buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+                buffer[ps_pos++] = XXH3_64bits(buffer.data() + lb, phrase_len * sizeof(uint64_t));
                 lb = rb;
             }
 
@@ -1164,7 +1164,7 @@ struct lc_gram_t {
         }
 
         phrase_len = pos - lb;
-        buffer[ps_pos++] = XXH64(buffer.data() + lb, phrase_len * sizeof(uint64_t), seed);
+        buffer[ps_pos++] = XXH3_64bits(buffer.data() + lb, phrase_len * sizeof(uint64_t));
 
         return ps_pos-first_pos;
     }
@@ -1230,7 +1230,7 @@ struct lc_gram_t {
         assert(!is_rl_sym(sym));
 
         if (sym <= max_tsym) {
-            return XXH64(&terminals[sym], sizeof(uint8_t), p_seeds[0]);
+            return XXH3_64bits(&terminals[sym], sizeof(uint8_t));
         }
 
         uint8_t g_level = parsing_level(sym);
@@ -1323,7 +1323,7 @@ struct lc_gram_t {
         std::vector<uint64_t> fps(r, 0);
 
         for(size_t i=0;i<=max_tsym;i++){
-            fps[i] = XXH64(&i, sizeof(uint8_t), p_seeds[0]);
+            fps[i] = XXH3_64bits(&i, sizeof(uint8_t));
         }
 
         std::vector<uint64_t> fp_seq;
@@ -1336,7 +1336,7 @@ struct lc_gram_t {
                     assert(sym<nt);
                     fp_seq.push_back(fps[sym]);
                 }
-                fps[nt] = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[i+1]);
+                fps[nt] = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*fp_seq.size());
                 //std::cout<<nt<<" "<<max_tsym<<" "<<fps[nt]<<" "<<prev<<std::endl;
                 assert(fps[nt]>=prev);
                 prev=fps[nt];

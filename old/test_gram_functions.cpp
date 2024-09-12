@@ -1,8 +1,8 @@
 //
 // Created by Diaz, Diego on 6.5.2024.
 //
-#include "include/grammar.h"
-#include "include/grammar_algorithms.h"
+#include "grammar.h"
+#include "grammar_algorithms.h"
 
 #include <fstream>
 

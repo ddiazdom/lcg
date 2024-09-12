@@ -12,7 +12,7 @@ set(SOURCE_FILES main.cpp
 
 # Add executable target with source files listed in SOURCE_FILES variable
 add_executable(lcg ${SOURCE_FILES})
-target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic -g
+target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
         -O3
 )
 

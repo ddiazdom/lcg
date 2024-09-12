@@ -63,8 +63,8 @@ struct lm_parser {
         if constexpr (text_chunk_t::first_round){
             //prev_hash = text_chunk.perm_func->symbol_hash(prev_sym);
             //curr_hash = text_chunk.perm_func->symbol_hash(curr_sym);
-            prev_hash = XXH64(&prev_sym, sizeof(sym_type), text_chunk.p_seed);
-            curr_hash = XXH64(&curr_sym, sizeof(sym_type), text_chunk.p_seed);
+            prev_hash = XXH3_64bits(&prev_sym, sizeof(sym_type));
+            curr_hash = XXH3_64bits(&curr_sym, sizeof(sym_type));
             /*for(off_t i=ps;i<end_ps-6;i++){
                 if(text_chunk.buffer[i]==65 && text_chunk.buffer[i+1]==65 &&
                    text_chunk.buffer[i+2]==84 && text_chunk.buffer[i+3]==67 &&
@@ -88,7 +88,7 @@ struct lm_parser {
             }
 
             if constexpr (text_chunk_t::first_round){
-                next_hash = XXH64(&next_sym, sizeof(sym_type), text_chunk.p_seed);
+                next_hash = XXH3_64bits(&next_sym, sizeof(sym_type));
                 local_minimum = ptr!=r_boundary && prev_hash>curr_hash && curr_hash<next_hash;
             }else{
                 local_minimum = ptr!=r_boundary && prev_sym>curr_sym && curr_sym<next_sym;
@@ -177,8 +177,8 @@ struct lm_parser {
         if constexpr (text_chunk_t::first_round){
             //curr_hash = text_chunk.perm_func->symbol_hash(curr_sym);
             //right_hash = text_chunk.perm_func->symbol_hash(right_sym);
-            curr_hash = XXH64(&curr_sym, sizeof(sym_type), text_chunk.p_seed);
-            right_hash = XXH64(&right_sym, sizeof(sym_type), text_chunk.p_seed);
+            curr_hash = XXH3_64bits(&curr_sym, sizeof(sym_type));
+            right_hash = XXH3_64bits(&right_sym, sizeof(sym_type));
         }
 
         bool local_minimum;
@@ -193,7 +193,7 @@ struct lm_parser {
 
             if constexpr (text_chunk_t::first_round){
                 //left_hash = text_chunk.perm_func->symbol_hash(left_sym);
-                left_hash = XXH64(&left_sym, sizeof(sym_type), text_chunk.p_seed);
+                left_hash = XXH3_64bits(&left_sym, sizeof(sym_type));
                 local_minimum = left_hash>curr_hash && curr_hash<right_hash;
             }else{
                 local_minimum = left_sym>curr_sym && curr_sym<right_sym;
@@ -395,7 +395,7 @@ struct lm_parser {
             hash_values_vector.resize(p_opts.max_sym+1);
             for(uint64_t i=0;i<=p_opts.max_sym;i++){
                 //hash_values_vector[i] = p_opts.p_func.symbol_hash(i);
-                hash_values_vector[i] = XXH64(&i, sizeof(sym_type), p_opts.p_seeds[0]);
+                hash_values_vector[i] = XXH3_64bits(&i, sizeof(sym_type));
             }
         }else{
             std::string hash_values_file = ws.get_file("hash_values_round_"+std::to_string(p_opts.p_round-1));
@@ -424,7 +424,7 @@ struct lm_parser {
             }
 
             //r_order[k].hash = p_opts.p_func.string_hash((char *)tmp_vector.data(), tmp_vector.size()*sizeof(size_t), 64);
-            r_order[k].hash = XXH64((char *)tmp_vector.data(), tmp_vector.size()*sizeof(uint64_t), p_opts.p_seeds[p_opts.p_round+1]);
+            r_order[k].hash = XXH3_64bits((char *)tmp_vector.data(), tmp_vector.size()*sizeof(uint64_t));
             r_order[k].str_len = tmp_vector.size();
             tmp_vector.clear();
             k++;

@@ -523,7 +523,7 @@ inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
         fp_seq[i] = prev_fps[phrase[i]];
     }
 
-    fp = XXH64(fp_seq.data(), sizeof(uint64_t)*len, fp_seed);
+    fp = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*len);
 }
 
 bool rules_lex_comp(std::vector<uint32_t>& phrase_a, size_t len_a, std::vector<uint32_t>& phrase_b, size_t len_b){
