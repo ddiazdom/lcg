@@ -15,7 +15,7 @@ struct merge_data_t{
     std::vector<uint32_t> map_b;
     size_t lvl_sigma=0;
     size_t longest_rule=0;
-    bitstream<size_t, true> buffer;
+    bitstream<size_t> buffer;
 
     void initialize(size_t lvl_sigma_, size_t sym_bytes, uint64_t seed, size_t longest_rule_){
         lvl_sigma = lvl_sigma_;

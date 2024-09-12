@@ -45,6 +45,11 @@ namespace lz_like_strat {
         }
     };
 
+    struct inv_perm_elm{
+        uint32_t orig_mt;
+        uint64_t fp;
+    };
+
     template<class sym_type, bool p_round>
     off_t create_meta_sym(text_chunk& chunk, buff_vector<uint32_t>& mt_perm, uint64_t pf_seed,
                          const typename lz_like_map<sym_type>::phrase_list_t& phrase_set,
@@ -61,8 +66,7 @@ namespace lz_like_strat {
         }
 
         auto avb_addr = chunk.get_free_mem_area();
-        //buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm(avb_addr.first, avb_addr.second);
-        buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm;
+        buff_vector<inv_perm_elm> inv_mt_perm(avb_addr.first, avb_addr.second);
         inv_mt_perm.resize(phrase_set.size());
         chunk.add_used_bytes((off_t)inv_mt_perm.static_buff_usage());
 
@@ -72,7 +76,7 @@ namespace lz_like_strat {
         size_t source, end, tot_symbols=0;
         std::vector<uint64_t> fp_sequence;
         for(size_t i=0;i<phrase_set.size();i++) {
-            inv_mt_perm[i].first = i;
+            inv_mt_perm[i].orig_mt = i;
             source = phrase_set[i].source;
             end = source + phrase_set[i].len;
             for(size_t j=source;j<end;j++){
@@ -80,30 +84,30 @@ namespace lz_like_strat {
                 assert(text[j]<prev_fps.size());
                 fp_sequence.push_back(prev_fps[text[j]]);
             }
-            inv_mt_perm[i].second = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+            inv_mt_perm[i].fp = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
             tot_symbols+=fp_sequence.size();
             fp_sequence.clear();
         }
 
         //sort the phrases according their hash values
         std::sort(inv_mt_perm.get_data(), inv_mt_perm.get_data()+inv_mt_perm.size(), [&](auto const &a, auto const& b) -> bool{
-            return a.second<b.second;
+            return a.fp<b.fp;
         });
 
-        size_t prev_hash = inv_mt_perm[0].second;
+        size_t prev_hash = inv_mt_perm[0].fp;
         off_t prev_pos=0, tot_phrases=off_t(inv_mt_perm.size());
         off_t n_cols =0;
         for(off_t i=1; i<tot_phrases; i++){
 
-            if(prev_hash!=inv_mt_perm[i].second){
+            if(prev_hash!=inv_mt_perm[i].fp){
                 if((i-prev_pos)>1){
                     n_cols +=(i-prev_pos);
                     std::cout<<"Warning: we have "<<(i-prev_pos)<<" colliding phrases"<<std::endl;
                     //TODO testing
                     for(off_t k=prev_pos;k<i;k++) {
-                        std::cout<<"\tsorted pos:"<<k<<" orig pos:"<<inv_mt_perm[k].first<<", "<<phrase_set[inv_mt_perm[k].first].to_string()<<", phrase: ";
-                        off_t s = phrase_set[inv_mt_perm[k].first].source;
-                        off_t len = phrase_set[inv_mt_perm[k].first].len;
+                        std::cout<<"\tsorted pos:"<<k<<" orig pos:"<<inv_mt_perm[k].orig_mt<<", "<<phrase_set[inv_mt_perm[k].orig_mt].to_string()<<", phrase: ";
+                        off_t s = phrase_set[inv_mt_perm[k].orig_mt].source;
+                        off_t len = phrase_set[inv_mt_perm[k].orig_mt].len;
                         assert(s<txt_size);
 
                         fp_sequence.clear();
@@ -113,7 +117,7 @@ namespace lz_like_strat {
                         }
                         std::cout<<""<<std::endl;
                         uint64_t test_hash = XXH64(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
-                        assert(inv_mt_perm[k].second==test_hash);
+                        assert(inv_mt_perm[k].fp==test_hash);
                     }
                     std::cout<<""<<std::endl;
                     //
@@ -121,11 +125,11 @@ namespace lz_like_strat {
                     //sort the range [prev_pos..i-1]
                     std::sort(inv_mt_perm.get_data()+prev_pos, inv_mt_perm.get_data()+i, [&](auto const &a, auto const&b) -> bool{
 
-                        typename lz_like_map<sym_type>::phrase_t phrase_a = phrase_set[a.first];
+                        typename lz_like_map<sym_type>::phrase_t phrase_a = phrase_set[a.orig_mt];
                         sym_type * data_a = &text[phrase_a.source];
                         off_t len_a = phrase_a.len;
 
-                        typename lz_like_map<sym_type>::phrase_t phrase_b = phrase_set[b.first];
+                        typename lz_like_map<sym_type>::phrase_t phrase_b = phrase_set[b.orig_mt];
                         sym_type * data_b = &text[phrase_b.source];
                         off_t len_b = phrase_b.len;
 
@@ -142,21 +146,21 @@ namespace lz_like_strat {
                     });
                 }
                 prev_pos = i;
-                prev_hash = inv_mt_perm[i].second;
+                prev_hash = inv_mt_perm[i].fp;
             }
         }
 
-        //buff_vector<uint64_t> new_fps;
-        prev_fps.resize(inv_mt_perm.size()+1);
-        prev_fps[0] = 0;
+        buff_vector<uint64_t> new_fps;
+        new_fps.resize(inv_mt_perm.size()+1);
+        new_fps[0] = 0;
         mt_perm[0] = 0;
         for(size_t i=0, mt_sym=1;i<inv_mt_perm.size();i++, mt_sym++){
-            size_t perm_mt_sym =  inv_mt_perm[i].first+1;
+            size_t perm_mt_sym =  inv_mt_perm[i].orig_mt+1;
             assert(perm_mt_sym<mt_perm.size());
             mt_perm[perm_mt_sym] = mt_sym;
-            prev_fps[mt_sym] = inv_mt_perm[i].second;
+            new_fps[mt_sym] = inv_mt_perm[i].fp;
         }
-        //new_fps.swap(prev_fps);
+        new_fps.swap(prev_fps);
         chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, inv_mt_perm);
         //std::cout<<report_space(off_t(inv_mt_perm.size())*off_t(sizeof(std::pair<uint32_t, uint64_t>)))<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
         return n_cols;
@@ -322,9 +326,9 @@ namespace lz_like_strat {
         finish_byte_parse(chunk, dict, max_byte_offset, mt_perm, phr_with_ovf);
         chunk.update_used_bytes(max_byte_offset);
 
-        //avb_addr = chunk.get_free_mem_area();
-        //prev_fps.move_buffer(avb_addr.first, avb_addr.second);
-        //chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
+        avb_addr = chunk.get_free_mem_area();
+        prev_fps.move_buffer(avb_addr.first, avb_addr.second);
+        chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
     }
 
     // this method parses the text and store the parse in the text itself.
@@ -341,8 +345,7 @@ namespace lz_like_strat {
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
 
         auto avb_addr = chunk.get_free_mem_area();
-        //lz_like_map<uint32_t> dict(text, avb_addr.first, avb_addr.second);
-        lz_like_map<uint32_t> dict(text);
+        lz_like_map<uint32_t> dict(text, avb_addr.first, avb_addr.second);
 
         bool inserted, new_str;
         n_strings = 0;
@@ -404,8 +407,7 @@ namespace lz_like_strat {
         chunk.add_used_bytes(off_t(dict.phrase_set.static_buff_usage()));
 
         avb_addr = chunk.get_free_mem_area();
-        //buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
-        buff_vector<uint32_t> mt_perm;
+        buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
         mt_perm.resize(dict.size()+1);
         chunk.add_used_bytes((off_t)mt_perm.static_buff_usage());
 
@@ -446,9 +448,9 @@ namespace lz_like_strat {
         chunk.parse_size = parse_size;
         chunk.update_used_bytes((off_t)chunk.dist(reinterpret_cast<uint8_t*>(chunk.parse+chunk.parse_size)));
 
-        //avb_addr = chunk.get_free_mem_area();
-        //prev_fps.move_buffer(avb_addr.first, avb_addr.second);
-        //chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
+        avb_addr = chunk.get_free_mem_area();
+        prev_fps.move_buffer(avb_addr.first, avb_addr.second);
+        chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
     }
 
     template<class sym_type>
@@ -574,7 +576,8 @@ namespace lz_like_strat {
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 text_chunks[buff_id].p_gram.reset_grammar();
 
-                std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"    "<<std::flush;
+                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<std::flush;
+                malloc_count_reset_peak();
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
 
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
@@ -619,7 +622,8 @@ namespace lz_like_strat {
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
-                std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
+                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<std::flush;
+                malloc_count_reset_peak();
             }
             buffers_to_reuse.done();
 
@@ -630,6 +634,7 @@ namespace lz_like_strat {
             }
 #endif
             close(fd_w);
+            std::cout<<"\nParsed finished "<<std::endl;
         };
 
         auto compressor_worker = [&]() {
@@ -676,9 +681,7 @@ namespace lz_like_strat {
 
         using p_gram_type = partial_gram<sym_type>;
 
-        std::vector<std::pair<p_gram_type,
-                    std::vector<std::pair<size_t, size_t>>>
-                    > initial_grams(n_threads);
+        std::vector<std::pair<p_gram_type, std::vector<std::pair<size_t, size_t>>>> initial_grams(n_threads);
 
         ts_queue<size_t> gram_to_merge_queue;
         ts_queue<size_t> av_buff_queue;
@@ -723,6 +726,7 @@ namespace lz_like_strat {
                     rem_bytes-=read_bytes;
                     prog_bytes+=read_bytes;
                     //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
+                    std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
                 }
                 while(av_buff_queue.size()<n_threads);
                 gram_to_merge_queue.done();
@@ -751,7 +755,7 @@ namespace lz_like_strat {
                     destroy(initial_grams[i].second);
 
                     prog_bytes+=rem_prog_bytes;
-                    std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<" with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
+                    std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
                     malloc_count_reset_peak();
                 }
                 initial_grams[0].second.shrink_to_fit();

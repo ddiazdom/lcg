@@ -233,7 +233,7 @@ struct partial_gram {
 
         size_t acc_bits=0;
         for(size_t i=0;i<phrase_set.size();i++){
-            size_t idx = perm[i].first;
+            size_t idx = perm[i].orig_mt;
             uint32_t source = phrase_set[idx].source;
             uint32_t len = phrase_set[idx].len;
             if(len>longest_rule) longest_rule = len;
