@@ -70,8 +70,6 @@ namespace lz_like_strat {
         inv_mt_perm.resize(phrase_set.size());
         chunk.add_used_bytes((off_t)inv_mt_perm.static_buff_usage());
 
-        //std::cout<<inv_mt_perm.called_malloc()<<" /// "<<mt_perm.called_malloc()<<" /// "<<phrase_set.called_malloc()<<" "<<" "<<prev_fps.called_malloc()<<" "<<report_space((off_t)chunk.av_bytes())<<std::endl;
-        //std::cout<<report_space((off_t)inv_mt_perm.static_buff_usage())<<" /// "<<report_space((off_t)mt_perm.static_buff_usage())<<" /// "<<report_space((off_t)phrase_set.static_buff_usage())<<" "<<report_space((off_t) prev_fps.static_buff_usage())<<std::endl;
 
         size_t source, end, tot_symbols=0;
         std::vector<uint64_t> fp_sequence;
@@ -150,18 +148,31 @@ namespace lz_like_strat {
             }
         }
 
-        buff_vector<uint64_t> new_fps;
-        new_fps.resize(inv_mt_perm.size()+1);
+        avb_addr = chunk.get_free_mem_area();
+        buff_vector<uint64_t> new_fps(avb_addr.first, avb_addr.second);
+        new_fps.resize(inv_mt_perm.size() + 1);
+        //size_t bytes_in_ram = inv_mt_perm.eff_mem_usage() + mt_perm.eff_mem_usage() + phrase_set.eff_mem_usage() + prev_fps.eff_mem_usage() + chunk.p_gram.buff_bytes() + new_fps.eff_mem_usage() + chunk.buffer_bytes;
+        //std::cout <<"\n\tI have approximately " << report_space((off_t) bytes_in_ram) << " in main memory versus " << report_space((off_t) malloc_count_current()) << "/" << report_space((off_t) malloc_count_peak()) << std::endl;
+        //std::cout<<"inv_perm="<<inv_mt_perm.called_malloc()<<", perm="<<mt_perm.called_malloc()<<", phrases="<<phrase_set.called_malloc()<<" prev_fps="<<prev_fps.called_malloc()<<" av_bytes="<<report_space((off_t)chunk.av_bytes())<<"/"<< report_space((off_t) chunk.buffer_bytes)<<", mem_peak:"<< report_space((off_t)malloc_count_peak())<<std::endl;
+        //std::cout<<report_space((off_t)inv_mt_perm.mem_usage())<<", "<<report_space((off_t)mt_perm.mem_usage())<<", "<<report_space((off_t)phrase_set.mem_usage())<<", "<<report_space((off_t) prev_fps.mem_usage())<<std::endl;
+        //malloc_count_reset_peak();
+        //std::cout<<prev_fps.eff_mem_usage()<<" "<<new_fps.eff_mem_usage()<<std::endl;
+
         new_fps[0] = 0;
         mt_perm[0] = 0;
-        for(size_t i=0, mt_sym=1;i<inv_mt_perm.size();i++, mt_sym++){
-            size_t perm_mt_sym =  inv_mt_perm[i].orig_mt+1;
-            assert(perm_mt_sym<mt_perm.size());
+        for (size_t i = 0, mt_sym = 1; i < inv_mt_perm.size(); i++, mt_sym++) {
+            size_t perm_mt_sym = inv_mt_perm[i].orig_mt + 1;
+            assert(perm_mt_sym < mt_perm.size());
             mt_perm[perm_mt_sym] = mt_sym;
             new_fps[mt_sym] = inv_mt_perm[i].fp;
         }
         new_fps.swap(prev_fps);
+        new_fps.destroy();
+        //std::cout<<prev_fps.eff_mem_usage()<<" "<<new_fps.eff_mem_usage()<<std::endl;
+
+        //std::cout <<"\t\tDeberia ser igual o menor " << report_space((off_t) malloc_count_current()) << "/" << report_space((off_t) malloc_count_peak())<<std::endl;
         chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, inv_mt_perm);
+        //std::cout <<"\t\tDeberia haber crecido " << report_space((off_t) malloc_count_current()) << "/" << report_space((off_t) malloc_count_peak())<<std::endl;
         //std::cout<<report_space(off_t(inv_mt_perm.size())*off_t(sizeof(std::pair<uint32_t, uint64_t>)))<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
         return n_cols;
     }
@@ -329,6 +340,7 @@ namespace lz_like_strat {
         avb_addr = chunk.get_free_mem_area();
         prev_fps.move_buffer(avb_addr.first, avb_addr.second);
         chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
+        //std::cout<<"main memory usage "<<report_space((off_t)malloc_count_current())<<"/"<<report_space((off_t)malloc_count_peak())<<std::endl;
     }
 
     // this method parses the text and store the parse in the text itself.
@@ -451,11 +463,13 @@ namespace lz_like_strat {
         avb_addr = chunk.get_free_mem_area();
         prev_fps.move_buffer(avb_addr.first, avb_addr.second);
         chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
+        //std::cout<<"\tmain memory usage "<<report_space((off_t)malloc_count_current())<<"/"<<report_space((off_t)malloc_count_peak())<<std::endl;
     }
 
     template<class sym_type>
     void compress_text_chunk(text_chunk& chunk, std::vector<uint64_t>& fp_seeds){
 
+        //std::cout<<"\nThis is our peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
         size_t alpha_size = std::numeric_limits<sym_type>::max()+1;
         buff_vector<uint64_t> prev_fps;
         prev_fps.resize(alpha_size);
@@ -563,7 +577,7 @@ namespace lz_like_strat {
             size_t proc_syms=0;
             while (rem_bytes > 0) {
                 buffers_to_reuse.pop(buff_id);
-                size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
+                text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
                 //std::cout<<"\r  "<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<" (speed: "<<report_speed(text_chunks[buff_id].text_bytes, text_chunks[buff_id].t_start, text_chunks[buff_id].t_end)<<", ratio: )"<<std::endl;
 #ifdef __linux__
                w_page_cache_bytes += g_bytes;
@@ -574,10 +588,12 @@ namespace lz_like_strat {
                    }
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
+
+                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.buff_bytes())<<std::flush;
+                malloc_count_reset_peak();
+
                 text_chunks[buff_id].p_gram.reset_grammar();
 
-                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<std::flush;
-                malloc_count_reset_peak();
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
 
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
@@ -610,7 +626,7 @@ namespace lz_like_strat {
             while(!buffers_to_reuse.empty()){
 
                 buffers_to_reuse.pop(buff_id);
-                size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
+                text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
                 //std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
                 w_page_cache_bytes += g_bytes;

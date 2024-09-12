@@ -171,6 +171,7 @@ struct buff_vector{
     ~buff_vector(){
         if(mem_alloc){
             alloc_t::deallocate(data);
+            data = nullptr;
         }
     }
 
@@ -188,6 +189,25 @@ struct buff_vector{
         } else{
             return (len*sizeof(type))+offset;
         }
+    }
+
+    [[nodiscard]] inline size_t eff_mem_usage() const {
+        if(mem_alloc){
+            return cap*sizeof(type);
+        } else{
+            return 0;
+        }
+    }
+
+    void destroy() {
+        if(mem_alloc && data!= nullptr){
+            alloc_t::deallocate(data);
+        }
+        mem_alloc = false;
+        data = nullptr;
+        offset = 0;
+        len = 0;
+        cap = 0;
     }
 
     // Define the iterator class within the container

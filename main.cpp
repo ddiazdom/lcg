@@ -3,7 +3,6 @@
 #include "external/CLI11.hpp"
 #include "edit_gram.h"
 #include "grammar_algorithms.h"
-#include "external/malloc_count/memprofile.h"
 
 struct arguments{
     std::string input_file;
@@ -232,8 +231,6 @@ std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_que
 }
 
 int main(int argc, char** argv) {
-
-    MemProfile mp("memprofile.txt", 0.1, 1024);
 
     arguments args;
     CLI::App app("Locally-consistent grammar compression");

@@ -98,6 +98,7 @@ struct partial_gram {
         return written_bytes;
     }
 
+
     void load_metadata(std::ifstream &ifs){
         load_elm(ifs, text_size);
         load_elm(ifs, txt_id);
@@ -317,6 +318,10 @@ struct partial_gram {
     }
 
     void reset_grammar(){
+
+        for(size_t i=0;i<lvl;i++){
+            rules[lvl].destroy();
+        }
         text_size=0;
         txt_id=0;
         sep_tsym=0;
@@ -346,6 +351,16 @@ struct partial_gram {
             g_size+=i.tot_symbols;
         }
         return g_size;
+    }
+
+    [[nodiscard]] inline size_t buff_bytes() const {
+        size_t bytes=metadata.size()*sizeof(lvl_metadata_type);
+
+        for(const auto & rule_set : rules){
+            bytes+=rule_set.capacity_in_bytes();
+        }
+        bytes+=rules.size()*sizeof(stream_type);
+        return bytes;
     }
 
     [[nodiscard]] inline size_t gram_uint32_bytes() const {
