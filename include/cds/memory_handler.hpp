@@ -40,7 +40,7 @@ public:
     }
 };
 
-template <class T> struct alloc {
+template <class T> struct mem {
 
     typedef T value_type;
 

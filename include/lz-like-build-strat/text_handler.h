@@ -67,9 +67,9 @@ namespace lz_like_strat {
            if(new_cap>buffer_bytes){
                buffer_bytes = new_cap;
                if(text== nullptr){
-                   text = alloc<uint8_t>::allocate(buffer_bytes);
+                   text = mem<uint8_t>::allocate(buffer_bytes);
                }else{
-                   text = alloc<uint8_t>::reallocate(text, buffer_bytes);
+                   text = mem<uint8_t>::reallocate(text, buffer_bytes);
                }
                //std::cout<<"now the buffer uses: "<<report_space(buffer_bytes)<<std::endl;
            }
@@ -87,7 +87,7 @@ namespace lz_like_strat {
 
        ~text_chunk(){
            if(text!=nullptr){
-               alloc<uint8_t>::deallocate(text);
+               mem<uint8_t>::deallocate(text);
            }
        }
    };

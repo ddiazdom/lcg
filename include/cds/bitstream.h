@@ -10,7 +10,7 @@
 #include <cstring>
 #include "macros.h"
 #include "cdt_common.hpp"
-#include "mmap_allocator.h"
+//#include "mmap_allocator.h"
 #include "memory_handler.hpp"
 
 template<class word_t, uint8_t max_dist=std::numeric_limits<word_t>::digits>
@@ -63,11 +63,11 @@ struct bitstream{
         if(n_words>stream_size){
             if(stream==nullptr){
                 //stream = (word_t *)malloc(words2bytes(n_words));
-                stream = alloc<word_t>::allocate(n_words);
+                stream = mem<word_t>::allocate(n_words);
             }else{
                 assert(stream_size!=0);
                 //stream = (word_t *)realloc(stream, words2bytes(n_words));
-                stream = alloc<word_t>::reallocate(stream, n_words);
+                stream = mem<word_t>::reallocate(stream, n_words);
             }
             stream_size = n_words;
         }
@@ -84,7 +84,7 @@ struct bitstream{
     void destroy(){
         if(stream!= nullptr){
             //free(stream);
-            alloc<word_t>::deallocate(stream);
+            mem<word_t>::deallocate(stream);
             stream = nullptr;
         }
         stream_size=0;

@@ -311,7 +311,7 @@ private:
         }
 
         //buffer = (char *)realloc(buffer, new_buff_size);
-        buffer = alloc<char>::reallocate(buffer, new_buff_size);
+        buffer = mem<char>::reallocate(buffer, new_buff_size);
         memset((void *)(buffer+next_av_offset), 0, (new_buff_size-next_av_offset));
 
         buff_size = new_buff_size;
@@ -346,14 +346,14 @@ public:
         m_table = new table_t(round_to_power_of_two(min_cap));
         if(buff_size!=0){
             //buffer = (char *) malloc(buff_size);
-            buffer = alloc<char>::allocate(buff_size);
+            buffer = mem<char>::allocate(buff_size);
         }
     }
 
     ~nts_string_submap(){
         delete m_table;
         //free(buffer);
-        alloc<char>::deallocate(buffer);
+        mem<char>::deallocate(buffer);
     }
 
     bool value_add(const uint8_t* key, size_t len, val_type val, size_t hash) {
@@ -543,7 +543,7 @@ public:
 
     void destroy_buffer(){
         //free(buffer);
-        alloc<char>::deallocate(buffer);
+        mem<char>::deallocate(buffer);
         buffer = nullptr;
 #ifdef __linux__
         malloc_trim(0);
@@ -552,7 +552,7 @@ public:
 
     void shrink_to_fit(){
         //buffer = (char *)realloc(buffer, next_av_offset);
-        buffer = alloc<char>::reallocate(buffer, next_av_offset);
+        buffer = mem<char>::reallocate(buffer, next_av_offset);
 #ifdef __linux__
         malloc_trim(0);
 #endif
@@ -576,9 +576,9 @@ public:
         //load the buffer with the keys
         ifs.read((char *)&next_av_offset, sizeof(next_av_offset));
         if(buffer!= nullptr){
-            buffer = alloc<char>::reallocate(buffer, next_av_offset);
+            buffer = mem<char>::reallocate(buffer, next_av_offset);
         }else{
-            buffer = alloc<char>::allocate(next_av_offset);
+            buffer = mem<char>::allocate(next_av_offset);
         }
         buff_size = next_av_offset;
         ifs.read((char *)buffer, buff_size);
@@ -710,7 +710,7 @@ private:
         }
         //std::cout<<"I removed the old hash table "<<table_ptr->size()<<std::endl;
         //free(table_ptr);
-        alloc<table_t>::deallocate(table_ptr);
+        mem<table_t>::deallocate(table_ptr);
         mod_ht.clear(std::memory_order_release);
         doing_rehash.clear(std::memory_order_release);
     }
@@ -757,7 +757,7 @@ private:
         }
 
         //auto *new_buff_ptr = (char *)malloc(new_buff_size);
-        auto *new_buff_ptr = alloc<char>::allocate(new_buff_size);
+        auto *new_buff_ptr = mem<char>::allocate(new_buff_size);
         memset(new_buff_ptr, 0, new_buff_size);
 
         prev_buff_ptr = buffer;
@@ -808,7 +808,7 @@ private:
             mod_ht.clear(std::memory_order_release);
 
             //free(old_buff_ptr);
-            alloc<char>::deallocate(old_buff_ptr);
+            mem<char>::deallocate(old_buff_ptr);
             //std::cout<<"Deleting the old key buffer"<<std::endl;
         }
         moving_buffer.store(false, std::memory_order_release);
@@ -833,7 +833,7 @@ public:
 
         if(buff_size!=0){
             //buffer = (char *) malloc(buff_size);
-            buffer = alloc<char>::allocate(buff_size);
+            buffer = mem<char>::allocate(buff_size);
         }
 
         for(auto & prot_tab_ptr : prot_ptrs){
@@ -844,7 +844,7 @@ public:
     ~ts_string_submap(){
         delete m_table;
         //free(buffer);
-        alloc<char>::deallocate(buffer);
+        mem<char>::deallocate(buffer);
     }
 
     //thread-safe increment by "val" of the value associated with "key" in the hash table

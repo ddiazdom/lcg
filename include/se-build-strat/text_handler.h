@@ -58,12 +58,12 @@ struct text_chunk {
     ~text_chunk() {
         if (buffer != nullptr) {
             //free(buffer);
-            alloc<uint8_t>::deallocate(buffer);
+            mem<uint8_t>::deallocate(buffer);
         }
 
         if (sec_buffer != nullptr) {
             //free(sec_buffer);
-            alloc<uint8_t>::deallocate(sec_buffer);
+            mem<uint8_t>::deallocate(sec_buffer);
         }
 #ifdef __linux__
         malloc_trim(0);
@@ -238,7 +238,7 @@ struct text_chunk {
                     assert(chunk_bytes>bytes);
                     bytes = chunk_bytes;
                     //buffer = (uint8_t *)realloc(buffer, bytes);
-                    buffer = alloc<uint8_t>::reallocate(buffer, bytes);
+                    buffer = mem<uint8_t>::reallocate(buffer, bytes);
                     memset(buffer, 0,  bytes);
 
                     lseek(fd, acc_bytes*-1, SEEK_CUR);
@@ -276,7 +276,7 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
     off_t n_elms = buff_size/sym_bytes;
 
     //auto buffer = (sym_type *) calloc(n_elms, sym_bytes);
-    auto buffer = alloc<sym_type>::allocate(n_elms);
+    auto buffer = mem<sym_type>::allocate(n_elms);
     memset(buffer, 0, n_elms*sym_bytes);
 
     int fd = open(input_file.c_str(), O_RDONLY);
@@ -335,6 +335,6 @@ void compute_text_stats(std::string& input_file, text_stats& txt_stats){
     posix_fadvise(fd, 0, st.st_size, POSIX_FADV_DONTNEED);
 #endif
     close(fd);
-    alloc<sym_type>::deallocate(buffer);
+    mem<sym_type>::deallocate(buffer);
 }
 #endif //SE_STRAT_TEXT_READER_H

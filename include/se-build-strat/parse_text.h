@@ -66,7 +66,7 @@ struct parse_text {
                 tmp_ck_size = std::min(opts.chunk_size, rem_bytes);
                 text_chunks[chunk_id].bytes_cap = tmp_ck_size;
                 //text_chunks[chunk_id].buffer = (uint8_t *)malloc(tmp_ck_size);
-                text_chunks[chunk_id].buffer = alloc<uint8_t>::allocate(tmp_ck_size);
+                text_chunks[chunk_id].buffer = mem<uint8_t>::allocate(tmp_ck_size);
                 text_chunks[chunk_id].vbyte_sym_perm = &opts.vbyte_sym_perm;
                 text_chunks[chunk_id].sep_sym = opts.sep_sym;
                 text_chunks[chunk_id].p_seed = opts.p_seed;
@@ -82,7 +82,7 @@ struct parse_text {
                     text_chunks[chunk_id].sec_bytes = opts.max_mt_sym_in_buff*sizeof(out_sym_type);
                 }
                 //text_chunks[chunk_id].sec_buffer = (uint8_t *)malloc(text_chunks[chunk_id].sec_bytes);
-                text_chunks[chunk_id].sec_buffer = alloc<uint8_t>::allocate(text_chunks[chunk_id].sec_bytes);
+                text_chunks[chunk_id].sec_buffer = mem<uint8_t>::allocate(text_chunks[chunk_id].sec_bytes);
 
 #ifdef __linux__
                 r_page_cache_bytes+=text_chunks[chunk_id].eff_buff_bytes();

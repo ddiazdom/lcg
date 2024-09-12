@@ -9,7 +9,7 @@
 #include <cassert>
 #include <algorithm>
 
-template<class type, class alloc_t=alloc<type>>
+template<class type, class alloc_t=mem<type>>
 struct buff_vector{
 
     type *data= nullptr;

@@ -61,7 +61,8 @@ namespace lz_like_strat {
         }
 
         auto avb_addr = chunk.get_free_mem_area();
-        buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm(avb_addr.first, avb_addr.second);
+        //buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm(avb_addr.first, avb_addr.second);
+        buff_vector<std::pair<uint32_t, uint64_t>> inv_mt_perm;
         inv_mt_perm.resize(phrase_set.size());
         chunk.add_used_bytes((off_t)inv_mt_perm.static_buff_usage());
 
@@ -145,17 +146,17 @@ namespace lz_like_strat {
             }
         }
 
-        buff_vector<uint64_t> new_fps;
-        new_fps.resize(inv_mt_perm.size()+1);
-        new_fps[0] = 0;
+        //buff_vector<uint64_t> new_fps;
+        prev_fps.resize(inv_mt_perm.size()+1);
+        prev_fps[0] = 0;
         mt_perm[0] = 0;
         for(size_t i=0, mt_sym=1;i<inv_mt_perm.size();i++, mt_sym++){
             size_t perm_mt_sym =  inv_mt_perm[i].first+1;
             assert(perm_mt_sym<mt_perm.size());
             mt_perm[perm_mt_sym] = mt_sym;
-            new_fps[mt_sym] = inv_mt_perm[i].second;
+            prev_fps[mt_sym] = inv_mt_perm[i].second;
         }
-        new_fps.swap(prev_fps);
+        //new_fps.swap(prev_fps);
         chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols, inv_mt_perm);
         //std::cout<<report_space(off_t(inv_mt_perm.size())*off_t(sizeof(std::pair<uint32_t, uint64_t>)))<<" "<<report_space(off_t(prev_fps.size())*8)<<" "<<report_space(off_t(mt_perm.size())*4)<<" "<<report_space(off_t(phrase_set.size())*8)<<" "<<report_space(lvl_bytes)<<std::endl;
         return n_cols;
@@ -312,7 +313,8 @@ namespace lz_like_strat {
         chunk.update_used_bytes(max_byte_offset);//update the amount of used bytes
 
         auto avb_addr = chunk.get_free_mem_area();
-        buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
+        //buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
+        buff_vector<uint32_t> mt_perm;
         mt_perm.resize(dict.size()+1);
         chunk.add_used_bytes((off_t)mt_perm.static_buff_usage());
 
@@ -339,7 +341,8 @@ namespace lz_like_strat {
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
 
         auto avb_addr = chunk.get_free_mem_area();
-        lz_like_map<uint32_t> dict(text, avb_addr.first, avb_addr.second);
+        //lz_like_map<uint32_t> dict(text, avb_addr.first, avb_addr.second);
+        lz_like_map<uint32_t> dict(text);
 
         bool inserted, new_str;
         n_strings = 0;
@@ -401,7 +404,8 @@ namespace lz_like_strat {
         chunk.add_used_bytes(off_t(dict.phrase_set.static_buff_usage()));
 
         avb_addr = chunk.get_free_mem_area();
-        buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
+        //buff_vector<uint32_t> mt_perm(avb_addr.first, avb_addr.second);
+        buff_vector<uint32_t> mt_perm;
         mt_perm.resize(dict.size()+1);
         chunk.add_used_bytes((off_t)mt_perm.static_buff_usage());
 
@@ -661,7 +665,7 @@ namespace lz_like_strat {
 
         for(auto &chunk : text_chunks){
             //free(chunk.text);
-            alloc<uint8_t>::deallocate(chunk.text);
+            mem<uint8_t>::deallocate(chunk.text);
             chunk.text=nullptr;
         }
     }

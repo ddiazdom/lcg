@@ -111,7 +111,7 @@ str_collection collection_stats(std::string& input_file){
     posix_memalign((void **)&buffer, page_size, buffer_size);
 #else
     //buffer = (uint8_t*)malloc(buffer_size);
-    buffer = alloc<uint8_t>::allocate(buffer_size);
+    buffer = mem<uint8_t>::allocate(buffer_size);
 #endif
 
 #ifdef __linux__
@@ -149,7 +149,7 @@ str_collection collection_stats(std::string& input_file){
     }
 
     //free(buffer);
-    alloc<uint8_t>::deallocate(buffer);
+    mem<uint8_t>::deallocate(buffer);
     close(fd_in);
 
     /*
