@@ -577,15 +577,15 @@ namespace lz_like_strat {
             size_t proc_syms=0;
             while (rem_bytes > 0) {
                 buffers_to_reuse.pop(buff_id);
-                text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
+                size_t g_bytes =  text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
                 //std::cout<<"\r  "<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<" (speed: "<<report_speed(text_chunks[buff_id].text_bytes, text_chunks[buff_id].t_start, text_chunks[buff_id].t_end)<<", ratio: )"<<std::endl;
 #ifdef __linux__
-               w_page_cache_bytes += g_bytes;
-                   if(w_page_cache_bytes>p_opts.page_cache_limit){
-                       std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
-                       posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
-                       w_page_cache_bytes=0;
-                   }
+                w_page_cache_bytes += g_bytes;
+                if(w_page_cache_bytes>p_opts.page_cache_limit){
+                    std::cout<<"- removing from page cache "<<w_page_cache_bytes<<" "<<w_acc_bytes<<std::endl;
+                    posix_fadvise(fd_w, w_acc_bytes-w_page_cache_bytes, w_page_cache_bytes, POSIX_FADV_DONTNEED);
+                    w_page_cache_bytes=0;
+                }
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
 
@@ -626,7 +626,8 @@ namespace lz_like_strat {
             while(!buffers_to_reuse.empty()){
 
                 buffers_to_reuse.pop(buff_id);
-                text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
+                size_t g_bytes = text_chunks[buff_id].p_gram.serialize_to_fd(fd_w);
+                //std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
                 //std::cout<<report_space(text_chunks[buff_id].text_bytes)<<" compressed to "<<report_space((off_t)g_bytes)<<std::endl;
 #ifdef __linux__
                 w_page_cache_bytes += g_bytes;
