@@ -248,7 +248,7 @@ namespace lz_like_strat {
         uint8_t * text = chunk.text;
         off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, max_byte_offset, byte_offset, parse_size;
         uint8_t v_len;
-        lz_like_map dict(text);
+        lz_like_map dict(text, chunk.max_n_phrases[0]);
         assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
         text[rb] = 128;//the vbyte code of the metasymbol mt=0 representing a separator in the next round of parsing
@@ -318,6 +318,7 @@ namespace lz_like_strat {
         }
         parse_size++;
 
+        if(dict.capacity()>chunk.max_n_phrases[0]) chunk.max_n_phrases[0] = dict.capacity();
         dict.shrink_to_fit();
         dict.destroy_table();
         chunk.parse_size = parse_size;
@@ -357,7 +358,7 @@ namespace lz_like_strat {
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
 
         auto avb_addr = chunk.get_free_mem_area();
-        lz_like_map<uint32_t> dict(text, avb_addr.first, avb_addr.second);
+        lz_like_map<uint32_t> dict(text, chunk.max_n_phrases[chunk.round], avb_addr.first, avb_addr.second);
 
         bool inserted, new_str;
         n_strings = 0;
@@ -410,6 +411,7 @@ namespace lz_like_strat {
         parse_size+=2;//+1 for the separator symbol
         n_strings++;
 
+        if(dict.capacity()>chunk.max_n_phrases[chunk.round]) chunk.max_n_phrases[chunk.round] = dict.capacity();
         dict.shrink_to_fit();
         dict.destroy_table();
 
@@ -488,6 +490,7 @@ namespace lz_like_strat {
         chunk.p_gram.sep_tsym = chunk.sep_sym;
         chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
         chunk.p_gram.txt_id = chunk.id;
+        chunk.round = 0;
 
         //auto start = std::chrono::steady_clock::now();
         byte_par_r2l(chunk, n_strings, sep_sym, fp_seeds[p_round + 1], prev_fps);
@@ -495,6 +498,7 @@ namespace lz_like_strat {
         //report_time(start, end , 2);
 
         off_t size_limit = n_strings*2;
+        chunk.round++;
         p_round++;
 
         while(chunk.parse_size!=size_limit){
@@ -504,7 +508,7 @@ namespace lz_like_strat {
             int_par_l2r(chunk, n_strings, fp_seeds[p_round+1], prev_fps);
             //end = std::chrono::steady_clock::now();
             //report_time(start, end , 2);
-
+            chunk.round++;
             p_round++;
         }
         //start = std::chrono::steady_clock::now();

@@ -320,7 +320,7 @@ struct partial_gram {
     void reset_grammar(){
 
         for(size_t i=0;i<lvl;i++){
-            rules[lvl].destroy();
+            rules[i].destroy();
         }
         text_size=0;
         txt_id=0;
@@ -364,9 +364,9 @@ struct partial_gram {
     }
 
     [[nodiscard]] inline size_t gram_uint32_bytes() const {
-        size_t bytes=0;
-        for(const auto & i : metadata){
-            bytes+=i.uint32_bytes();
+        size_t bytes=metadata[1].tot_symbols;
+        for(size_t i=2; i<metadata.size();i++){
+            bytes+=metadata[i].uint32_bytes();
         }
         return bytes;
     }

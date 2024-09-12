@@ -95,9 +95,10 @@ public:
 
     const phrase_list_t& phrase_set = phrases;
 
-    explicit lz_like_map(seq_type*& _seq, uint8_t * buffer=nullptr, size_t buff_bytes=0, size_t min_cap=4, float max_lf=0.6) : seq(_seq),
+    explicit lz_like_map(seq_type*& _seq, size_t min_cap=4, uint8_t * buffer=nullptr, size_t buff_bytes=0, float max_lf=0.6) : seq(_seq),
                                                                                                                                phrases(buffer, buff_bytes),
                                                                                                                                m_max_load_factor(max_lf){
+        assert(min_cap>0);
         m_table = table_t(round_to_power_of_two(min_cap), null_source);
         frac_lf = size_t(m_max_load_factor*100);
         elm_threshold = (m_table.size()*frac_lf)/100;

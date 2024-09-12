@@ -29,6 +29,12 @@ namespace lz_like_strat {
        off_t parse_size=0;
        partial_gram<uint8_t> p_gram;
 
+       uint32_t max_n_phrases[40]={8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
+       uint32_t round=0;
+
        //to measure time
        std::chrono::steady_clock::time_point t_start;
        std::chrono::steady_clock::time_point t_end;
