@@ -8,13 +8,12 @@ set(SOURCE_FILES main.cpp
         lib/utils.cpp
         lib/cdt_common.cpp
         external/malloc_count/malloc_count.c
-        external/malloc_count/stack_count.c
 )
 
 # Add executable target with source files listed in SOURCE_FILES variable
 add_executable(lcg ${SOURCE_FILES})
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
-        -O3
+        #-O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -32,12 +31,3 @@ if(UNIX AND NOT APPLE)
 endif()
 
 target_include_directories(lcg PUBLIC include external/xxHash-dev external/malloc_count)
-
-add_executable(test_gram
-        test_gram_functions.cpp
-        external/xxHash-dev/xxhash.c
-        external/malloc_count/malloc_count.c
-        lib/cdt_common.cpp lib/utils.cpp
-)
-target_include_directories(test_gram PRIVATE include external/xxHash-dev external/malloc_count)
-target_link_libraries(test_gram LINK_PUBLIC dl)

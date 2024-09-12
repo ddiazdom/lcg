@@ -318,11 +318,11 @@ namespace lz_like_strat {
 
         create_meta_sym<uint8_t, true>(chunk, mt_perm, fp_seed, dict.phrase_set, prev_fps);
         finish_byte_parse(chunk, dict, max_byte_offset, mt_perm, phr_with_ovf);
-
         chunk.update_used_bytes(max_byte_offset);
-        avb_addr = chunk.get_free_mem_area();
-        prev_fps.move_buffer(avb_addr.first, avb_addr.second);
-        chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
+
+        //avb_addr = chunk.get_free_mem_area();
+        //prev_fps.move_buffer(avb_addr.first, avb_addr.second);
+        //chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
     }
 
     // this method parses the text and store the parse in the text itself.
@@ -441,20 +441,10 @@ namespace lz_like_strat {
         assert(k==parse_size);
         chunk.parse_size = parse_size;
         chunk.update_used_bytes((off_t)chunk.dist(reinterpret_cast<uint8_t*>(chunk.parse+chunk.parse_size)));
-        avb_addr = chunk.get_free_mem_area();
-        prev_fps.move_buffer(avb_addr.first, avb_addr.second);
-        chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
-        //buffer.update_pos(reinterpret_cast<uint8_t*>(text+parse_size));
-        //std::cout<<"available for the next round: "<<report_space((off_t)buffer.get_addr().second)<<std::endl;
 
-        /*bytes_av_in_buff = (uintptr_t)(text+parse_size) - (uintptr_t)(text+parse_size);
-        if(bytes_av_in_buff>0){
-            buffer =  reinterpret_cast<uint8_t *>(text+parse_size);
-            assert((uintptr_t)text<= (uintptr_t)buffer && (uintptr_t)buffer<= (uintptr_t)&text[buffer_size-1]);
-        }else{
-            buffer = nullptr;
-        }
-        std::cout<<"there are "<<report_space((off_t)bytes_av_in_buff)<<" available"<<std::endl;*/
+        //avb_addr = chunk.get_free_mem_area();
+        //prev_fps.move_buffer(avb_addr.first, avb_addr.second);
+        //chunk.add_used_bytes((off_t)prev_fps.static_buff_usage());
     }
 
     template<class sym_type>
@@ -625,7 +615,7 @@ namespace lz_like_strat {
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
-                std::cout<<"  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
+                std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::endl;
             }
             buffers_to_reuse.done();
 
