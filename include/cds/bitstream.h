@@ -73,11 +73,11 @@ struct bitstream{
         }
     }
 
-    [[nodiscard]] inline size_t bits2words(size_t n_bits) const {
+    [[nodiscard]] static inline size_t bits2words(size_t n_bits) {
         return INT_CEIL(n_bits, (sizeof(word_t)*8));
     }
 
-    [[nodiscard]] inline size_t words2bytes(size_t n_words) const {
+    [[nodiscard]] static inline size_t words2bytes(size_t n_words) {
         return n_words*sizeof(word_t);
     }
 

@@ -6,6 +6,7 @@
 #define LCG_MERGE_GRAMS_H
 
 #include "partial_gram.h"
+#include "cds/memory_handler.hpp"
 #include "malloc_count.h"
 
 struct merge_data_t{
@@ -54,6 +55,363 @@ struct merge_data_t{
 #endif
     }
 };
+
+#define WRITE_B\
+    if constexpr (std::is_same<sym_type, uint8_t>::value){\
+        memcpy(&len_b, &rule_set_b[str_pos_b], sizeof(uint32_t));\
+        memcpy(&rule_set_c[str_pos_c], &len_b, sizeof(uint32_t));\
+        str_pos_b+=sizeof(uint32_t);\
+        str_pos_c+=sizeof(uint32_t);\
+        memcpy(&rule_set_c[str_pos_c], &rule_set_b[str_pos_b], len_b);\
+        str_pos_c+=len_b;\
+        str_pos_b+=len_b;\
+    } else {\
+        len_b = rule_set_b[str_pos_b];\
+        rule_set_c[str_pos_c] = len_b;\
+        str_pos_b++;\
+        str_pos_c++;\
+        memcpy(&rule_set_c[str_pos_c], &rule_set_b[str_pos_b], len_b*sizeof(uint32_t));\
+        str_pos_c+=len_b;\
+        str_pos_b+=len_b;\
+    }\
+    fps_c.push_back(fps_b[rule_b]);\
+    met_c.tot_symbols+=len_b;\
+    merge_marks.push_back(in_b);\
+    rule_b++;\
+
+#define WRITE_A\
+    if constexpr (std::is_same<sym_type, uint8_t>::value){\
+        memcpy(&len_a, &rule_set_a[str_pos_a], sizeof(uint32_t));\
+        memcpy(&rule_set_c[str_pos_c], &len_a, sizeof(uint32_t));\
+        str_pos_a+=sizeof(uint32_t);\
+        str_pos_c+=sizeof(uint32_t);\
+        memcpy(&rule_set_c[str_pos_c], &rule_set_a[str_pos_a], len_a);\
+        str_pos_c+=len_a;\
+        str_pos_a+=len_a;\
+    } else{\
+        len_a = rule_set_a[str_pos_a];\
+        rule_set_c[str_pos_c] = len_a;\
+        str_pos_a++;\
+        str_pos_c++;\
+        memcpy(&rule_set_c[str_pos_c], &rule_set_a[str_pos_a], len_a*sizeof(uint32_t)); \
+        str_pos_c+=len_a;\
+        str_pos_a+=len_a;\
+    }\
+    fps_c.push_back(fps_a[rule_a]);\
+    met_c.tot_symbols+=len_a;\
+    merge_marks.push_back(in_a);\
+    rule_a++;\
+
+template<class sym_type>
+void merge_level32t(buff_vector<sym_type>& rule_set_a, lvl_metadata_type& mt_a, buff_vector<uint64_t> & fps_a, buff_vector<uint32_t>& map_a,
+                    buff_vector<sym_type>& rule_set_b, lvl_metadata_type& mt_b, buff_vector<uint64_t> & fps_b, buff_vector<uint32_t>& map_b) {
+
+    size_t rule_a=0, rule_b=0, str_pos_a=0, str_pos_b=0, str_pos_c=0;
+    uint32_t len_a=0, len_b=0;
+    lvl_metadata_type met_c;
+
+    uint8_t in_a=1, in_b=2, in_ab=3;
+
+    buff_vector<uint8_t> merge_marks;
+    merge_marks.increase_capacity(mt_a.n_rules+mt_b.n_rules);
+    buff_vector<uint64_t> fps_c;
+
+    buff_vector<sym_type> rule_set_c;
+    size_t buff_size=0;
+    if constexpr (std::is_same<sym_type, uint8_t>::value){
+        buff_size+=(mt_a.n_rules+mt_b.n_rules)*sizeof(uint32_t);
+    }else{
+        buff_size+=(mt_a.n_rules+mt_b.n_rules);
+    }
+    buff_size+=mt_a.tot_symbols+mt_b.tot_symbols;
+    rule_set_c.resize(buff_size);
+
+    while(rule_a < mt_a.n_rules && rule_b < mt_b.n_rules) {
+
+        if(fps_a[rule_a]<fps_b[rule_b]){
+            WRITE_A
+        } else if(fps_b[rule_b]<fps_a[rule_a]) {
+            //WRITE_B
+            if constexpr (std::is_same<sym_type, uint8_t>::value){
+                memcpy(&len_b, &rule_set_b[str_pos_b], sizeof(uint32_t));
+                memcpy(&rule_set_c[str_pos_c], &len_b, sizeof(uint32_t));
+                str_pos_b+=sizeof(uint32_t);
+                str_pos_c+=sizeof(uint32_t);
+                memcpy(&rule_set_c[str_pos_c], &rule_set_b[str_pos_b], len_b);
+                str_pos_c+=len_b;
+                str_pos_b+=len_b;
+            } else {
+                len_b = rule_set_b[str_pos_b];
+                rule_set_c[str_pos_c] = len_b;
+                str_pos_b++;
+                str_pos_c++;
+                memcpy(&rule_set_c[str_pos_c], &rule_set_b[str_pos_b], len_b*sizeof(uint32_t));
+                str_pos_c+=len_b;
+                str_pos_b+=len_b;
+            }
+            fps_c.push_back(fps_b[rule_b]);
+            met_c.tot_symbols+=len_b;
+            merge_marks.push_back(in_b);
+            rule_b++;
+
+        } else {
+            size_t words_len=1;
+            if constexpr (std::is_same<sym_type, uint8_t>::value){
+                words_len = sizeof(uint32_t);
+                memcpy(&len_a, &rule_set_a[str_pos_a], sizeof(uint32_t));
+                memcpy(&len_b, &rule_set_b[str_pos_b], sizeof(uint32_t));
+            }else{
+                len_a = rule_set_a[str_pos_a];
+                len_b = rule_set_b[str_pos_b];
+            }
+            str_pos_a+=words_len;
+            str_pos_b+=words_len;
+            bool eq = len_a == len_b && (memcmp(&rule_set_a[str_pos_a], &rule_set_b[str_pos_b], len_a * sizeof(sym_type)) == 0);
+
+            if(eq){
+                if constexpr (std::is_same<sym_type, uint8_t>::value){
+                    memcpy(&rule_set_c[str_pos_c], &len_a, sizeof(uint32_t));
+                } else {
+                    rule_set_c[str_pos_c] = len_a;
+                }
+                str_pos_c+=words_len;
+                memcpy(&rule_set_c[str_pos_c], &rule_set_a[str_pos_a], len_a*sizeof(sym_type));
+                str_pos_a+=len_a;
+                str_pos_b+=len_a;
+                str_pos_c+=len_a;
+
+                fps_c.push_back(fps_a[rule_a]);
+                met_c.tot_symbols += len_a;
+                merge_marks.push_back(in_ab);
+                rule_a++;
+                rule_b++;
+            } else {
+                //a collision occurred (extremely unlikely, but not impossible)
+                std::cout<< "Collision warning:  " << fps_a[rule_a] << " " << fps_b[rule_b] << " " << rule_b << " " << rule_b << std::endl;
+
+                auto n_comparisons = (off_t)std::min(len_a, len_b);
+                off_t diff_pos=-1;
+                for(off_t j=0;j<n_comparisons;j++){
+                    if(rule_set_a[str_pos_a+j]!=rule_set_b[str_pos_b+j]){
+                        diff_pos = j;
+                        break;
+                    }
+                }
+                bool a_is_smaller = (diff_pos!=-1 && rule_set_a[str_pos_a+diff_pos]<rule_set_b[str_pos_b+diff_pos]) ||
+                                    (diff_pos==-1 && len_a<len_b);
+
+                if(a_is_smaller) {
+                    str_pos_a-=words_len;
+                    WRITE_A
+                } else {
+                    str_pos_b-=words_len;
+                    WRITE_B
+                }
+            }
+        }
+    }
+
+    while(rule_a<mt_a.n_rules){
+        WRITE_A
+    }
+
+    while(rule_b<mt_b.n_rules) {
+        WRITE_B
+    }
+
+    rule_set_c.len = str_pos_c;
+    rule_set_c.shrink_to_fit();
+    rule_set_a.swap(rule_set_c);
+
+    fps_a.swap(fps_c);
+    fps_c.destroy();
+
+    size_t mt_sym_a=0, mt_sym_b=0, mg_mt_sym=0;
+    map_a.resize(mt_a.n_rules);
+    map_a.shrink_to_fit();
+    map_b.resize(mt_b.n_rules);
+    map_b.shrink_to_fit();
+    for(const unsigned char& side : merge_marks){
+        switch (side) {
+            case 1:
+                map_a[mt_sym_a++] = mg_mt_sym;
+                break;
+            case 2:
+                map_b[mt_sym_b++] = mg_mt_sym;
+                break;
+            default:
+                assert(side==in_ab);
+                map_a[mt_sym_a++] = mg_mt_sym;
+                map_b[mt_sym_b++] = mg_mt_sym;
+        }
+        mg_mt_sym++;
+    }
+    met_c.n_rules = merge_marks.size();
+    merge_marks.destroy();
+    mt_a = met_c;
+    mt_a.terminals = false;
+}
+
+void create_fake_level32bits(partial_gram32t& p_gram, size_t new_lvl,
+                             std::vector<uint64_t>& prev_fps, uint64_t fp_seed,
+                             buff_vector<uint32_t>& mt_map){
+
+    // new_level is to the previous level in the metadata because
+    // the first element of the metadata vector has the terminal alphabet
+    p_gram.metadata[new_lvl+1].sym_width = sym_width(p_gram.metadata[new_lvl].n_rules)+1;
+    p_gram.metadata[new_lvl+1].n_rules = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].tot_symbols = p_gram.metadata[new_lvl].n_rules;
+    p_gram.metadata[new_lvl+1].terminals = false;
+
+    assert((p_gram.metadata[new_lvl+1].n_rules+1) == mt_map.size());
+
+    p_gram.nt_rules[new_lvl].increase_capacity(p_gram.bytes_curr_level()/sizeof(uint32_t));
+
+    std::vector<std::tuple<uint64_t, uint64_t, uint32_t>> perm(mt_map.size());
+    for(size_t i=0;i<mt_map.size();i++){
+        std::get<0>(perm[i]) = i;
+        uint64_t fp = prev_fps[mt_map[i]];
+        std::get<1>(perm[i]) = XXH3_64bits(&fp, sizeof(uint64_t));
+        std::get<2>(perm[i]) = mt_map[i];
+    }
+
+    std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
+        if(std::get<1>(a)!=std::get<1>(b)){
+            return std::get<1>(a) < std::get<1>(b);//break ties using the level fingerprint
+        }
+        assert(std::get<0>(a)==std::get<0>(b) ||
+               prev_fps[std::get<2>(a)]!=prev_fps[std::get<2>(b)]);
+        return prev_fps[std::get<2>(a)]<prev_fps[std::get<2>(b)];
+    });
+
+    size_t pos=0;
+    std::vector<uint32_t> inv_perm(perm.size());
+    for(size_t mt_sym=0;mt_sym<perm.size();mt_sym++){
+        p_gram.nt_rules[new_lvl][pos++] = 1;
+        p_gram.nt_rules[new_lvl][pos++] = std::get<0>(perm[mt_sym]);
+        mt_map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
+        inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;
+    }
+
+    //update the compressed string
+    size_t last_lvl = p_gram.nt_rules.size()-1;
+    pos = 0;
+    size_t mt_sym;
+    while(pos<p_gram.nt_rules[last_lvl].size()){
+        mt_sym = p_gram.nt_rules[last_lvl][pos++];
+        mt_sym = inv_perm[mt_sym];
+        p_gram.nt_rules[last_lvl][pos]  = mt_sym;
+        pos++;
+    }
+}
+
+size_t add_another_grammar(partial_gram32t& sink_gram, int fd_r, size_t n_threads) {
+
+    vector_uint64_t ng_part(n_threads);
+
+    partial_gram32t new_gram(fd_r);
+    buff_vector<uint32_t> map_a;
+    buff_vector<uint32_t> map_b;
+    buff_vector<uint64_t> ng_fps;
+
+    {
+        buff_vector<uint8_t> ng_buff;
+        ng_buff.resize(new_gram.bytes_curr_level());
+
+        //load the first level
+        lvl_metadata_type& ng_mt_lvl = new_gram.metadata_curr_lvl();
+
+        new_gram.load_next_rule_set(ng_buff.data, ng_buff.size(), ng_part);
+        ng_fps.resize(ng_mt_lvl.n_rules);
+        new_gram.compute_level_fps(ng_buff.data, ng_buff.size(), sink_gram.gram_fps[0], ng_fps, ng_part);
+
+        merge_level32t(sink_gram.ter_rules, sink_gram.metadata[1], sink_gram.gram_fps[1], map_a,
+                       ng_buff, ng_mt_lvl, ng_fps, map_b);
+
+        sink_gram.metadata[1].sym_width = sym_width(sink_gram.metadata[0].tot_symbols);
+        sink_gram.transform_level(2, map_a);
+    }
+
+    buff_vector<uint32_t> ng_buff;
+    size_t max_lvl = std::max(sink_gram.lvl, new_gram.lvl)-1;
+
+    size_t i=2;
+    while(i<max_lvl){
+
+        ng_buff.resize(new_gram.bytes_curr_level()/sizeof(uint32_t));
+        lvl_metadata_type& ng_mt_lvl = new_gram.metadata_curr_lvl();
+
+        new_gram.load_and_transform_next_rule_set(ng_buff.data, ng_buff.size(), map_b, ng_part);
+        ng_fps.resize(ng_mt_lvl.n_rules);
+        new_gram.compute_level_fps(ng_buff.data, ng_buff.size(), sink_gram.gram_fps[i-1], ng_fps, ng_part);
+
+        merge_level32t(sink_gram.nt_rules[i-2], sink_gram.metadata[i], sink_gram.gram_fps[i], map_a,
+                       ng_buff, ng_mt_lvl, ng_fps, map_b);
+        sink_gram.metadata[i].sym_width = sym_width(sink_gram.metadata[i-1].n_rules);
+
+        if(i>=sink_gram.lvl){
+            //assert(st_gram!=nullptr && st_gram!= nullptr);
+            //create_fake_level32bits(*st_gram, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+        }else if(i>=new_gram.lvl){
+            //
+        }
+
+        i++;
+        sink_gram.transform_level(i, map_a);
+    }
+
+    /*size_t max_lvl = std::max(sink_gram.lvl, new_gram.lvl)-1;
+    size_t min_lvl = std::min(sink_gram.lvl, new_gram.lvl)-1;
+
+    merge_level32t(sink_gram.ter_rules, sink_gram.metadata[1], ng_buff, new_gram.metadata[1], ng_fps, ng_map);
+
+    size_t i=1;
+    while(i<max_lvl) {
+        size_t new_stream_size = new_gram.bytes_level(i);
+        if(new_stream_size>stream_size){
+            stream_size = new_stream_size;
+            ng_buff = mem<uint8_t>::reallocate(ng_buff, stream_size);
+        }
+
+        ng_fps.resize(new_gram.n_rules_lvl(i));
+        new_gram.load_and_transform_next_rule_set((uint32_t *)ng_buff, i, ng_map, ng_part);
+        new_gram.compute_level_fps((uint32_t *)ng_buff, stream_size/sizeof(uint32_t),
+                                   sink_gram.gram_fps[i-1], ng_fps, ng_part);
+
+        merge_level32t(sink_gram.nt_rules[i], sink_gram.metadata[i+1],
+                       (uint32_t*) ng_buff, new_gram.metadata[i+1], ng_fps,
+                       ng_map);
+        i++;
+        //if(i>=min_lvl && i<max_lvl){
+        //    assert(st_gram!=nullptr && st_gram!= nullptr);
+        //    create_fake_level(*st_gram, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+        //}
+    }*/
+
+    //sink_gram.metadata[max_lvl+1] = concatenate_strings(p_gram_a.rules[max_lvl], p_gram_a.metadata[max_lvl+1],
+    //                                                    p_gram_b.rules[max_lvl], p_gram_b.metadata[max_lvl+1],
+    //                                                    mg_data);
+    assert(new_gram.read_bytes==new_gram.disk_usage());
+    return new_gram.read_bytes;
+}
+
+void merge_many_grams_in_serial(std::string& concat_grammars, size_t n_threads) {
+    size_t rem = file_size(concat_grammars);
+    int fd_r = open(concat_grammars.c_str(), O_RDONLY);
+    malloc_count_reset_peak();
+    partial_gram32t sink_gram(fd_r);
+    size_t read_bytes = sink_gram.load_full_gram();
+    rem-=read_bytes;
+    std::cout<<"Esto leimos en la primera: "<<report_space((off_t)sink_gram.disk_usage())<<" con un peak de "<<report_space((off_t)malloc_count_peak())<<std::endl;
+    malloc_count_reset_peak();
+
+    while(rem>0){
+        read_bytes = add_another_grammar(sink_gram, fd_r, n_threads);
+        std::cout<<"Esto leimos en la siguiente "<<report_space((off_t)read_bytes)<<" con un peak de "<<report_space((off_t)malloc_count_peak())<<std::endl;
+        malloc_count_reset_peak();
+        rem-=read_bytes;
+    }
+}
 
 template<class p_gram_type>
 void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds) {

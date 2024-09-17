@@ -594,7 +594,7 @@ namespace lz_like_strat {
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
 
-                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.buff_bytes())<<std::flush;
+                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
                 malloc_count_reset_peak();
 
                 text_chunks[buff_id].p_gram.reset_grammar();
@@ -644,7 +644,7 @@ namespace lz_like_strat {
 #endif
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
-                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<std::flush;
+                std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
                 malloc_count_reset_peak();
             }
             buffers_to_reuse.done();
@@ -867,14 +867,17 @@ namespace lz_like_strat {
         std::string ct_p_grams_file = tmp_ws.get_file("concat_p_grams");
         build_partial_grammars<sym_type>(p_opts, i_file, ct_p_grams_file);
 
-        std::string mg_p_gram_file = par_gram? o_file : tmp_ws.get_file("merged_p_grams");
+        merge_many_grams_in_serial(ct_p_grams_file, p_opts.n_threads);
+
+        /*std::string mg_p_gram_file = par_gram? o_file : tmp_ws.get_file("merged_p_grams");
         merge_partial_grammars<sym_type>(ct_p_grams_file, mg_p_gram_file, p_opts.p_seeds, p_opts.n_threads);
 
         if(!par_gram){
             gram_type final_grammar;
             partial2complete_gram(final_grammar, mg_p_gram_file, par_seed);
             store_to_file(o_file, final_grammar);
-        }
+        }*/
+        exit(0);
     }
 }
 

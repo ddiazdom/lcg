@@ -45,12 +45,49 @@ struct buff_vector{
         }
     }
 
+    buff_vector(const buff_vector& other){
+        if(!other.mem_alloc){
+            data = other.data;
+        }else{
+            if(data!= nullptr){
+                mem<type>::deallocate(data);
+            }
+            data = mem<type>::allocate(other.cap);
+            memcpy(data, other.data, other.len*sizeof(type));
+        }
+
+        len = other.len;
+        cap = other.cap;
+        offset = other.offset;
+        mem_alloc=other.mem_alloc;
+    }
+
     void report_buff_area() const{
         if(mem_alloc){
             std::cout<<0<<" -- "<<0<<std::endl;
         }else{
             std::cout<<(uintptr_t)data<<" -- "<<(uintptr_t)(data+len)<<std::endl;
         }
+    }
+
+    buff_vector& operator=(buff_vector const& other){
+        if(&other!=this){
+            if(!other.mem_alloc){
+                data = other.data;
+            }else{
+                if(data!= nullptr){
+                    mem<type>::deallocate(data);
+                }
+                data = mem<type>::allocate(other.cap);
+                memcpy(data, other.data, other.len*sizeof(type));
+            }
+
+            len = other.len;
+            cap = other.cap;
+            offset = other.offset;
+            mem_alloc=other.mem_alloc;
+        }
+        return *this;
     }
 
     buff_vector& swap(buff_vector& other){

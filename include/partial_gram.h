@@ -8,6 +8,10 @@
 #include "cds/bitstream.h"
 #include "lz-like-build-strat/lz_like_map.h"
 
+typedef std::vector<uint8_t, mallocator<uint8_t>> vector_uint8_t;
+typedef std::vector<uint32_t, mallocator<uint32_t>> vector_uint32_t;
+typedef std::vector<uint64_t, mallocator<uint64_t>> vector_uint64_t;
+
 struct lvl_metadata_type{
     size_t n_rules=0;
     size_t tot_symbols=0;
@@ -98,7 +102,6 @@ struct partial_gram {
         return written_bytes;
     }
 
-
     void load_metadata(std::ifstream &ifs){
         load_elm(ifs, text_size);
         load_elm(ifs, txt_id);
@@ -112,33 +115,23 @@ struct partial_gram {
     }
 
     size_t bytes_metadata(){
-        size_t bytes=0;
-        bytes+=sizeof(text_size);
-        bytes+=sizeof(txt_id);
-        bytes+=sizeof(max_tsym);
-        bytes+=sizeof(sep_tsym);
-        bytes+=sizeof(lvl);
-        bytes+=sizeof(longest_rule);
-        bytes+=sizeof(longest_str);
-        bytes+=sizeof(par_seed);
-
+        size_t bytes=sizeof(size_t)*8;
         bytes+=metadata.size()*sizeof(lvl_metadata_type);
-        bytes+=sizeof(size_t);
         return bytes;
     }
 
     void load_concat_string(std::ifstream &ifs, bitstream<size_t>& buffer){
         size_t n_words=0;
         for(size_t i=1;i<metadata.size()-1;i++){
-            n_words +=  buffer.bits2words(metadata[i].n_bits());
+            n_words +=  stream_type::bits2words(metadata[i].n_bits());
         }
-        size_t bytes = buffer.words2bytes(n_words);
+        size_t bytes = stream_type::words2bytes(n_words);
         bytes+=ifs.tellg();
         ifs.seekg(long(bytes));
 
         buffer.reserve_in_words(n_words);
         assert(buffer.stream!= nullptr);
-        ifs.read((char *)buffer.stream, long(buffer.words2bytes(n_words)));
+        ifs.read((char *)buffer.stream, long(stream_type::words2bytes(n_words)));
     }
 
     /*void reset_file_to_first_level(std::ifstream &ifs){
@@ -149,10 +142,17 @@ struct partial_gram {
     }*/
 
     void load_next_rule_set(std::ifstream &ifs, size_t i, bitstream<size_t>& buffer){
-        size_t n_words =  buffer.bits2words(metadata[i+1].n_bits());;
+        size_t n_words =  stream_type::bits2words(metadata[i+1].n_bits());;
         buffer.reserve_in_words(n_words);
         assert(buffer.stream!= nullptr);
-        ifs.read((char *)buffer.stream, long(buffer.words2bytes(n_words)));
+        ifs.read((char *)buffer.stream, long(stream_type::words2bytes(n_words)));
+    }
+
+    void load_next_rule_set_fd(int fd_r, size_t i, bitstream<size_t>& buffer){
+        size_t n_words =  stream_type::bits2words(metadata[i+1].n_bits());;
+        buffer.reserve_in_words(n_words);
+        assert(buffer.stream!= nullptr);
+        read(fd_r, (char *)buffer.stream, long(stream_type::words2bytes(n_words)));
     }
 
     void load(std::ifstream &ifs){
@@ -188,7 +188,7 @@ struct partial_gram {
         return written_bytes;
     }
 
-    size_t load_from_fd(int fd){
+    size_t load_metadata_fd(int fd){
         read(fd, &text_size, sizeof(size_t));
         read(fd, &txt_id, sizeof(size_t));
         read(fd, &max_tsym, sizeof(size_t));
@@ -199,14 +199,17 @@ struct partial_gram {
         read(fd, &par_seed, sizeof(uint64_t));
         size_t read_bytes = 8*sizeof(size_t);
 
-        for(size_t i=lvl;i<rules.size();i++){
-            rules[i].destroy();
-        }
-
         metadata.resize(lvl+1);
         read(fd, metadata.data(), metadata.size()*sizeof(lvl_metadata_type));
         read_bytes+=metadata.size()*sizeof(lvl_metadata_type);
+        return read_bytes;
+    }
 
+    size_t load_from_fd(int fd){
+        size_t read_bytes = load_metadata_fd(fd);
+        for(size_t i=lvl;i<rules.size();i++){
+            rules[i].destroy();
+        }
         rules.resize(lvl);
         size_t n_words;
         for(size_t i=0;i<lvl;i++){
@@ -353,13 +356,17 @@ struct partial_gram {
         return g_size;
     }
 
-    [[nodiscard]] inline size_t buff_bytes() const {
-        size_t bytes=metadata.size()*sizeof(lvl_metadata_type);
+    [[nodiscard]] inline size_t bytes() const {
 
-        for(const auto & rule_set : rules){
-            bytes+=rule_set.capacity_in_bytes();
-        }
+        size_t bytes=8*sizeof(size_t);
+        bytes+=metadata.size()*sizeof(lvl_metadata_type);
+
         bytes+=rules.size()*sizeof(stream_type);
+        size_t n_words;
+        for(size_t i=0;i<lvl;i++){
+            n_words = rules[i].bits2words(metadata[i+1].n_bits());
+            bytes += rules[i].words2bytes(n_words);
+        }
         return bytes;
     }
 
@@ -460,6 +467,246 @@ struct partial_gram {
     }
 };
 
+struct partial_gram32t {
+
+
+    buff_vector<uint8_t> ter_rules;
+    std::vector<buff_vector<uint32_t>> nt_rules;
+    std::vector<buff_vector<uint64_t>> gram_fps;
+
+    bitstream<size_t> buffer;
+    partial_gram<uint8_t> comp_gram;
+    int fd_r;
+    std::vector<lvl_metadata_type>& metadata;
+    size_t& lvl;
+    size_t read_bytes=0;
+    size_t curr_lvl=0;
+
+    explicit partial_gram32t(int _fd_r) : fd_r(_fd_r),
+                                          metadata(comp_gram.metadata),
+                                          lvl(comp_gram.lvl){
+        comp_gram.load_metadata_fd(fd_r);
+        read_bytes = comp_gram.bytes_metadata();
+    }
+
+    void load_and_transform_next_rule_set(uint32_t* lvl_rules, size_t stream_size, buff_vector<uint32_t>& map,
+                                          vector_uint64_t& partition){
+
+        size_t sym, pos=0, str_pos=0;
+        comp_gram.load_next_rule_set_fd(fd_r, curr_lvl, buffer);
+        uint32_t len;
+
+        size_t n_words = bitstream<size_t>::bits2words(metadata[curr_lvl+1].n_bits());;
+        read_bytes += bitstream<size_t>::words2bytes(n_words);
+
+        off_t par=-1;
+        size_t elm_per_block = INT_CEIL(metadata[curr_lvl+1].n_rules, partition.size());
+
+        for(size_t j=0;j<metadata[curr_lvl+1].n_rules;j++){
+            len=0;
+            do{
+                len++;
+                sym = buffer.read(pos, pos+metadata[curr_lvl+1].sym_width-1);
+
+                lvl_rules[str_pos+len] = map[(sym>>1UL)-1];
+                pos+=metadata[curr_lvl+1].sym_width;
+            } while(!(sym & 1UL));
+
+            par+= (j % elm_per_block)==0;
+            partition[par] = str_pos;
+
+            lvl_rules[str_pos] = len;
+            str_pos+=len+1;
+        }
+        curr_lvl++;
+        assert(str_pos==stream_size);
+    }
+
+    void transform_level(size_t i, buff_vector<uint32_t>& map){
+        assert(i>=2 && (i-2)<nt_rules.size());
+        size_t pos = 0, end, rule=0;
+        uint32_t len;
+        while(pos<nt_rules[i-2].size()){
+            len = nt_rules[i-2][pos++];
+            assert(len>0);
+            end = pos+len;
+            while(pos<end){
+                nt_rules[i-2][pos] = map[nt_rules[i-2][pos]];
+                pos++;
+            }
+            rule++;
+        }
+        assert(rule==metadata[i].n_rules);
+    }
+
+    // Load the phrases in the level with their lengths.
+    // It also stores pointers to a partition of the phrases,
+    // so we can operate in parallel over the set
+    template<class sym_type>
+    void load_next_rule_set(sym_type* rules_stream, size_t stream_size, vector_uint64_t & partition){
+
+        size_t sym, pos=0, str_pos=0;
+        assert(!partition.empty());
+        comp_gram.load_next_rule_set_fd(fd_r, curr_lvl, buffer);
+        uint32_t len;
+
+        size_t n_words = bitstream<size_t>::bits2words(metadata[curr_lvl+1].n_bits());;
+        read_bytes += bitstream<size_t>::words2bytes(n_words);
+
+        off_t par=-1;
+        size_t elm_per_block = INT_CEIL(metadata[curr_lvl+1].n_rules, partition.size());
+
+        for(size_t j=0;j<metadata[curr_lvl+1].n_rules;j++){
+            len=0;
+            do{
+                len++;
+                sym = buffer.read(pos, pos+metadata[curr_lvl+1].sym_width-1);
+
+                rules_stream[str_pos+len] = sym>>1UL;
+                rules_stream[str_pos+len]--;//the symbols are one-based to differentiate them from the sep symbol
+                //if(j>=173700 && j<=173720){
+                //    std::cout<<rules_stream[str_pos+len]<<" ";
+                //}
+                assert(rules_stream[str_pos+len]<metadata[curr_lvl].n_rules);
+                pos+=metadata[curr_lvl+1].sym_width;
+            } while(!(sym & 1UL));
+            //if(j>=173700 && j<=173720) {
+            //    std::cout << " len,str_pos, rule: " << len << ", " << str_pos << ", " << j << std::endl;
+            //}
+
+            par+= (j % elm_per_block)==0;
+            partition[par] = str_pos;
+
+            if constexpr (std::is_same<sym_type, uint8_t>::value){
+                memcpy(&rules_stream[str_pos], &len, sizeof(uint32_t));
+                str_pos+=len+sizeof(uint32_t);
+            }else{
+                rules_stream[str_pos] = len;
+                str_pos+=len+1;
+            }
+        }
+        //std::cout<<str_pos<<" "<<stream_size<<" "<<metadata[i+1].n_rules<<std::endl;
+        curr_lvl++;
+        assert(str_pos==stream_size);
+    }
+
+    template<class sym_type>
+    void load_compressed_string(sym_type* rules_stream, size_t stream_size){
+
+        size_t sym, pos=0, str_pos=0;
+        comp_gram.load_next_rule_set_fd(fd_r, curr_lvl, buffer);
+
+        size_t n_words = bitstream<size_t>::bits2words(metadata[curr_lvl+1].n_bits());;
+        read_bytes += bitstream<size_t>::words2bytes(n_words);
+
+        do{
+            sym = buffer.read(pos, pos+metadata[curr_lvl+1].sym_width-1);
+            rules_stream[str_pos] = (sym>>1UL)-1;
+            assert(rules_stream[str_pos]<metadata[curr_lvl].n_rules);
+            pos+=metadata[curr_lvl+1].sym_width;
+            str_pos++;
+        } while(!(sym & 1UL));
+
+        assert(str_pos==stream_size);
+        curr_lvl++;
+        assert(curr_lvl==(metadata.size()-1));
+    }
+
+    size_t load_full_gram(size_t n_threads=1) {
+
+        nt_rules.resize(metadata.size()-2);//minus the alphabet and the first level
+        gram_fps.resize(metadata.size()-1);//minus the concatenated string
+        vector_uint64_t partition(n_threads, 0);
+
+        gram_fps[0].resize(metadata[0].tot_symbols);
+        for(size_t sym=0;sym<gram_fps[0].size();sym++){
+            gram_fps[0][sym] = XXH3_64bits(&sym, sizeof(uint8_t));
+        }
+
+        ter_rules.resize(bytes_curr_level());
+        load_next_rule_set(ter_rules.data, ter_rules.size(), partition);
+
+        gram_fps[1].resize(metadata[1].n_rules);
+        compute_level_fps(ter_rules.data, ter_rules.size(), gram_fps[0], gram_fps[1], partition);
+
+        for(size_t i=2;i<metadata.size()-1;i++){
+            //std::cout<<gram_fps[i-1].size()<<" "<<std::endl;
+            nt_rules[i-2].resize(bytes_curr_level()/sizeof(uint32_t));
+            load_next_rule_set(nt_rules[i-2].data, nt_rules[i-2].size(), partition);
+
+            gram_fps[i].resize(metadata[i].n_rules);
+            compute_level_fps(nt_rules[i-2].data, nt_rules[i-2].size(), gram_fps[i-1], gram_fps[i], partition);
+        }
+
+        //read the concatenated strings
+        nt_rules.back().resize(metadata[metadata.size()-1].tot_symbols);
+        load_compressed_string(nt_rules.back().data, nt_rules.back().size());
+        buffer.destroy();
+        assert(read_bytes==comp_gram.bytes());
+
+        return comp_gram.bytes();
+    }
+
+    template<class sym_type>
+    void compute_level_fps(sym_type* lvl_stream,
+                           size_t stream_size,
+                           buff_vector<uint64_t> & prev_fps,
+                           buff_vector<uint64_t> & new_fps,
+                           vector_uint64_t & partition) const {
+
+        vector_uint64_t fp_seq(comp_gram.longest_rule);
+        size_t pos = 0, end, tmp_pos, rule=0;//, tmp;
+        uint32_t len;
+        while(pos<stream_size){
+            //tmp = pos;
+
+            if constexpr (std::is_same<sym_type, uint8_t>::value){
+                memcpy(&len, &lvl_stream[pos], sizeof(uint32_t));
+                pos+=sizeof(uint32_t);
+            }else{
+                len = lvl_stream[pos];
+                pos+=1;
+            }
+
+            assert(len>0);
+            end = pos+len;
+            tmp_pos=0;
+            while(pos<end){
+                //std::cout<<lvl_stream[pos]<<" ";
+                fp_seq[tmp_pos++] = prev_fps[lvl_stream[pos++]];
+            }
+            //std::cout<<" ---> "<<len<<":"<<tmp_pos<<":"<<rule<<std::endl;
+            assert(rule<new_fps.size());
+            new_fps[rule++] = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*len);
+        }
+    }
+
+    lvl_metadata_type& metadata_curr_lvl(){
+        return metadata[curr_lvl+1];
+    }
+
+    size_t bytes_curr_level(){
+        assert(curr_lvl<(lvl-1));
+        if(curr_lvl==0){
+            return metadata[1].tot_symbols + (metadata[1].n_rules*sizeof(uint32_t));
+        }else{
+            return sizeof(uint32_t)*(metadata[curr_lvl+1].tot_symbols+metadata[curr_lvl+1].n_rules);
+        }
+    }
+
+    size_t n_rules_lvl(size_t i){
+        return metadata[i+1].n_rules;
+    }
+
+    [[nodiscard]] size_t disk_usage() const{
+        return comp_gram.bytes();
+    }
+
+    ~partial_gram32t(){
+        buffer.destroy();
+    }
+};
+
 uint64_t get_par_seed_par_gram(std::string& p_gram_file){
     partial_gram<uint8_t> p_gram;
     std::ifstream ifs(p_gram_file);
@@ -511,7 +758,6 @@ inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
                           uint64_t& fp, size_t& len){
     size_t sym;
     len=0;
-
     do{
         sym = rule_stream.read(pos, pos+width-1);
         phrase[len] = mt_map[sym>>1UL];
