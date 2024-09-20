@@ -62,7 +62,7 @@ void merge_many_grams_in_serial(std::string& concat_grammars, size_t n_threads) 
     size_t rem = file_size(concat_grammars);
     int fd_r = open(concat_grammars.c_str(), O_RDONLY);
     malloc_count_reset_peak();
-    extensible_gram sink_gram;
+    extensible_gram sink_gram(n_threads);
     size_t read_bytes = sink_gram.load_from_file(fd_r);
     rem-=read_bytes;
     std::cout<<"Esto leimos en la primera: "<<report_space((off_t)read_bytes)<<" con un peak de "<<report_space((off_t)malloc_count_peak())<<std::endl;
