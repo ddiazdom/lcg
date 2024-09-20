@@ -47,7 +47,6 @@ struct i_gram_stream{
 
             par+= (j % elm_per_block)==0;
             partition[par] = str_pos;
-            assert(len<=151);
 
             lvl_rules[str_pos-1] = len;
             str_pos+=len+1;
@@ -92,15 +91,14 @@ struct i_gram_stream{
                 pos+=metadata[curr_lvl+1].sym_width;
                 len++;
             } while(!(sym & 1UL));
-            assert(len<=151);
 
             par+= (j % elm_per_block)==0;
             partition[par] = str_pos;
 
             if constexpr (std::is_same<sym_type, uint8_t>::value){
-                memcpy(&rules_stream[str_pos], &len, sizeof(uint32_t));
+                memcpy(&rules_stream[str_pos-len_words], &len, sizeof(uint32_t));
             }else{
-                rules_stream[str_pos] = len;
+                rules_stream[str_pos-len_words] = len;
             }
             str_pos+=len+len_words;
         }
@@ -144,25 +142,25 @@ struct i_gram_stream{
     }
 
     void load_compressed_string(buff_vector<uint32_t>& rules_stream){
-        assert((curr_lvl+1)==lvl);
+        assert((curr_lvl+1)==comp_gram.lvl);
         size_t sym, pos=0, str_pos=0;
         comp_gram.load_next_rule_set_fd(fd_r, curr_lvl, buffer);
-        rules_stream.resize(metadata[curr_lvl+1].tot_symbols);
+        rules_stream.resize(comp_gram.metadata[curr_lvl+1].tot_symbols);
 
-        size_t n_words = bitstream<size_t>::bits2words(metadata[curr_lvl+1].n_bits());;
+        size_t n_words = bitstream<size_t>::bits2words(comp_gram.metadata[curr_lvl+1].n_bits());;
         read_bytes += bitstream<size_t>::words2bytes(n_words);
 
         do{
-            sym = buffer.read(pos, pos+metadata[curr_lvl+1].sym_width-1);
+            sym = buffer.read(pos, pos+comp_gram.metadata[curr_lvl+1].sym_width-1);
             rules_stream[str_pos] = (sym>>1UL)-1;
-            assert(rules_stream[str_pos]<metadata[curr_lvl].n_rules);
-            pos+=metadata[curr_lvl+1].sym_width;
+            assert(rules_stream[str_pos]<comp_gram.metadata[curr_lvl].n_rules);
+            pos+=comp_gram.metadata[curr_lvl+1].sym_width;
             str_pos++;
         } while(!(sym & 1UL));
 
         assert(str_pos==rules_stream.size());
-        curr_lvl++;
-        assert(curr_lvl==(metadata.size()-1));
+        //curr_lvl++;
+        //assert(curr_lvl==(comp_gram.metadata.size()-1));
     }
 
     lvl_metadata_type* metadata_curr_lvl(){
@@ -180,6 +178,61 @@ struct i_gram_stream{
 
     [[nodiscard]] size_t disk_usage() const{
         return comp_gram.bytes();
+    }
+
+    void create_new_level(buff_vector<uint32_t>& rule_stream, size_t new_lvl,
+                          buff_vector<uint32_t>& comp_strings,
+                          buff_vector<uint64_t>& prev_fps, buff_vector<uint64_t>& new_fps, uint64_t fp_seed,
+                          buff_vector<uint32_t>& map){
+
+        assert(metadata[new_lvl-1].n_rules == map.size());
+        // new_level is to the previous level in the metadata because
+        // the first element of the metadata vector has the terminal alphabet
+        metadata[new_lvl].sym_width = sym_width(metadata[new_lvl-1].n_rules);
+        metadata[new_lvl].n_rules = metadata[new_lvl-1].n_rules;
+        metadata[new_lvl].tot_symbols = metadata[new_lvl-1].n_rules;
+        metadata[new_lvl].terminals = false;
+
+        new_fps.resize(metadata[new_lvl].n_rules);
+        rule_stream.resize(map.size()*2);
+
+        std::vector<std::tuple<uint64_t, uint64_t, uint32_t>> perm(map.size());
+        for(size_t i=0;i<map.size();i++){
+            std::get<0>(perm[i]) = i;
+            uint64_t fp = prev_fps[map[i]];
+            std::get<1>(perm[i]) = XXH3_64bits(&fp, sizeof(uint64_t));
+            std::get<2>(perm[i]) = map[i];
+        }
+
+        std::sort(perm.begin(), perm.end(), [&](auto const& a, auto const &b) -> bool{
+            if(std::get<1>(a)!=std::get<1>(b)){
+                return std::get<1>(a) < std::get<1>(b);//break ties using the level fingerprint
+            }
+            assert(std::get<0>(a)==std::get<0>(b) ||
+                   prev_fps[std::get<2>(a)]!=prev_fps[std::get<2>(b)]);
+            return prev_fps[std::get<2>(a)]<prev_fps[std::get<2>(b)];
+        });
+
+        size_t pos=0;
+        std::vector<uint32_t> inv_perm(perm.size());
+        for(size_t mt_sym=0;mt_sym<perm.size();mt_sym++){
+            rule_stream[pos++] = 1;
+            rule_stream[pos++] = std::get<2>(perm[mt_sym]);
+            new_fps[mt_sym] = std::get<1>(perm[mt_sym]);
+            map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
+            inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;
+        }
+
+        //update the compressed string
+        size_t mt_sym;
+        pos = 0;
+        while(pos<comp_strings.size()){
+            mt_sym = comp_strings[pos];
+            mt_sym = inv_perm[mt_sym];
+            comp_strings[pos]  = mt_sym;
+            pos++;
+        }
+        curr_lvl++;
     }
 
     ~i_gram_stream(){
@@ -206,12 +259,12 @@ struct i_gram_stream{
         memcpy(&rule_set_c[str_pos_c], &rule_set_b[str_pos_b], len_b*sizeof(uint32_t));\
         str_pos_c+=len_b;\
         str_pos_b+=len_b;\
-    }          \
-    assert(len_b<=151);\
-    fps_c.push_back(fps_b[rule_b]);\
+    }\
     met_c.tot_symbols+=len_b;\
-    merge_marks.push_back(in_b);\
+    fps_c[rule_c] = fps_b[rule_b];\
+    merge_marks[rule_c] = in_b;\
     rule_b++;\
+    rule_c++;\
 
 #define WRITE_A \
     assert(str_pos_a<rule_set_a.size());          \
@@ -233,11 +286,11 @@ struct i_gram_stream{
         str_pos_c+=len_a;\
         str_pos_a+=len_a;\
     }\
-    assert(len_a<=151);\
-    fps_c.push_back(fps_a[rule_a]);\
     met_c.tot_symbols+=len_a;\
-    merge_marks.push_back(in_a);\
+    fps_c[rule_c]=fps_a[rule_a];\
+    merge_marks[rule_c]=in_a;\
     rule_a++;\
+    rule_c++;\
 
 struct extensible_gram {
 
@@ -248,6 +301,7 @@ struct extensible_gram {
     std::vector<lvl_metadata_type> metadata;
     size_t lvl=0;
     size_t longest_rule=0;
+    lvl_metadata_type mt_prev_lv;
 
     void transform_level(size_t i, buff_vector<uint32_t>& map){
         assert(i>=2 && (i-2)<nt_rules.size());
@@ -299,8 +353,6 @@ struct extensible_gram {
                 pos+=metadata[curr_lvl+1].sym_width;
                 len++;
             } while(!(sym & 1UL));
-
-            assert(len<=151);
 
             par+= (j % elm_per_block)==0;
             partition[par] = str_pos;
@@ -396,7 +448,6 @@ struct extensible_gram {
                 pos+=1;
             }
 
-            assert(len>0 && len<=151);
             end = pos+len;
             tmp_pos=0;
             while(pos<end){
@@ -438,15 +489,18 @@ struct extensible_gram {
     void merge_level(buff_vector<sym_type>& rule_set_a, lvl_metadata_type& mt_a, buff_vector<uint64_t> & fps_a, buff_vector<uint32_t>& map_a,
                      buff_vector<sym_type>& rule_set_b, lvl_metadata_type& mt_b, buff_vector<uint64_t> & fps_b, buff_vector<uint32_t>& map_b) {
 
-        size_t rule_a=0, rule_b=0, str_pos_a=0, str_pos_b=0, str_pos_c=0;
+        size_t rule_a=0, rule_b=0, rule_c=0, str_pos_a=0, str_pos_b=0, str_pos_c=0;
         uint32_t len_a=0, len_b=0;
         lvl_metadata_type met_c;
+        map_a.resize(mt_a.n_rules);
+        map_b.resize(mt_b.n_rules);
 
         uint8_t in_a=1, in_b=2, in_ab=3;
 
         buff_vector<uint8_t> merge_marks;
-        merge_marks.increase_capacity(mt_a.n_rules+mt_b.n_rules);
+        merge_marks.resize(mt_a.n_rules+mt_b.n_rules);
         buff_vector<uint64_t> fps_c;
+        fps_c.resize(mt_a.n_rules+mt_b.n_rules);
 
         buff_vector<sym_type> rule_set_c;
         size_t buff_size=0, words_len;
@@ -462,29 +516,6 @@ struct extensible_gram {
 
         while(rule_a < mt_a.n_rules && rule_b < mt_b.n_rules) {
 
-            //TODO checking
-            uint32_t la, lb, tmpa, tmpb;
-            if constexpr (std::is_same<sym_type, uint8_t>::value){
-                memcpy(&la, &rule_set_a[str_pos_a], sizeof(uint32_t));
-                memcpy(&lb, &rule_set_b[str_pos_b], sizeof(uint32_t));
-            }else{
-                la = rule_set_b[str_pos_a];
-                lb = rule_set_b[str_pos_b];
-            }
-            tmpa=str_pos_a+words_len;
-            tmpb=str_pos_b+words_len;
-
-            std::cout<< fps_a[rule_a] << " " << fps_b[rule_b] << " " << rule_a << " " << rule_b << std::endl;
-            for(size_t j=0;j<la;j++){
-                std::cout<<rule_set_a[tmpa+j]<<" ";
-            }
-            std::cout<<" --> "<<la<<" ? "<<rule_set_a.size()<<" "<<str_pos_a+len_a<<std::endl;
-            for(size_t j=0;j<lb;j++){
-                std::cout<<rule_set_b[tmpb+j]<<" ";
-            }
-            std::cout<<" --> "<<lb<<" ? "<<rule_set_b.size()<<" "<<str_pos_b+len_b<<std::endl;
-            //
-
             if(fps_a[rule_a]<fps_b[rule_b]){
                 WRITE_A
             } else if(fps_b[rule_b]<fps_a[rule_a]) {
@@ -497,7 +528,6 @@ struct extensible_gram {
                     len_a = rule_set_a[str_pos_a];
                     len_b = rule_set_b[str_pos_b];
                 }
-                assert(len_a<=151 && len_b<=151);
                 assert((str_pos_a+words_len)<rule_set_a.size());
                 assert((str_pos_b+words_len)<rule_set_b.size());
                 assert((str_pos_c+words_len)<rule_set_c.size());
@@ -517,11 +547,12 @@ struct extensible_gram {
                     str_pos_b+=len_a;
                     str_pos_c+=len_a;
 
-                    fps_c.push_back(fps_a[rule_a]);
                     met_c.tot_symbols += len_a;
-                    merge_marks.push_back(in_ab);
+                    fps_c[rule_c] = fps_a[rule_a];
+                    merge_marks[rule_c] = in_ab;
                     rule_a++;
                     rule_b++;
+                    rule_c++;
                 } else {
                     //a collision occurred (extremely unlikely, but not impossible)
 
@@ -565,19 +596,19 @@ struct extensible_gram {
             WRITE_B
         }
 
+        merge_marks.resize(rule_c);
+        fps_c.resize(rule_c);
+
         rule_set_c.len = str_pos_c;
         rule_set_c.shrink_to_fit();
         rule_set_a.swap(rule_set_c);
 
-        fps_c.shrink_to_fit();
         fps_a.swap(fps_c);
         fps_c.destroy();
 
         size_t mt_sym_a=0, mt_sym_b=0, mg_mt_sym=0;
         map_a.resize(mt_a.n_rules);
-        map_a.shrink_to_fit();
         map_b.resize(mt_b.n_rules);
-        map_b.shrink_to_fit();
         for(const unsigned char& side : merge_marks){
             switch (side) {
                 case 1:
@@ -595,6 +626,7 @@ struct extensible_gram {
         }
         met_c.n_rules = merge_marks.size();
         merge_marks.destroy();
+        mt_prev_lv = mt_a;
         mt_a = met_c;
         mt_a.terminals = false;
     }
@@ -616,7 +648,8 @@ struct extensible_gram {
                 nt_rules[lvl-2].swap(nt_rules.back());
                 std::swap(metadata[lvl], metadata.back());
             }else {
-                ng.metadata.resize(lvl);
+                ng.metadata.resize(lvl+1);
+                std::swap(ng.metadata[ng.lvl], ng.metadata.back());
             }
         }
 
@@ -650,12 +683,11 @@ struct extensible_gram {
                 transform_level(mg_lvl, map_a);
             }
 
+            ng_mt_lvl = ng.metadata_curr_lvl();
             if(max_lvl_b<mg_lvl){
-                create_new_level(ng_buff, mg_lvl, ng_cmp_string, gram_fps[mg_lvl-1], 0, map_b);
+                ng.create_new_level(ng_buff, mg_lvl, ng_cmp_string, gram_fps[mg_lvl-1], ng_fps, 0, map_b);
             }else {
-
                 ng_buff.resize(ng.bytes_curr_level()/sizeof(uint32_t));
-                ng_mt_lvl = ng.metadata_curr_lvl();
                 ng.load_and_transform_curr_rule_set(ng_buff.data, ng_buff.size(), map_b, ng_part);
                 ng_fps.resize(ng_mt_lvl->n_rules);
                 ng.compute_level_fps(ng_buff.data, ng_buff.size(), gram_fps[mg_lvl-1], ng_fps, ng_part);
@@ -683,12 +715,12 @@ struct extensible_gram {
                           buff_vector<uint64_t>& prev_fps, uint64_t fp_seed,
                           buff_vector<uint32_t>& map){
 
-        assert(metadata.back().n_rules == map.size());
+        assert(mt_prev_lv.n_rules == map.size());
         // new_level is to the previous level in the metadata because
         // the first element of the metadata vector has the terminal alphabet
-        metadata[new_lvl].sym_width = sym_width(metadata.back().n_rules);
-        metadata[new_lvl].n_rules = metadata.back().n_rules;
-        metadata[new_lvl].tot_symbols = metadata.back().n_rules;
+        metadata[new_lvl].sym_width = sym_width(mt_prev_lv.n_rules);
+        metadata[new_lvl].n_rules = mt_prev_lv.n_rules;
+        metadata[new_lvl].tot_symbols = mt_prev_lv.n_rules;
         metadata[new_lvl].terminals = false;
 
         gram_fps[new_lvl].resize(metadata[new_lvl].n_rules);
@@ -715,7 +747,7 @@ struct extensible_gram {
         std::vector<uint32_t> inv_perm(perm.size());
         for(size_t mt_sym=0;mt_sym<perm.size();mt_sym++){
             rule_stream[pos++] = 1;
-            rule_stream[pos++] = std::get<0>(perm[mt_sym]);
+            rule_stream[pos++] = std::get<2>(perm[mt_sym]);
             gram_fps[new_lvl][mt_sym] = std::get<1>(perm[mt_sym]);
             map[std::get<0>(perm[mt_sym])] = std::get<2>(perm[mt_sym]);
             inv_perm[std::get<0>(perm[mt_sym])] = mt_sym;
