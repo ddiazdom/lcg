@@ -4,8 +4,9 @@
 
 #ifndef LCG_EXT_GRAM_H
 #define LCG_EXT_GRAM_H
+#include "pred_dt.h"
 
-#define MT_THRESHOLD 20971520 //20MB
+#define MT_THRESHOLD 5242880 //5M of elements is about 20MB
 
 struct i_gram_stream{
 
@@ -120,8 +121,6 @@ struct i_gram_stream{
         size_t pos = 0, end, tmp_pos, rule=0;//, tmp;
         uint32_t len;
         while(pos<stream_size){
-            //tmp = pos;
-
             if constexpr (std::is_same<sym_type, uint8_t>::value){
                 memcpy(&len, &lvl_stream[pos], sizeof(uint32_t));
                 pos+=sizeof(uint32_t);
@@ -134,10 +133,8 @@ struct i_gram_stream{
             end = pos+len;
             tmp_pos=0;
             while(pos<end){
-                //std::cout<<lvl_stream[pos]<<" ";
                 fp_seq[tmp_pos++] = prev_fps[lvl_stream[pos++]];
             }
-            //std::cout<<" ---> "<<len<<":"<<tmp_pos<<":"<<rule<<std::endl;
             assert(rule<new_fps.size());
             new_fps[rule++] = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*len);
         }
@@ -159,10 +156,7 @@ struct i_gram_stream{
             pos+=comp_gram.metadata[curr_lvl+1].sym_width;
             str_pos++;
         } while(!(sym & 1UL));
-
         assert(str_pos==rules_stream.size());
-        //curr_lvl++;
-        //assert(curr_lvl==(comp_gram.metadata.size()-1));
     }
 
     lvl_metadata_type* metadata_curr_lvl(){
@@ -262,6 +256,7 @@ struct i_gram_stream{
     }\
     fps_c[rule_c] = fps_b[rule_b];\
     map_b[rule_b] = rule_c;\
+    tmp_map_a.append(rule_a);\
     rule_b++;\
     rule_c++;\
 
@@ -309,13 +304,20 @@ struct extensible_gram {
     void transform_level_multi_threaded(size_t i, buff_vector<uint32_t>& map){
 
         //compute the partition
+        size_t elm_per_block = INT_CEIL(metadata[i].n_rules, working_threads);
+        size_t block=0;
         size_t pos=0, rule=0;
         uint32_t len;
         while(pos<nt_rules[i-2].size()){
+
+            lvl_partitions[i-1][block] = pos;
+            block+= rule == (block*elm_per_block);
+
             len = nt_rules[i-2][pos++];
             pos +=len;
             rule++;
         }
+        assert(rule==metadata[i].n_rules);
         //
 
         pos = 0, rule=0;
@@ -367,14 +369,14 @@ struct extensible_gram {
             len_words=1;
         }
 
-        long int block=-1;
-        size_t elm_per_block = INT_CEIL(metadata[curr_lvl+1].n_rules, working_threads);
-        lvl_partitions[curr_lvl+1].resize(working_threads+1);
+        size_t block=0;
+        size_t block_size = INT_CEIL(metadata[curr_lvl+1].n_rules, working_threads);
+        lvl_partitions[curr_lvl+1].reserve(working_threads+1);
 
         size_t sym, pos=0, str_pos=len_words;
         uint32_t len;
 
-        for(size_t j=0;j<metadata[curr_lvl+1].n_rules;j++){
+        for(size_t rule=0;rule<metadata[curr_lvl+1].n_rules;rule++){
             len=0;
             do{
                 sym = buffer.read(pos, pos+metadata[curr_lvl+1].sym_width-1);
@@ -387,8 +389,8 @@ struct extensible_gram {
                 len++;
             } while(!(sym & 1UL));
 
-            block+= (j ==((block+1)*elm_per_block));
-            lvl_partitions[curr_lvl+1][block] = str_pos-len_words;
+            lvl_partitions[curr_lvl+1].push_back(str_pos-len_words);
+            block+= rule == (block*block_size);
 
             if constexpr (std::is_same<sym_type, uint8_t>::value){
                 memcpy(&rules_stream[str_pos-len_words], &len, sizeof(uint32_t));
@@ -397,9 +399,8 @@ struct extensible_gram {
             }
             str_pos+=len+len_words;
         }
-        assert(size_t(block+1)==working_threads);
         assert((str_pos-len_words)==stream_size);
-        lvl_partitions[curr_lvl+1][working_threads] = stream_size;
+        lvl_partitions[curr_lvl+1].push_back(stream_size);
     }
 
     void load_compressed_string(buff_vector<uint32_t>& rules_stream, size_t curr_lvl, bitstream<size_t>& buffer){
@@ -523,6 +524,8 @@ struct extensible_gram {
     void merge_level(buff_vector<sym_type>& rule_set_a, lvl_metadata_type& mt_a, buff_vector<uint64_t> & fps_a, buff_vector<uint32_t>& map_a,
                      buff_vector<sym_type>& rule_set_b, lvl_metadata_type& mt_b, buff_vector<uint64_t> & fps_b, buff_vector<uint32_t>& map_b) {
 
+        pred_dt<32> tmp_map_a(mt_a.n_rules, mt_b.n_rules);
+
         size_t rule_a=0, rule_b=0, rule_c=0, str_pos_a=0, str_pos_b=0, str_pos_c=0;
         uint32_t len_a=0, len_b=0;
         lvl_metadata_type met_c;
@@ -632,6 +635,9 @@ struct extensible_gram {
         met_c.n_rules = rule_c;
         met_c.tot_symbols= str_pos_c-(rule_c*words_len);
         met_c.terminals = false;
+
+        std::cout<<map_a[100]<<std::endl;
+        std::cout<<tmp_map_a[100]<<std::endl;
 
         mt_prev_lv = mt_a;
         mt_a = met_c;
