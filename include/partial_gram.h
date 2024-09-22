@@ -220,9 +220,8 @@ struct partial_gram {
         return read_bytes;
     }
 
-    template<class sym_type, class perm_type>
-    off_t append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols,
-                         perm_type& perm){
+    template<class sym_type>
+    off_t append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols){
 
         lvl_metadata_type lvl_met{};
         lvl_met.n_rules = phrase_set.size();
@@ -235,9 +234,8 @@ struct partial_gram {
 
         size_t acc_bits=0;
         for(size_t i=0;i<phrase_set.size();i++){
-            size_t idx = perm[i].orig_mt;
-            uint32_t source = phrase_set[idx].source;
-            uint32_t len = phrase_set[idx].len;
+            uint32_t source = phrase_set[i].source;
+            uint32_t len = phrase_set[i].len;
             if(len>longest_rule) longest_rule = len;
             uint32_t last = source + len-1;
             for(size_t j=source;j<last;j++){
