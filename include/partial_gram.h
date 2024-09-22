@@ -368,9 +368,14 @@ struct partial_gram {
 
     [[nodiscard]] inline size_t gram_uint32_bytes() const {
         size_t bytes=metadata[1].tot_symbols;
+        bytes+=sizeof(uint32_t)*metadata[1].n_rules;
+        size_t tot_rules=metadata[1].n_rules;
         for(size_t i=2; i<metadata.size();i++){
-            bytes+=metadata[i].uint32_bytes();
+            bytes+=(metadata[i].tot_symbols+metadata[i].n_rules)*sizeof(uint32_t);
+            tot_rules+=metadata[i].n_rules;
         }
+        bytes+=sizeof(uint64_t)*tot_rules;//fingerprints
+        bytes+=sizeof(uint32_t)*tot_rules*2;//the hash table
         return bytes;
     }
 
