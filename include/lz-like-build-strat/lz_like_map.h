@@ -43,23 +43,29 @@ public:
         phrase_t curr_phrase;
 
         void decode_phrase(){
-            if (stream_pos>=stream_size) throw std::out_of_range("Iterator out of range");  // If pointer is nullptr, stop
-            if constexpr (std::is_same<seq_type, uint8_t>::value){
-                memcpy(&curr_phrase.len, &stream[stream_pos], sizeof(uint32_t));
-                stream_pos+=sizeof(uint32_t);
-                curr_phrase.phrase = &stream[stream_pos];
-                stream_pos+=curr_phrase.len;
-                memcpy(&curr_phrase.mt, &stream[stream_pos], sizeof(uint32_t));
-                stream_pos+=sizeof(uint32_t);
-            } else {
-                curr_phrase.len = stream[stream_pos];
-                stream_pos++;
-                curr_phrase.phrase = &stream[stream_pos];
-                stream_pos+=curr_phrase.len;
-                curr_phrase.mt = stream[stream_pos];
-                stream_pos++;
+            if (stream_pos<stream_size){
+                if constexpr (std::is_same<seq_type, uint8_t>::value){
+                    memcpy(&curr_phrase.len, &stream[stream_pos], sizeof(uint32_t));
+                    stream_pos+=sizeof(uint32_t);
+                    curr_phrase.phrase = &stream[stream_pos];
+                    stream_pos+=curr_phrase.len;
+                    memcpy(&curr_phrase.mt, &stream[stream_pos], sizeof(uint32_t));
+                    stream_pos+=sizeof(uint32_t);
+                } else {
+                    curr_phrase.len = stream[stream_pos];
+                    stream_pos++;
+                    curr_phrase.phrase = &stream[stream_pos];
+                    stream_pos+=curr_phrase.len;
+                    curr_phrase.mt = stream[stream_pos];
+                    stream_pos++;
+                }
+                assert(stream_pos<=stream_size);
+            }else{
+                stream_pos = stream_size+1;
+                curr_phrase.len = 0;
+                curr_phrase.mt = 0;
+                curr_phrase.phrase = nullptr;
             }
-            assert(stream_pos<=stream_size);
         };
 
     public:
@@ -68,9 +74,7 @@ public:
                                                                                        stream_pos(_start_pos),
                                                                                        stream_size(_stream_size),
                                                                                        curr_phrase(nullptr, 0, 0) {
-            if(stream_pos<stream_size){
-                decode_phrase();
-            }
+            decode_phrase();
         }
 
         // Move to the next tuple
@@ -341,6 +345,8 @@ public:
     void update_fps(std::vector<uint64_t>& prev_fps, std::vector<uint64_t>& fps){
         if(last_mt<n_phrases){
             assert(last_fp_pos<=stream_size);
+
+
             fps.resize(n_phrases+1);
             auto it = iterator(phrase_stream, last_fp_pos, stream_size);
             auto it_end = end();

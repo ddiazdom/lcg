@@ -95,7 +95,6 @@ namespace lz_like_strat {
     void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
 
         uint32_t mt_sym=1;
-        uint8_t v_len;
         off_t txt_size = chunk.text_bytes;
 
         off_t ovf_idx=0, next_ovf=-1;
@@ -244,7 +243,10 @@ namespace lz_like_strat {
 
         uint32_t *text = chunk.parse;
         uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
-        size_t left_sym, middle_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
+        uint32_t left_sym, middle_sym;
+        uint64_t left_hash, middle_hash, right_hash;
+        uint32_t dummy_sym=std::numeric_limits<uint32_t>::max();
+
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
 
         bool inserted, new_str;
@@ -253,15 +255,18 @@ namespace lz_like_strat {
 
         lb = 0;
         left_sym = text[i];
+        left_hash = chunk.fps[chunk.round][left_sym];
         while(++i<txt_size && text[i]==left_sym);
         assert(i<txt_size);
 
         middle_sym = text[i];
+        middle_hash = chunk.fps[chunk.round][middle_sym];
         rb=i;
         while(++i<txt_size && text[i]==middle_sym);
 
         while(i<txt_size) {
-            if(left_sym>middle_sym && middle_sym<text[i]){//local minimum
+            right_hash = chunk.fps[chunk.round][text[i]];
+            if(left_hash>middle_hash && middle_hash<right_hash){//local minimum
 
                 phrase_len = rb-lb;
                 mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, inserted);
@@ -276,7 +281,8 @@ namespace lz_like_strat {
                 lb = rb+new_str;
             }
 
-            left_sym = middle_sym;
+            left_hash = middle_hash;
+            middle_hash = right_hash;
             middle_sym = text[i];
             rb = i;
             while(++i<txt_size && text[i]==middle_sym);
@@ -656,8 +662,9 @@ namespace lz_like_strat {
 
         off_t f_size = file_size(i_file);
         parsing_opts p_opts;
-        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.025 * double(f_size))) : (off_t)chunk_size;
-        p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
+        p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
+        //p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
+        p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, 1024*1024*200);//the chunks doest not exceed the 200MB by design
 
         size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
         n_threads = std::min(n_threads, tot_chunks);
