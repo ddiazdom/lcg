@@ -148,7 +148,7 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
                 std::vector<std::vector<new_rule_type>>& new_gram_rules,
                 std::vector<uint64_t>& all_fps, uint64_t pf_seed, uint8_t p_level) {
 
-    size_t mt_sym, next_av_nt=gram.r;
+    /*size_t mt_sym, next_av_nt=gram.r;
     size_t prev_sym, curr_sym, next_sym, end_sym = std::numeric_limits<size_t>::max();
     off_t txt_pos = 0, phrase_len, lb, rb;
     lz_like_map<size_t> map(text);
@@ -256,8 +256,8 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
             while(text[i]==end_sym && i<lb) i++;
         }
     }
-
-    return parse_size;
+    return parse_size;*/
+    return 0;
 }
 
 template<bool nt_type, class gram_type>

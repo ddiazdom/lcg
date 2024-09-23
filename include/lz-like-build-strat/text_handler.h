@@ -14,25 +14,23 @@ namespace lz_like_strat {
 
        typedef uint32_t size_type;
 
-       size_t id{}; //chunk id
+       size_t id{};//chunk id
        off_t n_bytes_before{};//number of bytes in the file before this chunk
        size_type sep_sym{};//symbol in the buffer delimiting consecutive strings
 
-       //size_type *buffer = nullptr;// chunk's buffer
        off_t buffer_bytes{};
        off_t e_bytes{};
+
+       std::vector<std::vector<uint64_t>> fps;
+
+       phrase_set<uint8_t> ter_dict;
+       std::vector<phrase_set<uint32_t>> nt_dicts;
 
        uint8_t *text = nullptr;
        off_t text_bytes{}; //number of bytes the buffer can hold
 
        size_type * parse = nullptr;
        off_t parse_size=0;
-       partial_gram<uint8_t> p_gram;
-
-       uint32_t max_n_phrases[40]={8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-                                   8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
        uint32_t round=0;
 
        //to measure time
@@ -41,6 +39,30 @@ namespace lz_like_strat {
 
        //area of the buffer free for satellite data
        off_t used_bytes=0;
+
+       explicit text_chunk(uint8_t _sep_sym='\n'): sep_sym(_sep_sym){
+
+           fps.resize(40);
+           nt_dicts.resize(39);
+
+           size_t alpha_size = std::numeric_limits<uint8_t>::max()+1;
+           fps[0].resize(alpha_size);
+           for(size_t i=0;i<alpha_size;i++){
+               fps[0][i] = XXH3_64bits(&i, sizeof(uint8_t));
+               assert(fps[0][i]!=0);
+           }
+           fps[0][sep_sym]=0;//small hack
+
+           //small hack as the metasymbols are one-based
+           for(size_t i=1;i<fps.size();i++){
+               fps[i].resize(10);
+               fps[i][0]=0;
+           }
+           //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
+           //chunk.p_gram.sep_tsym = chunk.sep_sym;
+           //chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
+           //chunk.p_gram.txt_id = chunk.id;
+       }
 
        [[nodiscard]] off_t eff_buff_bytes() const{
            return e_bytes;
@@ -95,6 +117,20 @@ namespace lz_like_strat {
            if(text!=nullptr){
                mem<uint8_t>::deallocate(text);
            }
+       }
+
+       size_t mem_usage(){
+           size_t bytes = ter_dict.mem_usage();
+           size_t i =0;
+           while(!nt_dicts[i].empty()){
+               bytes+=nt_dicts[i].mem_usage();
+               i++;
+           }
+
+           for(auto const& fps_set : fps){
+               bytes+=fps_set.size()*sizeof(uint64_t);
+           }
+           return bytes;
        }
    };
 

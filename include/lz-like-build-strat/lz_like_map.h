@@ -16,66 +16,128 @@
 #endif
 
 template<class seq_type>
-class lz_like_map {
+class phrase_set {
 
 public:
 
-    seq_type *&seq;//pointer to the source sequence
+    seq_type *phrase_stream = nullptr;//
+    size_t stream_size=0;
+    size_t stream_cap=0;
     static constexpr uint8_t seq_bytes=sizeof(seq_type);
+    static constexpr uint64_t null_addr = std::numeric_limits<uint64_t>::max();
+    typedef std::vector<uint64_t> table_t;
 
-    static constexpr uint32_t null_source = std::numeric_limits<uint32_t>::max();
-
-    struct phrase_t {
-        uint32_t source = null_source;
+    struct phrase_t{
+        seq_type* phrase;
         uint32_t len;
-        phrase_t(uint32_t _source, uint32_t _len): source(_source), len(_len){}
-
-        [[nodiscard]] std::string to_string() const{
-            std::string str;
-            str+="source: "+std::to_string(source)+", ";
-            str+="len: "+std::to_string(len)+", ";
-            return str;
-        }
+        uint32_t mt;
+        phrase_t(seq_type* _phrase, uint32_t _len, uint32_t _mt): phrase(_phrase), len(_len), mt(_mt){}
     };
 
-    typedef std::vector<uint32_t> table_t;
-    typedef buff_vector<phrase_t> phrase_list_t;
-    //typedef std::vector<phrase_t> phrase_list_t;
+    struct iterator {
+
+    private:
+        seq_type* stream;
+        size_t stream_pos=0;
+        size_t stream_size;
+        phrase_t curr_phrase;
+
+        void decode_phrase(){
+            if (stream_pos>=stream_size) throw std::out_of_range("Iterator out of range");  // If pointer is nullptr, stop
+            if constexpr (std::is_same<seq_type, uint8_t>::value){
+                memcpy(&curr_phrase.len, &stream[stream_pos], sizeof(uint32_t));
+                stream_pos+=sizeof(uint32_t);
+                curr_phrase.phrase = &stream[stream_pos];
+                stream_pos+=curr_phrase.len;
+                memcpy(&curr_phrase.mt, &stream[stream_pos], sizeof(uint32_t));
+                stream_pos+=sizeof(uint32_t);
+            } else {
+                curr_phrase.len = stream[stream_pos];
+                stream_pos++;
+                curr_phrase.phrase = &stream[stream_pos];
+                stream_pos+=curr_phrase.len;
+                curr_phrase.mt = stream[stream_pos];
+                stream_pos++;
+            }
+            assert(stream_pos<=stream_size);
+        };
+
+    public:
+
+        explicit iterator(seq_type* _stream, size_t _start_pos, size_t _stream_size) : stream(_stream),
+                                                                                       stream_pos(_start_pos),
+                                                                                       stream_size(_stream_size),
+                                                                                       curr_phrase(nullptr, 0, 0) {
+            if(stream_pos<stream_size){
+                decode_phrase();
+            }
+        }
+
+        // Move to the next tuple
+        inline void operator++() {
+            decode_phrase();
+        }
+
+        inline phrase_t& operator*(){
+            return curr_phrase;
+        }
+
+        inline bool operator==(const iterator& other) {
+            return other.stream==stream && other.stream_pos==stream_pos;
+        }
+
+        inline bool operator!=(const iterator& other) {
+            return other.stream!=stream || other.stream_pos!=stream_pos;
+        }
+    };
 
 private:
 
     table_t m_table;
-    phrase_list_t phrases;
     float m_max_load_factor = 0.6;
     size_t elm_threshold=0;
     size_t frac_lf = 60;
+    size_t n_phrases=0;
+    size_t last_mt=0;
+    size_t last_fp_pos=0;
+    size_t n_rehashes=0;
 
     void rehash(size_t new_tab_size) {
-
+        //std::cout<<"rehashing "<<n_phrases<<" phrases to a hash table of size "<<new_tab_size<<std::endl;
         assert(new_tab_size>m_table.size());
         m_table.resize(new_tab_size);
-        memset(m_table.data(), (int)null_source, m_table.size()*sizeof(uint32_t));
+        memset(m_table.data(), (int)null_addr, m_table.size()*sizeof(table_t::value_type));
 
         //rehash the values
-        uint32_t p_idx=0;
-        for(auto const & phrase : phrases) {
-            insert_entry_in_table_bucket(phrase, p_idx);
-            p_idx++;
+        uint32_t len, phr_addr, pos=0;
+        size_t proc_phrases=0;
+        while(pos<stream_size){
+            phr_addr=pos;
+            if constexpr (std::is_same<seq_type, uint8_t>::value){
+                memcpy(&len, &phrase_stream[pos], sizeof(uint32_t));//read the length
+                pos+=sizeof(uint32_t);//skip length
+                insert_entry_in_table_bucket(XXH3_64bits(&phrase_stream[pos], len), phr_addr);
+                pos+=len+sizeof(uint32_t);//skip the phrase and mt
+            }else{
+                len = phrase_stream[pos];//read the length
+                pos++;//skip length
+                insert_entry_in_table_bucket(XXH3_64bits(&phrase_stream[pos], len*seq_bytes), phr_addr);
+                pos+=len+1;//skip the phrase and mt
+            }
+            proc_phrases++;
+            assert(proc_phrases<=n_phrases);
         }
-
+        assert(proc_phrases==n_phrases);
+        assert(pos==stream_size);
         elm_threshold = (m_table.size()*frac_lf)/100;
-#ifdef __linux__
-        malloc_trim(0);
-#endif
+        n_rehashes++;
     }
 
-    inline void insert_entry_in_table_bucket(const phrase_t& phrase, const uint32_t p_idx) {
+    inline void insert_entry_in_table_bucket(uint64_t hash, uint64_t phr_addr) {
 
-        size_t hash = XXH3_64bits(&seq[phrase.source], phrase.len*seq_bytes);
         size_t idx = hash & (m_table.size()-1);
-
-        if(m_table[idx]==null_source){
-            m_table[idx] = p_idx;
+        if(m_table[idx]==null_addr){
+            m_table[idx] = phr_addr;
             return;
         }
 
@@ -83,64 +145,103 @@ private:
         size_t j=1;
         while(true){
             idx = (hash + ((j*j+j)>>1UL)) & (m_table.size()-1);
-            if(m_table[idx]==null_source){
-                m_table[idx] = p_idx;
+            if(m_table[idx]==null_addr){
+                m_table[idx] = phr_addr;
                 break;
             }
             j++;
         }
     }
 
-public:
-
-    const phrase_list_t& phrase_set = phrases;
-
-    explicit lz_like_map(seq_type*& _seq, size_t min_cap=4, uint8_t * buffer=nullptr, size_t buff_bytes=0, float max_lf=0.6) : seq(_seq),
-                                                                                                                               phrases(buffer, buff_bytes),
-                                                                                                                               m_max_load_factor(max_lf){
-        assert(min_cap>0);
-        m_table = table_t(round_to_power_of_two(min_cap), null_source);
-        frac_lf = size_t(m_max_load_factor*100);
-        elm_threshold = (m_table.size()*frac_lf)/100;
+    void increase_stream_cap(size_t min_cap){
+        stream_cap = std::max(min_cap, stream_size*2);
+        if(phrase_stream== nullptr){
+            phrase_stream = mem<seq_type>::allocate(stream_cap);
+        }else{
+            phrase_stream = mem<seq_type>::reallocate(phrase_stream, stream_cap);
+        }
     }
 
-     inline uint32_t insert(off_t q_source, size_t q_len, bool& inserted) {
+public:
+
+    explicit phrase_set(size_t min_cap=4, float max_lf=0.6){
+        assert(min_cap>0);
+        m_table = table_t(round_to_power_of_two(min_cap), null_addr);
+        frac_lf = size_t(m_max_load_factor*100);
+        elm_threshold = (m_table.size()*frac_lf)/100;
+        m_max_load_factor = max_lf;
+    }
+
+    inline uint32_t insert(seq_type* q_phrase, size_t q_len, bool& inserted) {
         size_t q_bytes = q_len*seq_bytes;
-        size_t hash = XXH3_64bits(&seq[q_source], q_bytes);
+        size_t hash = XXH3_64bits(q_phrase, q_bytes);
 
         size_t j = 0;
         size_t idx = hash & (m_table.size()-1);
-        while(m_table[idx]!=null_source) {
-            if(q_len == phrases[m_table[idx]].len &&
-               memcmp(&seq[q_source], &seq[phrases[m_table[idx]].source], q_bytes)==0){
-                inserted = false;
-                //phrases[m_table[idx]].repeated=true;
-                // the reference is always the rightmost occurrence
-                // in the text's scan
-                // phrase.source = q_source;
-                return m_table[idx];
+
+        while(m_table[idx]!=null_addr) {
+            uint32_t len;
+            uint64_t phr_addr = m_table[idx];
+            if constexpr (std::is_same<seq_type, uint8_t>::value){
+                memcpy(&len, &phrase_stream[phr_addr], sizeof(uint32_t));
+                phr_addr+=sizeof(uint32_t);
+                if(q_len == len &&
+                   memcmp(q_phrase, &phrase_stream[phr_addr], q_bytes)==0){
+                    inserted = false;
+                    uint32_t mt;
+                    memcpy(&mt, &phrase_stream[phr_addr+len], sizeof(uint32_t));
+                    return mt;
+                }
+            }else{
+                len = phrase_stream[phr_addr];
+                phr_addr++;
+                if(q_len == len &&
+                   memcmp(q_phrase, &phrase_stream[phr_addr], q_bytes)==0){
+                    inserted = false;
+                    return phrase_stream[phr_addr+len];
+                }
             }
+
             j++;
             idx = (hash + ((j*j + j)>>1UL)) & (m_table.size()-1);
         }
 
-        m_table[idx] = phrases.size();
-        phrases.emplace_back(q_source, q_len);
+        m_table[idx] = stream_size;
+        uint32_t mt = n_phrases++;
+
+        size_t n_words = q_len;
+        if constexpr (std::is_same<seq_type, uint8_t>::value){
+            n_words+=2*sizeof(uint32_t) + q_len;
+            if((stream_size+n_words)>=stream_cap){
+                increase_stream_cap(stream_size+n_words);
+            }
+            memcpy(&phrase_stream[stream_size], &q_len, sizeof(uint32_t));
+            stream_size+=sizeof(uint32_t);
+            memcpy(&phrase_stream[stream_size], q_phrase, q_bytes);
+            stream_size+=q_len;
+            memcpy(&phrase_stream[stream_size], &mt, sizeof(uint32_t));
+            stream_size+=sizeof(uint32_t);
+        }else{
+            n_words+=2+q_len;
+            if((stream_size+n_words)>=stream_cap){
+                increase_stream_cap(stream_size+n_words);
+            }
+            phrase_stream[stream_size] = q_len;
+            stream_size++;
+            memcpy(&phrase_stream[stream_size], q_phrase, q_bytes);
+            stream_size+=q_len;
+            phrase_stream[stream_size] = mt;
+            stream_size++;
+        }
 
         //the insertion exceeds the max. load factor (i.e., rehash)
-        if(phrases.size()>=elm_threshold) {
+        if(n_phrases>=elm_threshold) {
             rehash(next_power_of_two(m_table.size()));
         }
 
         inserted = true;
-        return phrases.size()-1;
+        return mt;
     }
-
-    /*inline uint32_t unhashed_insert(off_t q_source, size_t q_len) {
-        assert(q_len<=1073741823);
-        phrases.emplace_back(q_source, q_len, false, true);
-        return phrases.size()-1;
-    }*/
 
     void set_min_capacity(size_t new_cap){
         new_cap = round_to_power_of_two(new_cap);
@@ -149,7 +250,7 @@ public:
         }
     }
 
-    bool find(off_t source, size_t len, size_t& mt) const {
+    /*bool find(off_t source, size_t len, size_t& mt) const {
 
         size_t hash = XXH3_64bits(&seq[source], len*seq_bytes);
         size_t j=0;
@@ -169,10 +270,10 @@ public:
                 idx = (hash + ((j*j + j)>>1UL)) & (m_table.size()-1);
             }
         }
-    }
+    }*/
 
     [[nodiscard]] inline float load_factor() const {
-        return float(phrases.size())/float(m_table.size());
+        return float(n_phrases)/float(m_table.size());
     }
 
     [[nodiscard]] inline float max_load_factor() const {
@@ -180,11 +281,11 @@ public:
     };
 
     [[nodiscard]] inline size_t size() const {
-        return phrases.size();
+        return n_phrases;
     }
 
     [[nodiscard]] inline bool empty()  const {
-        return phrases.empty();
+        return stream_size==0;
     }
 
     [[nodiscard]] inline size_t capacity() const{
@@ -192,38 +293,71 @@ public:
     };
 
     size_t table_mem_usage(){
-        return m_table.size()*sizeof(uint32_t);
+        return m_table.size()*sizeof(uint64_t);
     }
 
     size_t phrases_mem_usage(){
-        return phrases.men_usage();
-    }
-
-    size_t phrases_buff_usage(){
-        return phrases.buff_usage();
+        return table_mem_usage()+stream_cap*sizeof(seq_type);
     }
 
     void shrink_to_fit(){
-        phrases.shrink_to_fit();
+        stream_cap = stream_size;
+        phrase_stream = mem<seq_type>::reallocate(phrase_stream, stream_cap);
     }
 
-    void insert_dummy_entry(phrase_t dummy){
-        phrases.push_back(dummy);
+    [[nodiscard]] iterator begin() const {
+        return iterator(phrase_stream, 0, stream_size);
+    }
+
+    [[nodiscard]] iterator begin(size_t stream_pos) const {
+        assert(stream_pos>=0 && stream_pos<stream_size);
+        return iterator(phrase_stream, stream_pos, stream_size);
+    }
+
+    [[nodiscard]] iterator end() const {
+        return iterator(phrase_stream, stream_size, stream_size);
     }
 
     size_t mem_usage(){
         return table_mem_usage()+phrases_mem_usage();
     }
 
-    [[nodiscard]] bool called_malloc() const {
-        return phrases.called_malloc();
+    void destroy_table(){
+        std::vector<uint64_t>().swap(m_table);
     }
 
-    void destroy_table(){
-        std::vector<uint32_t>().swap(m_table);
-#ifdef __linux__
-        malloc_trim(0);
-#endif
+    size_t rehash_count(){
+        return n_rehashes;
+    }
+
+    ~phrase_set(){
+        if(phrase_stream!= nullptr){
+            mem<seq_type>::deallocate(phrase_stream);
+            phrase_stream= nullptr;
+            destroy_table();
+        }
+    }
+
+    void update_fps(std::vector<uint64_t>& prev_fps, std::vector<uint64_t>& fps){
+        if(last_mt<n_phrases){
+            assert(last_fp_pos<=stream_size);
+            fps.resize(n_phrases+1);
+            auto it = iterator(phrase_stream, last_fp_pos, stream_size);
+            auto it_end = end();
+            std::vector<uint64_t> fp_sequence;
+            while(it!=it_end){
+                auto phr = *it;
+                for(size_t j=0;j<phr.len;j++){
+                    assert(phr.phrase[j]>0 && phr.phrase[j]<prev_fps.size());
+                    fp_sequence.push_back(prev_fps[phr.phrase[j]]);
+                }
+                fps[last_mt+1] = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
+                last_mt++;
+                ++it;
+                fp_sequence.clear();
+            }
+            last_fp_pos=stream_size;
+        }
     }
 };
 

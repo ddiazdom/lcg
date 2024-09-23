@@ -221,9 +221,9 @@ struct partial_gram {
     }
 
     template<class sym_type>
-    off_t append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols){
+    off_t append_new_lvl(sym_type* text, sym_type* &phrase_set, size_t tot_symbols){
 
-        lvl_metadata_type lvl_met{};
+        /*lvl_metadata_type lvl_met{};
         lvl_met.n_rules = phrase_set.size();
 
         //the extra bit is to mark the end of each rule
@@ -251,7 +251,7 @@ struct partial_gram {
         assert(acc_bits==lvl_met.n_bits());
         metadata.push_back(lvl_met);
         lvl++;
-        return rules[lvl-1].capacity_in_bytes();
+        return rules[lvl-1].capacity_in_bytes();*/
     }
 
     template<class sym_type>

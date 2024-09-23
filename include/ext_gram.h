@@ -4,7 +4,6 @@
 
 #ifndef LCG_EXT_GRAM_H
 #define LCG_EXT_GRAM_H
-#include "pred_dt.h"
 
 #define MT_THRESHOLD 5242880 //5M of elements is about 20MB
 
@@ -256,7 +255,6 @@ struct i_gram_stream{
     }\
     fps_c[rule_c] = fps_b[rule_b];\
     map_b[rule_b] = rule_c;\
-    tmp_map_a.append(rule_a);\
     rule_b++;\
     rule_c++;\
 
@@ -524,8 +522,6 @@ struct extensible_gram {
     void merge_level(buff_vector<sym_type>& rule_set_a, lvl_metadata_type& mt_a, buff_vector<uint64_t> & fps_a, buff_vector<uint32_t>& map_a,
                      buff_vector<sym_type>& rule_set_b, lvl_metadata_type& mt_b, buff_vector<uint64_t> & fps_b, buff_vector<uint32_t>& map_b) {
 
-        pred_dt<32> tmp_map_a(mt_a.n_rules, mt_b.n_rules);
-
         size_t rule_a=0, rule_b=0, rule_c=0, str_pos_a=0, str_pos_b=0, str_pos_c=0;
         uint32_t len_a=0, len_b=0;
         lvl_metadata_type met_c;
@@ -635,9 +631,6 @@ struct extensible_gram {
         met_c.n_rules = rule_c;
         met_c.tot_symbols= str_pos_c-(rule_c*words_len);
         met_c.terminals = false;
-
-        std::cout<<map_a[100]<<std::endl;
-        std::cout<<tmp_map_a[100]<<std::endl;
 
         mt_prev_lv = mt_a;
         mt_a = met_c;
