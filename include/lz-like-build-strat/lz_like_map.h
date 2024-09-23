@@ -20,7 +20,7 @@ class phrase_set {
 
 public:
 
-    seq_type *phrase_stream = nullptr;//
+    seq_type *phrase_stream = nullptr;
     size_t stream_size=0;
     size_t stream_cap=0;
     static constexpr uint8_t seq_bytes=sizeof(seq_type);
@@ -297,11 +297,19 @@ public:
     };
 
     size_t table_mem_usage(){
-        return m_table.size()*sizeof(uint64_t);
+        return m_table.size()*sizeof(table_t::value_type);
     }
 
     size_t phrases_mem_usage(){
         return table_mem_usage()+stream_cap*sizeof(seq_type);
+    }
+
+    size_t mem_usage(){
+        return table_mem_usage()+phrases_mem_usage();
+    }
+
+    size_t eff_mem_usage(){
+        return n_phrases*sizeof(table_t::value_type) + stream_size*sizeof(seq_type);
     }
 
     void shrink_to_fit(){
@@ -322,10 +330,6 @@ public:
         return iterator(phrase_stream, stream_size, stream_size);
     }
 
-    size_t mem_usage(){
-        return table_mem_usage()+phrases_mem_usage();
-    }
-
     void destroy_table(){
         std::vector<uint64_t>().swap(m_table);
     }
@@ -342,19 +346,20 @@ public:
         }
     }
 
-    void update_fps(std::vector<uint64_t>& prev_fps, std::vector<uint64_t>& fps){
+    inline void update_fps(const uint64_t* prev_fps, size_t& len_prev_fps, uint64_t*& fps, size_t& len_fps) {
         if(last_mt<n_phrases){
             assert(last_fp_pos<=stream_size);
 
+            fps = mem<uint64_t>::reallocate(fps, n_phrases+1);
+            len_fps = n_phrases+1;
 
-            fps.resize(n_phrases+1);
             auto it = iterator(phrase_stream, last_fp_pos, stream_size);
             auto it_end = end();
             std::vector<uint64_t> fp_sequence;
             while(it!=it_end){
                 auto phr = *it;
                 for(size_t j=0;j<phr.len;j++){
-                    assert(phr.phrase[j]>0 && phr.phrase[j]<prev_fps.size());
+                    assert(phr.phrase[j]>0 && phr.phrase[j]<len_prev_fps);
                     fp_sequence.push_back(prev_fps[phr.phrase[j]]);
                 }
                 fps[last_mt+1] = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));

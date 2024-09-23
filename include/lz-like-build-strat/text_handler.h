@@ -21,7 +21,8 @@ namespace lz_like_strat {
        off_t buffer_bytes{};
        off_t e_bytes{};
 
-       std::vector<std::vector<uint64_t>> fps;
+       std::vector<uint64_t *> fps;
+       std::vector<size_t> fps_len;
 
        phrase_set<uint8_t> ter_dict;
        std::vector<phrase_set<uint32_t>> nt_dicts;
@@ -43,10 +44,12 @@ namespace lz_like_strat {
        explicit text_chunk(uint8_t _sep_sym='\n'): sep_sym(_sep_sym){
 
            fps.resize(40);
+           fps_len.resize(40);
            nt_dicts.resize(39);
 
            size_t alpha_size = std::numeric_limits<uint8_t>::max()+1;
-           fps[0].resize(alpha_size);
+           fps[0] = mem<uint64_t>::allocate(alpha_size);
+           fps_len[0] = alpha_size;
            for(size_t i=0;i<alpha_size;i++){
                fps[0][i] = XXH3_64bits(&i, sizeof(uint8_t));
                assert(fps[0][i]!=0);
@@ -55,8 +58,9 @@ namespace lz_like_strat {
 
            //small hack as the metasymbols are one-based
            for(size_t i=1;i<fps.size();i++){
-               fps[i].resize(10);
+               fps[i] = mem<uint64_t>::allocate(10);
                fps[i][0]=0;
+               fps_len[i]=10;
            }
            //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
            //chunk.p_gram.sep_tsym = chunk.sep_sym;
@@ -82,6 +86,10 @@ namespace lz_like_strat {
                return {nullptr, 0};
            }else{
                return {text+used_bytes, av_bytes()};
+           }
+
+           for(auto & fps_set : fps){
+               mem<uint64_t>::deallocate(fps_set);
            }
        }
 
@@ -127,8 +135,22 @@ namespace lz_like_strat {
                i++;
            }
 
-           for(auto const& fps_set : fps){
-               bytes+=fps_set.size()*sizeof(uint64_t);
+           for(auto const& fps_set : fps_len){
+               bytes+=fps_set*sizeof(uint64_t);
+           }
+           return bytes;
+       }
+
+       size_t eff_mem_usage(){
+           size_t bytes = ter_dict.eff_mem_usage();
+           size_t i =0;
+           while(!nt_dicts[i].empty()){
+               bytes+=nt_dicts[i].eff_mem_usage();
+               i++;
+           }
+
+           for(auto const& fps_set : fps_len){
+               bytes+=fps_set*sizeof(uint64_t);
            }
            return bytes;
        }

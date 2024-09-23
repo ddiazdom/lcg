@@ -230,7 +230,8 @@ namespace lz_like_strat {
         chunk.update_used_bytes(max_byte_offset);//update the amount of used bytes
 
         //create_meta_sym<uint8_t, true>(chunk, fp_seed, dict.phrase_set, prev_fps);
-        chunk.ter_dict.update_fps(chunk.fps[chunk.round], chunk.fps[chunk.round+1]);
+        chunk.ter_dict.update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
+                                  chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
 
         finish_byte_parse(chunk, max_byte_offset, phr_with_ovf);
         chunk.update_used_bytes(max_byte_offset);
@@ -304,7 +305,8 @@ namespace lz_like_strat {
         //dict.destroy_table();
 
         assert(chunk.nt_dicts[chunk.round-1].size()<dummy_sym);
-        chunk.nt_dicts[chunk.round-1].update_fps(chunk.fps[chunk.round], chunk.fps[chunk.round+1]);
+        chunk.nt_dicts[chunk.round-1].update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
+                                                 chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
         //create_meta_sym<uint32_t, false>(chunk, fp_seed, dict.phrase_set, prev_fps);
 
         // create the parse in place
@@ -426,7 +428,7 @@ namespace lz_like_strat {
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
-                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<std::endl;
+                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<std::endl;
                 malloc_count_reset_peak();
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
                 text_chunks[buff_id].id = chunk_id++;
@@ -473,7 +475,7 @@ namespace lz_like_strat {
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
                 //std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
-                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<std::endl;
+                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<std::endl;
                 malloc_count_reset_peak();
             }
             buffers_to_reuse.done();
