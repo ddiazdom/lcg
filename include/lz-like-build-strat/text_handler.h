@@ -58,9 +58,9 @@ namespace lz_like_strat {
 
            //small hack as the metasymbols are one-based
            for(size_t i=1;i<fps.size();i++){
-               fps[i] = mem<uint64_t>::allocate(10);
+               fps[i] = mem<uint64_t>::allocate(1);
                fps[i][0]=0;
-               fps_len[i]=10;
+               fps_len[i]=1;
            }
            //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
            //chunk.p_gram.sep_tsym = chunk.sep_sym;
@@ -125,14 +125,22 @@ namespace lz_like_strat {
            if(text!=nullptr){
                mem<uint8_t>::deallocate(text);
            }
+           std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
+           ter_dict.psl_dist();
+           size_t i=0;
+           for(auto &nt_dict : nt_dicts){
+               if(!nt_dict.empty()){
+                   std::cout<<i<<" "<<nt_dict.size()<<", "<<nt_dict.load_factor()<<std::endl;
+                   nt_dict.psl_dist();
+               }
+               i++;
+           }
        }
 
        size_t mem_usage(){
            size_t bytes = ter_dict.mem_usage();
-           size_t i =0;
-           while(!nt_dicts[i].empty()){
-               bytes+=nt_dicts[i].mem_usage();
-               i++;
+           for(auto const& dict: nt_dicts){
+               bytes+=dict.mem_usage();
            }
 
            for(auto const& fps_set : fps_len){
@@ -143,10 +151,8 @@ namespace lz_like_strat {
 
        size_t eff_mem_usage(){
            size_t bytes = ter_dict.eff_mem_usage();
-           size_t i =0;
-           while(!nt_dicts[i].empty()){
-               bytes+=nt_dicts[i].eff_mem_usage();
-               i++;
+           for(auto const& dict: nt_dicts){
+               bytes+=dict.eff_mem_usage();
            }
 
            for(auto const& fps_set : fps_len){

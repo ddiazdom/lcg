@@ -179,7 +179,7 @@ namespace lz_like_strat {
                 byte_offset = rb + (parse_size << 2);
                 max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
 
-                mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len, inserted) + 1;
+                mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len) + 1;
                 v_len = vbyte_len(mt_sym);
                 if(__builtin_expect(v_len>phrase_len, 0)){
                     //metasymbol does not fit its phrase
@@ -209,7 +209,7 @@ namespace lz_like_strat {
         byte_offset = rb + (parse_size << 2);
         max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
 
-        mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len, inserted)+1;
+        mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len)+1;
         v_len = vbyte_len(mt_sym);
         if(__builtin_expect(v_len>phrase_len, 0)){
             phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
@@ -270,7 +270,7 @@ namespace lz_like_strat {
             if(left_hash>middle_hash && middle_hash<right_hash){//local minimum
 
                 phrase_len = rb-lb;
-                mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, inserted);
+                mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
                 assert(text[lb]!=dummy_sym);
                 text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
@@ -291,7 +291,7 @@ namespace lz_like_strat {
         assert(rb==(txt_size-1) && text[rb]==sep_sym);
 
         phrase_len = rb-lb;
-        mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, inserted);
+        mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
         assert(text[lb]!=dummy_sym);
         text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
