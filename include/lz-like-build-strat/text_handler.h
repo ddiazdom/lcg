@@ -126,12 +126,12 @@ namespace lz_like_strat {
                mem<uint8_t>::deallocate(text);
            }
            std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
-           ter_dict.psl_dist();
+           //ter_dict.psl_dist();
            size_t i=0;
            for(auto &nt_dict : nt_dicts){
                if(!nt_dict.empty()){
                    std::cout<<i<<" "<<nt_dict.size()<<", "<<nt_dict.load_factor()<<std::endl;
-                   nt_dict.psl_dist();
+                   //nt_dict.psl_dist();
                }
                i++;
            }
