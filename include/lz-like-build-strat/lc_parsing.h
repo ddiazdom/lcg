@@ -238,12 +238,8 @@ namespace lz_like_strat {
         uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
         uint32_t left_sym, middle_sym;
         uint64_t left_hash, middle_hash, right_hash;
-        uint32_t dummy_sym=std::numeric_limits<uint32_t>::max();
-
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
-
-        bool new_str;
-        off_t sym_bytes = sizeof(uint32_t);
+        bool new_str=false;
 
         lb = 0;
         left_sym = text[i];
@@ -263,12 +259,10 @@ namespace lz_like_strat {
                 phrase_len = rb-lb;
                 mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
-                assert(text[lb]!=dummy_sym);
-                text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-                memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
-
+                text[parse_size]=sep_sym;
+                parse_size+=new_str;
+                text[parse_size++] = mt_sym+1;
                 new_str = text[rb]==sep_sym;
-                parse_size+=1+new_str;
                 lb = rb+new_str;
             }
 
@@ -283,27 +277,12 @@ namespace lz_like_strat {
         phrase_len = rb-lb;
         mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
-        assert(text[lb]!=dummy_sym);
-        text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-        memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-
-        parse_size+=2;//+1 for the separator symbol
-        assert(chunk.nt_dicts[chunk.round-1].size()<dummy_sym);
+        text[parse_size]=sep_sym;
+        parse_size+=new_str;
+        text[parse_size++] = mt_sym+1;
+        text[parse_size++] = sep_sym;
         chunk.nt_dicts[chunk.round-1].update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
                                                  chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
-        // create the parse in place
-        off_t k=0;
-        i=0;
-        while(i<lb){//process the text area between consecutive phrases
-            text[k] = text[i];
-            k+=text[i]!=dummy_sym;
-            i++;
-        }
-        assert(i==lb);
-        assert((lb+1)<txt_size);
-        text[k++] = text[i];
-        text[k++] = sep_sym;
-        assert(k==parse_size);
         chunk.parse_size = parse_size;
     }
 
