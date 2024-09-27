@@ -149,14 +149,14 @@ namespace lz_like_strat {
     void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 
         uint8_t * text = chunk.text;
-        off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, max_byte_offset, byte_offset, parse_size;
+        off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, byte_offset, parse_size;
         uint8_t v_len;
         assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
         text[rb] = 128;//the vbyte code of the metasymbol mt=0 representing a separator in the next round of parsing
         n_strings=1;
-        parse_size=1;
-        max_byte_offset=4;
+        parse_size=4;//we will count in bytes of sizeof(uint32_t)
+        off_t mbo[2]={4};
 
         //given a phrase T[a..b-1], byte_offset tells the number of bytes (4 per mt) used by the metasymbols after T[b-1].
         //This value defines the new size for text, now with the parse
@@ -176,8 +176,8 @@ namespace lz_like_strat {
                 lb += new_str;
                 phrase_len=rb-lb;
 
-                byte_offset = rb + (parse_size << 2);
-                max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
+                byte_offset = rb + parse_size;
+                mbo[byte_offset > mbo[1]] = byte_offset;
 
                 mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len) + 1;
                 v_len = vbyte_len(mt_sym);
@@ -189,13 +189,13 @@ namespace lz_like_strat {
                     memset(&text[lb+v_len], 0, phrase_len-v_len);
                 }
 
-                parse_size++;
+                parse_size+=4;
                 rb = i+1;
                 if(new_str){
                     assert(text[rb]==sep_sym);
                     text[rb] = 128;//vbyte code for 0 (the separator symbol in the next levels)
                     n_strings++;
-                    parse_size++;
+                    parse_size+=4;
                 }
             }
 
@@ -206,8 +206,8 @@ namespace lz_like_strat {
 
         lb = 0;
         phrase_len=rb-lb;
-        byte_offset = rb + (parse_size << 2);
-        max_byte_offset = byte_offset > max_byte_offset ? byte_offset : max_byte_offset;
+        byte_offset = rb + parse_size;
+        mbo[byte_offset > mbo[1]] = byte_offset;
 
         mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len)+1;
         v_len = vbyte_len(mt_sym);
@@ -217,12 +217,11 @@ namespace lz_like_strat {
             vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
             memset(&text[lb+v_len], 0, phrase_len-v_len);
         }
-        parse_size++;
-
-        chunk.parse_size = parse_size;
+        parse_size+=4;
+        chunk.parse_size = parse_size/4;//divide by 4=sizeof(uint32_t) to avoid the <<
 
         //computes how many bytes we require for the parse
-        max_byte_offset = INT_CEIL(max_byte_offset, sizeof(uint32_t))*sizeof(uint32_t);
+        off_t max_byte_offset = INT_CEIL(mbo[1], sizeof(uint32_t))*sizeof(uint32_t);
         chunk.increase_capacity(max_byte_offset);
 
         chunk.ter_dict.update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
