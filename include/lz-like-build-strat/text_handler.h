@@ -160,6 +160,15 @@ namespace lz_like_strat {
            }
            return bytes;
        }
+
+       size_t dict_buff_av(){
+           size_t bytes = ter_dict.buff_bytes_available();
+           for(auto const& dict: nt_dicts){
+               bytes+=dict.buff_bytes_available();
+           }
+           return bytes;
+       }
+
    };
 
    //template<class sym_type>

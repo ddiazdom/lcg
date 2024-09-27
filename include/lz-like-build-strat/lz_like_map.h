@@ -15,6 +15,15 @@
 #include <malloc.h>
 #endif
 
+//20 MB
+#define STR_THRESHOLD1 20971520
+
+//200 MB
+#define STR_THRESHOLD2 209715200
+
+//1 GB
+#define STR_THRESHOLD3 1073741824
+
 template<class seq_type>
 class phrase_set {
 
@@ -160,7 +169,18 @@ private:
     }
 
     void increase_stream_cap(size_t min_cap){
-        stream_cap = std::max(min_cap, stream_size*2);
+        size_t bytes = stream_cap*sizeof(seq_type);
+        if(bytes <= STR_THRESHOLD1){
+            stream_cap = stream_size*2;
+        } else if(bytes <= STR_THRESHOLD2){
+            stream_cap = static_cast<size_t>(stream_size*1.5);
+        } else if(bytes <= STR_THRESHOLD3){
+            stream_cap = static_cast<size_t>(stream_size*1.2);
+        } else {
+            stream_cap = static_cast<size_t>(stream_size*1.05);
+        }
+        stream_cap = std::max(min_cap, stream_cap);
+
         if(phrase_stream== nullptr){
             phrase_stream = mem<seq_type>::allocate(stream_cap);
         }else{
@@ -459,8 +479,8 @@ public:
         std::vector<uint64_t>().swap(m_table);
     }
 
-    size_t rehash_count(){
-        return n_rehashes;
+    [[nodiscard]] size_t buff_bytes_available() const {
+        return (stream_cap-stream_size)*sizeof(seq_type);
     }
 
     ~phrase_set(){

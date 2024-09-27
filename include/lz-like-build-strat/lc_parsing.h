@@ -122,8 +122,8 @@ namespace lz_like_strat {
             while(pos>next_ovf && chunk.text[pos]==0) pos--;
         }
 
-        assert(pos==-1);
         chunk.parse++;
+        assert(pos==-1);
         assert(chunk.parse[chunk.parse_size-1]==0);
         assert((uintptr_t) chunk.text<= (uintptr_t)chunk.parse && (uintptr_t)chunk.parse<= (uintptr_t)&chunk.text[txt_size-1]);
         assert((uintptr_t) chunk.text<= (uintptr_t)(chunk.parse+chunk.parse_size) &&
@@ -295,11 +295,15 @@ namespace lz_like_strat {
         // create the parse in place
         off_t k=0;
         i=0;
-        while(i<txt_size){//process the text area between consecutive phrases
-            text[k++] = text[i];
-            while(text[++i]==dummy_sym && i<txt_size);
+        while(i<lb){//process the text area between consecutive phrases
+            text[k] = text[i];
+            k+=text[i]!=dummy_sym;
+            i++;
         }
+        assert(i==lb);
         assert((lb+1)<txt_size);
+        text[k++] = text[i];
+        text[k++] = sep_sym;
         assert(k==parse_size);
         chunk.parse_size = parse_size;
     }
@@ -412,7 +416,7 @@ namespace lz_like_strat {
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
                 //std::cout<<"\r  Processed input "<<report_space((off_t)proc_syms)<<"/"<<report_space(rem_bytes)<<std::endl;
-                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<std::endl;
+                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<" buff available "<<report_space((off_t)text_chunks[buff_id].dict_buff_av())<<std::endl;
                 malloc_count_reset_peak();
                 text_chunks[buff_id].text_bytes = tmp_ck_size;
                 text_chunks[buff_id].id = chunk_id++;
@@ -459,7 +463,7 @@ namespace lz_like_strat {
                 proc_syms+=text_chunks[buff_id].text_bytes;
                 //std::cout<<"\n  Processed input "<<report_space((off_t)proc_syms)<<"     "<<std::flush;
                 //std::cout<<"\n  Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and grammar size "<<report_space((off_t)text_chunks[buff_id].p_gram.gram_size_in_bytes())<<"/ in int_words:"<<report_space((off_t)text_chunks[buff_id].p_gram.gram_uint32_bytes())<<" / buff_bytes grammar: "<< report_space((off_t)text_chunks[buff_id].p_gram.bytes())<<" and we wrote "<<report_space((off_t)g_bytes)<<std::flush;
-                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<std::endl;
+                std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<" buff available "<<report_space((off_t)text_chunks[buff_id].dict_buff_av())<<std::endl;
                 malloc_count_reset_peak();
             }
             buffers_to_reuse.done();
