@@ -261,30 +261,33 @@ public:
     inline void rehash_entry_rb(uint64_t hash, size_t phr_addr){
 
         size_t idx = hash & (m_table.size() - 1);
-        size_t dist, bck_addr, bck_dist;
+        size_t dist=0, bck_addr, bck_dist;
 
-        if(m_table[idx]==null_addr){
-            m_table[idx] = phr_addr;
-        }else{
-            dist = 0;
-            while(m_table[idx]!=null_addr){
+        if(m_table[idx]!=null_addr) {
+
+            bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+            bck_dist = m_table[idx] >> 44UL;
+            while(bck_dist>=dist && m_table[idx]!=null_addr){
+                dist++;
+                idx = (idx+1) & (m_table.size()-1);
                 bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
                 bck_dist = m_table[idx] >> 44UL;
-
-                if(bck_dist<dist){ //steal to the rich
-                    m_table[idx] = (dist<<44UL) | phr_addr;
-                    //if(dist>max_bck_dist) max_bck_dist = dist;
-                    phr_addr = bck_addr;
-                    dist = bck_dist+1;
-                }else{
-                    dist++;
-                }
-                idx = (idx+1) & (m_table.size() - 1);
             }
 
-            m_table[idx] = (dist<<44UL) | phr_addr;
-            //if(dist>max_bck_dist) max_bck_dist = dist;
+            assert(bck_dist<dist || m_table[idx]==null_addr);
+
+            while(m_table[idx]!=null_addr){
+                m_table[idx] = (dist<<44UL) | phr_addr;
+                phr_addr = bck_addr;
+                dist = bck_dist+1;
+
+                idx = (idx+1) & (m_table.size()-1);
+                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+                bck_dist = m_table[idx] >> 44UL;
+            }
         }
+        assert(dist<=65535);
+        m_table[idx] = (dist<<44UL) | phr_addr ;
     }
 
     uint32_t insert(seq_type* q_phrase, size_t q_len) {
@@ -292,29 +295,45 @@ public:
         size_t q_bytes = q_len*seq_bytes;
         uint64_t hash = XXH3_64bits(q_phrase, q_bytes);
         size_t idx = hash & (m_table.size()-1), bck_dist, bck_addr, dist=0, addr=stream_size;
-        bool inserted = false;
 
-        while(m_table[idx]!=null_addr) {
+        if(m_table[idx]!=null_addr) {
+
             bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
             bck_dist = m_table[idx] >> 44UL;
-
-            if(!inserted && bck_dist==dist && compare(q_phrase, q_len, &phrase_stream[bck_addr])){
-                if(std::is_same<seq_type, uint8_t>::value){
-                    uint32_t mt;
-                    memcpy(&mt, &phrase_stream[bck_addr+sizeof(uint32_t)+q_len], sizeof(uint32_t));
-                    return mt;
-                }else{
-                    return phrase_stream[bck_addr+1+q_len];
-                }
-            } else if(bck_dist<dist){ //steal to the rich
-                inserted = true;
-                m_table[idx] = (dist<<44UL) | addr;
-                addr = bck_addr;
-                dist = bck_dist;
+            while(bck_dist>dist && m_table[idx]!=null_addr){
+                dist++;
+                idx = (idx+1) & (m_table.size()-1);
+                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+                bck_dist = m_table[idx] >> 44UL;
             }
 
-            dist++;
-            idx = (idx+1) & (m_table.size()-1);
+            while(dist==bck_dist){
+                if(compare(q_phrase, q_len, &phrase_stream[bck_addr])){
+                    if(std::is_same<seq_type, uint8_t>::value){
+                        uint32_t mt;
+                        memcpy(&mt, &phrase_stream[bck_addr+sizeof(uint32_t)+q_len], sizeof(uint32_t));
+                        return mt;
+                    } else {
+                        return phrase_stream[bck_addr+1+q_len];
+                    }
+                }
+                dist++;
+                idx = (idx+1) & (m_table.size()-1);
+                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+                bck_dist = m_table[idx] >> 44UL;
+            }
+
+            assert(bck_dist<dist || m_table[idx]==null_addr);
+
+            while(m_table[idx]!=null_addr){
+                m_table[idx] = (dist<<44UL) | addr;
+                addr = bck_addr;
+                dist = bck_dist+1;
+
+                idx = (idx+1) & (m_table.size()-1);
+                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+                bck_dist = m_table[idx] >> 44UL;
+            }
         }
 
         assert(dist<=65535);

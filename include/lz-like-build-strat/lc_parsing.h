@@ -163,7 +163,7 @@ namespace lz_like_strat {
         //max_byte_offset tells the maximum offset
 
         std::vector<phrase_overflow> phr_with_ovf;
-        bool r_cmp = true, l_cmp, inserted, new_str;
+        bool r_cmp = true, l_cmp, new_str;
         uint32_t mt_sym, phrase_len;
         uint8_t mid_sym = text[i];
         while(--i>0 && text[i]==mid_sym);
@@ -219,28 +219,21 @@ namespace lz_like_strat {
         }
         parse_size++;
 
-        //if(dict.capacity()>chunk.max_n_phrases[0]) chunk.max_n_phrases[0] = dict.capacity();
-        //dict.shrink_to_fit();
-        //dict.destroy_table();
         chunk.parse_size = parse_size;
 
         //computes how many bytes we require for the parse
         max_byte_offset = INT_CEIL(max_byte_offset, sizeof(uint32_t))*sizeof(uint32_t);
         chunk.increase_capacity(max_byte_offset);
-        chunk.update_used_bytes(max_byte_offset);//update the amount of used bytes
 
-        //create_meta_sym<uint8_t, true>(chunk, fp_seed, dict.phrase_set, prev_fps);
         chunk.ter_dict.update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
                                   chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
-
         finish_byte_parse(chunk, max_byte_offset, phr_with_ovf);
-        chunk.update_used_bytes(max_byte_offset);
     }
 
     // this method parses the text and store the parse in the text itself.
     // It only works for parsing rounds other than the first one because the length of symbol each
     // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
-    void int_par_l2r(text_chunk& chunk, off_t& n_strings){
+    void int_par_l2r(text_chunk& chunk){
 
         uint32_t *text = chunk.parse;
         uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
@@ -250,8 +243,7 @@ namespace lz_like_strat {
 
         off_t i=0, parse_size = 0, phrase_len, lb, rb;
 
-        bool inserted, new_str;
-        n_strings = 0;
+        bool new_str;
         off_t sym_bytes = sizeof(uint32_t);
 
         lb = 0;
@@ -278,7 +270,6 @@ namespace lz_like_strat {
 
                 new_str = text[rb]==sep_sym;
                 parse_size+=1+new_str;
-                n_strings+=new_str;
                 lb = rb+new_str;
             }
 
@@ -298,17 +289,9 @@ namespace lz_like_strat {
         memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
 
         parse_size+=2;//+1 for the separator symbol
-        n_strings++;
-
-        //if(dict.capacity()>chunk.max_n_phrases[chunk.round]) chunk.max_n_phrases[chunk.round] = dict.capacity();
-        //dict.shrink_to_fit();
-        //dict.destroy_table();
-
         assert(chunk.nt_dicts[chunk.round-1].size()<dummy_sym);
         chunk.nt_dicts[chunk.round-1].update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
                                                  chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
-        //create_meta_sym<uint32_t, false>(chunk, fp_seed, dict.phrase_set, prev_fps);
-
         // create the parse in place
         off_t k=0;
         i=0;
@@ -316,6 +299,7 @@ namespace lz_like_strat {
             text[k++] = text[i];
             while(text[++i]==dummy_sym && i<txt_size);
         }
+        assert((lb+1)<txt_size);
         assert(k==parse_size);
         chunk.parse_size = parse_size;
     }
@@ -338,7 +322,7 @@ namespace lz_like_strat {
         while(chunk.parse_size!=size_limit){
             assert(chunk.parse_size>=size_limit);
             //start = std::chrono::steady_clock::now();
-            int_par_l2r(chunk, n_strings);
+            int_par_l2r(chunk);
             //end = std::chrono::steady_clock::now();
             //report_time(start, end , 2);
             chunk.round++;
