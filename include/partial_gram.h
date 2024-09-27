@@ -220,11 +220,10 @@ struct partial_gram {
         return read_bytes;
     }
 
-    template<class sym_type, class perm_type>
-    off_t append_new_lvl(sym_type* text, const typename lz_like_map<sym_type>::phrase_list_t &phrase_set, size_t tot_symbols,
-                         perm_type& perm){
+    template<class sym_type>
+    off_t append_new_lvl(sym_type* text, sym_type* &phrase_set, size_t tot_symbols){
 
-        lvl_metadata_type lvl_met{};
+        /*lvl_metadata_type lvl_met{};
         lvl_met.n_rules = phrase_set.size();
 
         //the extra bit is to mark the end of each rule
@@ -235,9 +234,8 @@ struct partial_gram {
 
         size_t acc_bits=0;
         for(size_t i=0;i<phrase_set.size();i++){
-            size_t idx = perm[i].orig_mt;
-            uint32_t source = phrase_set[idx].source;
-            uint32_t len = phrase_set[idx].len;
+            uint32_t source = phrase_set[i].source;
+            uint32_t len = phrase_set[i].len;
             if(len>longest_rule) longest_rule = len;
             uint32_t last = source + len-1;
             for(size_t j=source;j<last;j++){
@@ -253,7 +251,7 @@ struct partial_gram {
         assert(acc_bits==lvl_met.n_bits());
         metadata.push_back(lvl_met);
         lvl++;
-        return rules[lvl-1].capacity_in_bytes();
+        return rules[lvl-1].capacity_in_bytes();*/
     }
 
     template<class sym_type>
@@ -370,9 +368,14 @@ struct partial_gram {
 
     [[nodiscard]] inline size_t gram_uint32_bytes() const {
         size_t bytes=metadata[1].tot_symbols;
+        bytes+=sizeof(uint32_t)*metadata[1].n_rules;
+        size_t tot_rules=metadata[1].n_rules;
         for(size_t i=2; i<metadata.size();i++){
-            bytes+=metadata[i].uint32_bytes();
+            bytes+=(metadata[i].tot_symbols+metadata[i].n_rules)*sizeof(uint32_t);
+            tot_rules+=metadata[i].n_rules;
         }
+        bytes+=sizeof(uint64_t)*tot_rules;//fingerprints
+        bytes+=sizeof(uint32_t)*tot_rules*2;//the hash table
         return bytes;
     }
 
