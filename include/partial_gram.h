@@ -252,6 +252,7 @@ struct partial_gram {
         metadata.push_back(lvl_met);
         lvl++;
         return rules[lvl-1].capacity_in_bytes();*/
+        return 0;
     }
 
     template<class sym_type>

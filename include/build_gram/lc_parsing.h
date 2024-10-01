@@ -357,12 +357,13 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file, std::s
 
         int fd_r = open(text_file.c_str(), O_RDONLY);
 
+        size_t f_size = file_size(text_file);
 #ifdef __linux__
         off_t r_page_cache_bytes = 0, w_page_cache_bytes = 0;
-        posix_fadvise(fd_r, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
+        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
 #endif
 
-        off_t rem_bytes = (off_t)file_size(text_file), r_acc_bytes = 0;
+        off_t rem_bytes = (off_t) f_size, r_acc_bytes = 0;
         size_t chunk_id = 0;
 
         auto tmp_ck_size = off_t(INT_CEIL(p_opts.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
@@ -415,7 +416,7 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file, std::s
        while (!buffers_to_process.empty());
        buffers_to_process.done();
 #ifdef __linux__
-       posix_fadvise(fd_r, 0, st.st_size, POSIX_FADV_DONTNEED);
+       posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
 #endif
        close(fd_r);
 
