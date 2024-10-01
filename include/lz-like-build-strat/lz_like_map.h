@@ -114,6 +114,8 @@ private:
     size_t last_mt=0;
     size_t last_fp_pos=0;
     size_t n_rehashes=0;
+    size_t a,b,c;
+    static constexpr uint64_t d_one = 1UL<<44UL;
 
     void rehash(size_t new_tab_size) {
         //std::cout<<"rehashing "<<n_phrases<<" phrases to a hash table of size "<<new_tab_size<<std::endl;
@@ -129,13 +131,11 @@ private:
             if constexpr (std::is_same<seq_type, uint8_t>::value){
                 memcpy(&len, &phrase_stream[pos], sizeof(uint32_t));//read the length
                 pos+=sizeof(uint32_t);//skip length
-                //insert_entry_in_table_bucket(XXH3_64bits(&phrase_stream[pos], len), phr_addr);
                 rehash_entry_rb(XXH3_64bits(&phrase_stream[pos], len), phr_addr);
                 pos+=len+sizeof(uint32_t);//skip the phrase and mt
             }else{
                 len = phrase_stream[pos];//read the length
                 pos++;//skip length
-                //insert_entry_in_table_bucket(XXH3_64bits(&phrase_stream[pos], len*seq_bytes), phr_addr);
                 rehash_entry_rb(XXH3_64bits(&phrase_stream[pos], len*seq_bytes), phr_addr);
                 pos+=len+1;//skip the phrase and mt
             }
@@ -196,6 +196,7 @@ public:
         m_table = table_t(round_to_power_of_two(min_cap), null_addr);
         frac_lf = size_t(m_max_load_factor*100);
         elm_threshold = (m_table.size()*frac_lf)/100;
+        a=0,b=0,c=0;
     }
 
     /*inline uint32_t insert(seq_type* q_phrase, size_t q_len, bool& inserted) {
@@ -271,65 +272,58 @@ public:
         if constexpr (std::is_same<seq_type, uint8_t>::value){
             uint32_t len;
             memcpy(&len, phr_addr, sizeof(uint32_t));
-            phr_addr+=sizeof(uint32_t);
-            return (q_len == len && memcmp(q_phrase, phr_addr, q_len)==0);
+            return (q_len == len && memcmp(q_phrase, (phr_addr+sizeof(uint32_t)), q_len)==0);
         } else {
             return (q_len == *phr_addr && memcmp(q_phrase, (phr_addr+1), q_len*seq_bytes)==0);
         }
     }
 
-    inline void rehash_entry_rb(uint64_t hash, size_t phr_addr){
+    inline void rehash_entry_rb(uint64_t hash, uint64_t phr_addr){
 
         size_t idx = hash & (m_table.size() - 1);
-        size_t dist=0, bck_addr, bck_dist;
-
         if(m_table[idx]!=null_addr) {
-
-            bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
+            size_t dist=0, bck_dist;
             bck_dist = m_table[idx] >> 44UL;
             while(bck_dist>=dist && m_table[idx]!=null_addr){
                 dist++;
                 idx = (idx+1) & (m_table.size()-1);
-                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
                 bck_dist = m_table[idx] >> 44UL;
             }
-
-            assert(bck_dist<dist || m_table[idx]==null_addr);
-
+            assert(dist<=65535);
+            //assert(bck_dist<dist || m_table[idx]==null_addr);
+            phr_addr |= dist<<44UL;
+            uint64_t tmp;
             while(m_table[idx]!=null_addr){
-                m_table[idx] = (dist<<44UL) | phr_addr;
-                phr_addr = bck_addr;
-                dist = bck_dist+1;
-
+                tmp = m_table[idx];
+                m_table[idx] = phr_addr;
+                phr_addr = tmp+d_one;
                 idx = (idx+1) & (m_table.size()-1);
-                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
-                bck_dist = m_table[idx] >> 44UL;
             }
         }
-        assert(dist<=65535);
-        m_table[idx] = (dist<<44UL) | phr_addr ;
+        m_table[idx] = phr_addr ;
     }
 
-    uint32_t insert(seq_type* q_phrase, size_t q_len) {
+    inline uint32_t insert(seq_type* q_phrase, size_t q_len) {
 
         size_t q_bytes = q_len*seq_bytes;
         uint64_t hash = XXH3_64bits(q_phrase, q_bytes);
-        size_t idx = hash & (m_table.size()-1), bck_dist, bck_addr, dist=0, addr=stream_size;
+        size_t idx = hash & (m_table.size()-1);
+        uint64_t bck_val = stream_size;
 
         if(m_table[idx]!=null_addr) {
-
-            bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
-            bck_dist = m_table[idx] >> 44UL;
+            size_t bck_dist = m_table[idx] >> 44UL, dist=0;
             while(bck_dist>dist && m_table[idx]!=null_addr){
                 dist++;
                 idx = (idx+1) & (m_table.size()-1);
-                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
                 bck_dist = m_table[idx] >> 44UL;
+                //a++;
             }
 
             while(dist==bck_dist){
+                //b++;
+                uint64_t bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
                 if(compare(q_phrase, q_len, &phrase_stream[bck_addr])){
-                    if(std::is_same<seq_type, uint8_t>::value){
+                    if constexpr (std::is_same<seq_type, uint8_t>::value){
                         uint32_t mt;
                         memcpy(&mt, &phrase_stream[bck_addr+sizeof(uint32_t)+q_len], sizeof(uint32_t));
                         return mt;
@@ -339,25 +333,23 @@ public:
                 }
                 dist++;
                 idx = (idx+1) & (m_table.size()-1);
-                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
                 bck_dist = m_table[idx] >> 44UL;
             }
 
-            assert(bck_dist<dist || m_table[idx]==null_addr);
+            assert(dist<=65535);
+            //assert(bck_dist<dist || m_table[idx]==null_addr);
 
+            bck_val |= (dist<<44UL);
+            uint64_t tmp;
             while(m_table[idx]!=null_addr){
-                m_table[idx] = (dist<<44UL) | addr;
-                addr = bck_addr;
-                dist = bck_dist+1;
-
+                //c++;
+                tmp = m_table[idx];
+                m_table[idx] = bck_val;
+                bck_val = tmp+d_one;
                 idx = (idx+1) & (m_table.size()-1);
-                bck_addr = (m_table[idx] & 0xFFFFFFFFFFFul);
-                bck_dist = m_table[idx] >> 44UL;
             }
         }
-
-        assert(dist<=65535);
-        m_table[idx] = (dist<<44UL) | addr ;
+        m_table[idx] = bck_val;
 
         uint32_t mt = n_phrases++;
         if constexpr (std::is_same<seq_type, uint8_t>::value) {
@@ -501,11 +493,21 @@ public:
                 }
             }
         }
+
+        size_t avg=0;
+        float acc=0;
         for(size_t i=0;i<2000;i++){
             if(freqs[i]>0){
-                std::cout<<"psl: "<<i<<" --> "<<freqs[i]<<std::endl;
+                float frac = float(freqs[i])/float(n_phrases);
+                acc +=frac;
+                std::cout<<"psl: "<<i<<" --> "<<freqs[i]<<" "<<frac<<" "<<acc<<std::endl;
+                avg+=freqs[i]*i;
             }
         }
+        std::cout<<"The average is "<<float(avg)/float(n_phrases)<<std::endl;
+        std::cout<<" A "<<float(a)/float(a+b+c)<<std::endl;
+        std::cout<<" B "<<float(b)/float(a+b+c)<<std::endl;
+        std::cout<<" C "<<float(c)/float(a+b+c)<<std::endl;
     }
 
     inline void update_fps(const uint64_t* prev_fps, size_t& len_prev_fps, uint64_t*& fps, size_t& len_fps) {

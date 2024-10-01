@@ -13,7 +13,7 @@ set(SOURCE_FILES main.cpp
 # Add executable target with source files listed in SOURCE_FILES variable
 add_executable(lcg ${SOURCE_FILES})
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
-        -O3
+        #-O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
