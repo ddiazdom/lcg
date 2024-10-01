@@ -6,6 +6,7 @@
 #define LCG_EXT_GRAM_H
 
 #define MT_THRESHOLD 5242880 //5M of elements is about 20MB
+#include "buff_vector.h"
 
 struct i_gram_stream{
 

@@ -6,13 +6,13 @@
 #define LCG_GRAMMAR_ALGORITHMS_H
 
 #include "grammar.h"
-#include "se-build-strat/lc_parsing.h"
-#include "lz-like-build-strat/lc_parsing.h"
-#include "../old/build_collage_system.h"
+#include "build_gram/lc_parsing.h"
+#include "cds/file_streams.hpp"
+#include "cds/ts_string_map.h"
 
+/*
 template<class gram_t>
 void make_gram_fix_free(gram_t& gram){
-
     for(size_t i=0;i<gram.lvl_rules.size()-1; i++) {
 
         size_t n_lvl_rules = gram.lvl_rules[i+1]-gram.lvl_rules[i];//number of rules in the level
@@ -143,6 +143,7 @@ void make_gram_fix_free(gram_t& gram){
         }
     }
 }
+*/
 
 template<class gram_t>
 std::tuple<size_t, uint8_t, uint8_t> compute_exp_info(gram_t& gram, std::vector<uint64_t>& exp_len, std::vector<uint8_t>& str_width){
@@ -1012,7 +1013,7 @@ void get_par_seed(std::string& gram_file){
  * @param i_file : input text file
  * @param n_threads : number of working threads
  */
-template<class sym_type, class gram_type>
+template<class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws, size_t n_threads,
                 size_t n_chunks, off_t chunk_size, size_t par_seed, bool se_build, bool skip_simp, bool par_gram) {
 
@@ -1022,7 +1023,7 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
     if(par_gram){
         std::cout<<"Building a partial locally-consistent grammar"<<std::endl;
         auto start = std::chrono::steady_clock::now();
-        lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, true);
+        lc_parsing_algo(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, true);
         auto end = std::chrono::steady_clock::now();
         report_time(start, end, 2);
         get_breakdown(o_file);
@@ -1032,11 +1033,7 @@ void build_gram(std::string &i_file, std::string& o_file, tmp_workspace & tmp_ws
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
-    if(se_build){
-        lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed);
-    }else{
-        lz_like_strat::lc_parsing_algo<sym_type, tmp_gram_type>(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, false);
-    }
+    lc_parsing_algo(i_file, o_file, tmp_ws, n_threads, n_chunks, chunk_size, par_seed, false);
 
     tmp_gram_type gram;
     load_from_file(o_file, gram);

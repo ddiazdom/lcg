@@ -6,7 +6,7 @@
 #define LCG_PARTIAL_GRAM_H
 
 #include "cds/bitstream.h"
-#include "lz-like-build-strat/lz_like_map.h"
+#include "build_gram//phrase_set.h"
 
 typedef std::vector<uint64_t, mallocator<uint64_t>> vector_uint64_t;
 

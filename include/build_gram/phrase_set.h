@@ -6,7 +6,6 @@
 #define LCG_LZL_MAP_H
 #include "../../external/xxHash-dev/xxhash.h"
 #include "cds/cdt_common.hpp"
-#include "buff_vector.h"
 #include <vector>
 #include <cstring>
 #include <cstdlib>
@@ -484,30 +483,82 @@ public:
     }
 
     void psl_dist(){
-        size_t freqs[2000]={0};
-        for(unsigned long long entry : m_table){
-            if(entry!=null_addr){
-                size_t bck_dist = entry >> 44UL;
-                if(bck_dist<2000){
-                    freqs[bck_dist]++;
+        if(n_phrases>0){
+            size_t freqs[2000]={0};
+            for(unsigned long long entry : m_table){
+                if(entry!=null_addr){
+                    size_t bck_dist = entry >> 44UL;
+                    if(bck_dist<2000){
+                        freqs[bck_dist]++;
+                    }
                 }
             }
-        }
-
-        size_t avg=0;
-        float acc=0;
-        for(size_t i=0;i<2000;i++){
-            if(freqs[i]>0){
-                float frac = float(freqs[i])/float(n_phrases);
-                acc +=frac;
-                std::cout<<"psl: "<<i<<" --> "<<freqs[i]<<" "<<frac<<" "<<acc<<std::endl;
-                avg+=freqs[i]*i;
+            size_t avg=0;
+            float acc=0;
+            for(size_t i=0;i<2000;i++){
+                if(freqs[i]>0){
+                    float frac = float(freqs[i])/float(n_phrases);
+                    acc +=frac;
+                    std::cout<<"psl: "<<i<<" --> "<<freqs[i]<<" "<<frac<<" "<<acc<<std::endl;
+                    avg+=freqs[i]*i;
+                }
             }
+            std::cout<<"The average is "<<float(avg)/float(n_phrases)<<std::endl;
+            //std::cout<<" A "<<float(a)/float(a+b+c)<<std::endl;
+            //std::cout<<" B "<<float(b)/float(a+b+c)<<std::endl;
+            //std::cout<<" C "<<float(c)/float(a+b+c)<<std::endl;
         }
-        std::cout<<"The average is "<<float(avg)/float(n_phrases)<<std::endl;
-        std::cout<<" A "<<float(a)/float(a+b+c)<<std::endl;
-        std::cout<<" B "<<float(b)/float(a+b+c)<<std::endl;
-        std::cout<<" C "<<float(c)/float(a+b+c)<<std::endl;
+    }
+
+    size_t tot_symbols(){
+        if constexpr (std::is_same<seq_type, uint8_t>::value){
+            return stream_size- (n_phrases*sizeof(uint32_t)*2);
+        }else{
+            return stream_size- (n_phrases*2);
+        }
+    }
+
+    size_t absorb_set(phrase_set<seq_type>& other, std::vector<uint32_t>& sym_map){
+
+        other.destroy_table();
+        std::vector<uint32_t> new_sym_map(other.n_phrases+1, 0);
+
+        uint32_t len, pos=0, mt;
+        size_t proc_phrases=0;
+        while(pos<other.stream_size){
+            if constexpr (std::is_same<seq_type, uint8_t>::value){
+                memcpy(&len, &other.phrase_stream[pos], sizeof(uint32_t));//read the length
+                pos+=sizeof(uint32_t);//skip length
+                mt = insert(&other.phrase_stream[pos], len);
+                pos+=len+sizeof(uint32_t);//skip the phrase and mt
+            }else{
+                len = other.phrase_stream[pos];//read the length
+                pos++;//skip length
+                size_t end = pos+len;
+                for(size_t j=pos;j<end;j++){
+                    assert(other.phrase_stream[j]>0 && other.phrase_stream[j]<sym_map.size());
+                    other.phrase_stream[j] = sym_map[other.phrase_stream[j]]+1;
+                }
+                mt = insert(&other.phrase_stream[pos], len);
+                pos+=len+1;//skip the phrase and mt
+            }
+            new_sym_map[proc_phrases+1] = mt;
+            proc_phrases++;
+            assert(proc_phrases<=other.n_phrases);
+        }
+        assert(proc_phrases==other.n_phrases);
+        assert(pos==other.stream_size);
+
+        sym_map.swap(new_sym_map);
+
+        mem<seq_type>::deallocate(other.phrase_stream);
+        other.phrase_stream = nullptr;
+        other.stream_size = 0;
+        other.stream_cap=0;
+        other.n_phrases = 0;
+        other.elm_threshold = 0;
+
+        return size();
     }
 
     inline void update_fps(const uint64_t* prev_fps, size_t& len_prev_fps, uint64_t*& fps, size_t& len_fps) {

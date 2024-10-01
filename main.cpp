@@ -109,24 +109,24 @@ void comp_int(std::string& input_file, arguments& args) {
     std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
     if(args.skip_rl){
         if(args.rand_acc){
-            build_gram<uint8_t, lc_gram_t<false, false, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                               args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                               args.skip_simp, args.part);
+            build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                      args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                      args.skip_simp, args.part);
         }else{
 
-            build_gram<uint8_t, lc_gram_t<false, false, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                               args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                               args.skip_simp, args.part);
+            build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                       args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                       args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
-            build_gram<uint8_t, lc_gram_t<false, true, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                              args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                              args.skip_simp, args.part);
+            build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                     args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                     args.skip_simp, args.part);
         }else{
-            build_gram<uint8_t, lc_gram_t<false, true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                              args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
-                                                              args.skip_simp, args.part);
+            build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
+                                                      args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+                                                      args.skip_simp, args.part);
         }
     }
 }

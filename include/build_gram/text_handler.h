@@ -8,7 +8,6 @@
 #include "partial_gram.h"
 #include "cds/mmap_allocator.h"
 
-namespace lz_like_strat {
 
    struct text_chunk{
 
@@ -26,6 +25,7 @@ namespace lz_like_strat {
 
        phrase_set<uint8_t> ter_dict;
        std::vector<phrase_set<uint32_t>> nt_dicts;
+       std::vector<uint32_t> comp_string;
 
        uint8_t *text = nullptr;
        off_t text_bytes{}; //number of bytes the buffer can hold
@@ -125,13 +125,17 @@ namespace lz_like_strat {
            if(text!=nullptr){
                mem<uint8_t>::deallocate(text);
            }
-           std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
-           //ter_dict.psl_dist();
+
+           if(!ter_dict.empty()){
+               std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
+               ter_dict.psl_dist();
+           }
+
            size_t i=0;
            for(auto &nt_dict : nt_dicts){
                if(!nt_dict.empty()){
                    std::cout<<i<<" "<<nt_dict.size()<<", "<<nt_dict.load_factor()<<std::endl;
-                   //nt_dict.psl_dist();
+                   nt_dict.psl_dist();
                }
                i++;
            }
@@ -230,5 +234,4 @@ namespace lz_like_strat {
        read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
        chunk.update_used_bytes(chunk.text_bytes);
    }
-}
 #endif //LCG_TEXT_HANDLER_H
