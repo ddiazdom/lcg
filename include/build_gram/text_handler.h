@@ -9,7 +9,7 @@
 #include "cds/mmap_allocator.h"
 
 
-   struct text_chunk{
+   struct text_chunk {
 
        typedef uint32_t size_type;
 
@@ -26,6 +26,7 @@
        phrase_set<uint8_t> ter_dict;
        std::vector<phrase_set<uint32_t>> nt_dicts;
        std::vector<uint32_t> comp_string;
+       size_t n_levels=0;
 
        uint8_t *text = nullptr;
        off_t text_bytes{}; //number of bytes the buffer can hold
@@ -45,7 +46,7 @@
 
            fps.resize(40);
            fps_len.resize(40);
-           nt_dicts.resize(39);
+           nt_dicts.resize(38);
 
            size_t alpha_size = std::numeric_limits<uint8_t>::max()+1;
            fps[0] = mem<uint64_t>::allocate(alpha_size);
@@ -108,6 +109,15 @@
                    text = mem<uint8_t>::reallocate(text, buffer_bytes);
                }
                //std::cout<<"now the buffer uses: "<<report_space(buffer_bytes)<<std::endl;
+           }
+       }
+
+       void get_gram_levels() {
+           n_levels = !ter_dict.empty();
+           size_t l=0;
+           while(!nt_dicts[l].empty()){
+               n_levels++;
+               l++;
            }
        }
 

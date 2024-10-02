@@ -25,8 +25,7 @@ struct arguments{
 
     std::string coord_file;
     std::string version= "v1.0.1 alpha";
-    bool se_par_rounds = false;
-
+    //bool se_par_rounds = false;
     //size_t str{};
     //off_t start{};
     //off_t end{};
@@ -68,8 +67,8 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
 
-    comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
-    comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
+    //comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
+    //comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
     comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support for the grammar");
@@ -103,29 +102,26 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.footer("Report bugs to <diego.diaz@helsinki.fi>");
 }
 
-template<class sym_type>
 void comp_int(std::string& input_file, arguments& args) {
-    tmp_workspace tmp_ws(args.tmp_dir, true, "lcg");
-    std::cout<< "Temporary folder: "<<tmp_ws.folder()<<std::endl;
     if(args.skip_rl){
         if(args.rand_acc){
-            build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                      args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+            build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
+                                                      args.n_chunks, args.chunk_size, args.seed,
                                                       args.skip_simp, args.part);
         }else{
 
-            build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                       args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+            build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
+                                                       args.n_chunks, args.chunk_size, args.seed,
                                                        args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
-            build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                     args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+            build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
+                                                     args.n_chunks, args.chunk_size, args.seed,
                                                      args.skip_simp, args.part);
-        }else{
-            build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, tmp_ws, args.n_threads,
-                                                      args.n_chunks, args.chunk_size, args.seed, args.se_par_rounds,
+        } else {
+            build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
+                                                      args.n_chunks, args.chunk_size, args.seed,
                                                       args.skip_simp, args.part);
         }
     }
@@ -244,21 +240,30 @@ int main(int argc, char** argv) {
     }
 
     if(app.got_subcommand("cmp")) {
+
         std::cout << "\nInput file:       " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;
-        comp_int<uint8_t>(input_collection, args);
+        comp_int(input_collection, args);
+
     } if(app.got_subcommand("met")){
+
         print_metadata(args.input_file);
+
     } else if(app.got_subcommand("mrg")){
+
         merge_gramms(args.grammars_to_merge, args.output_file);
+
     } else if(app.got_subcommand("acc")){
+
         std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
+
     } else if(app.got_subcommand("edt")){
+
         if (args.output_file.empty()){
             args.output_file = std::filesystem::path(args.input_file).filename();
             args.output_file = std::filesystem::path(args.output_file).replace_extension("rm.lcg");
@@ -267,6 +272,7 @@ int main(int argc, char** argv) {
         }
         std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
         rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
+
     }
     return 0;
 }
