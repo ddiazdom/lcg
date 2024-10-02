@@ -622,7 +622,12 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file, std::s
            malloc_count_reset_peak();
        }
        buffers_to_reuse.done();
+       std::cout<<"Running the merge"<<std::endl;
+       auto start = std::chrono::steady_clock::now();
        collapse_grams(text_chunks);
+       auto end = std::chrono::steady_clock::now();
+
+       report_time(start, end, 2);
        std::cout<<"\nParsed finished "<<std::endl;
     };
 
