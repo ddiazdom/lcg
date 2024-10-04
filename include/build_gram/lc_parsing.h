@@ -92,7 +92,7 @@ void create_meta_sym(text_chunk& chunk, uint64_t pf_seed, const phrase_set<sym_t
 
 void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
 
-    auto ter_worker = [&](phrase_set<uint8_t>& sink, phrase_set<uint8_t>& coll_set, uint64_t*& o_map, size_t& o_map_len) {
+    auto ter_worker = [&](phrase_set<uint8_t>& sink_set, phrase_set<uint8_t>& coll_set, uint64_t*& o_map, size_t& o_map_len) {
         assert(o_map_len==(coll_set.size()+1));
         coll_set.destroy_table();
         auto it = coll_set.begin();
@@ -103,7 +103,7 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
         uint64_t flag = 0x8000000000000000UL;
         while(it!=it_end){
             auto phr = *it;
-            found = sink.find(phr.phrase, phr.len, mt);
+            found = sink_set.find(phr.phrase, phr.len, mt);
             if(found){
                 o_map[phrase_id] = mt;
             }else{
@@ -119,8 +119,8 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
     std::vector<size_t> found_per_thread(chunks.size(), 0);
     for (size_t i = 1; i < chunks.size(); i++) {
         threads.emplace_back(ter_worker,
-                             std::ref(chunks[0].ter_dict), std::ref(chunks[i].ter_dict),
-                             std::ref(chunks[i].fps[1]), std::ref(chunks[i].fps_len[1]));
+                             std::ref(chunks[0].gram.ter_dict), std::ref(chunks[i].gram.ter_dict),
+                             std::ref(chunks[i].gram.fps[1]), std::ref(chunks[i].gram.fps_len[1]));
     }
 
     for (auto &thread: threads) {
@@ -129,24 +129,24 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
 
     uint32_t len;
     size_t pos;
-    size_t size_before = chunks[0].ter_dict.size();
+    size_t size_before = chunks[0].gram.ter_dict.size();
     for (size_t i = 1; i < chunks.size(); i++) {
-        if(!chunks[i].ter_dict.empty()){
-            const uint8_t *stream = chunks[i].ter_dict.phr_stream();
-            for(size_t j=0;j<chunks[i].fps_len[1];j++){
-                if(chunks[i].fps[1][j] & 0x8000000000000000UL){
-                    pos = chunks[i].fps[1][j] & 0x7FFFFFFFFFFFFFFF;
+        if(!chunks[i].gram.ter_dict.empty()){
+            const uint8_t *stream = chunks[i].gram.ter_dict.phr_stream();
+            for(size_t j=0;j<chunks[i].gram.fps_len[1];j++){
+                if(chunks[i].gram.fps[1][j] & 0x8000000000000000UL){
+                    pos = chunks[i].gram.fps[1][j] & 0x7FFFFFFFFFFFFFFF;
                     memcpy(&len, &stream[pos], sizeof(uint32_t));
                     pos+=sizeof(uint32_t);
-                    chunks[i].fps[1][j] = chunks[0].ter_dict.insert(&stream[pos], len);
+                    chunks[i].gram.fps[1][j] = chunks[0].gram.ter_dict.insert(&stream[pos], len);
                 }
             }
-            chunks[i].ter_dict.clear();
+            chunks[i].gram.ter_dict.clear();
         }
     }
 
-    if(!chunks[0].ter_dict.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(chunks[0].ter_dict.size())<<std::endl;
+    if(!chunks[0].gram.ter_dict.empty()){
+        std::cout<<"  Growth factor 1 "<<float(size_before)/float(chunks[0].gram.ter_dict.size())<<std::endl;
     }
 }
 
@@ -188,58 +188,57 @@ void mul_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
     std::vector<size_t> found_per_thread(chunks.size(), 0);
     for (size_t i = 1; i < chunks.size(); i++) {
         threads.emplace_back(nt_worker,
-                             std::ref(chunks[0].nt_dicts[round-1]), std::ref(chunks[i].nt_dicts[round-1]),
-                             std::ref(chunks[i].fps[round]), std::ref(chunks[i].fps_len[round]),
-                             std::ref(chunks[i].fps[round+1]), std::ref(chunks[i].fps_len[round+1]));
+                             std::ref(chunks[0].gram.nt_dicts[round-1]), std::ref(chunks[i].gram.nt_dicts[round-1]),
+                             std::ref(chunks[i].gram.fps[round]), std::ref(chunks[i].gram.fps_len[round]),
+                             std::ref(chunks[i].gram.fps[round+1]), std::ref(chunks[i].gram.fps_len[round+1]));
     }
 
     for (auto &thread: threads) {
         thread.join();
     }
 
-
     uint32_t len;
     size_t pos;
-    size_t size_before = chunks[0].nt_dicts[round-1].size();
+    size_t size_before = chunks[0].gram.nt_dicts[round-1].size();
     for (size_t i = 1; i < chunks.size(); i++) {
-        if(!chunks[i].nt_dicts[round-1].empty()){
+        if(!chunks[i].gram.nt_dicts[round-1].empty()){
 
-            const uint32_t *stream = chunks[i].nt_dicts[round-1].phr_stream();
-            for(size_t j=0;j<chunks[i].fps_len[round+1];j++){
-                if(chunks[i].fps[round+1][j] & 0x8000000000000000UL){
-                    pos = chunks[i].fps[round+1][j] & 0x7FFFFFFFFFFFFFFF;
+            const uint32_t *stream = chunks[i].gram.nt_dicts[round-1].phr_stream();
+            for(size_t j=0;j<chunks[i].gram.fps_len[round+1];j++){
+                if(chunks[i].gram.fps[round+1][j] & 0x8000000000000000UL){
+                    pos = chunks[i].gram.fps[round+1][j] & 0x7FFFFFFFFFFFFFFF;
                     memcpy(&len, &stream[pos], sizeof(uint32_t));
                     pos++;
-                    chunks[i].fps[round+1][j] = chunks[0].nt_dicts[round-1].insert(&stream[pos], len);
+                    chunks[i].gram.fps[round+1][j] = chunks[0].gram.nt_dicts[round-1].insert(&stream[pos], len);
                 }
             }
-
-            chunks[i].nt_dicts[round-1].clear();
-            chunks[i].fps[round]= mem<uint64_t>::reallocate(chunks[i].fps[round], 1);
-            chunks[i].fps_len[round] = 1;
+            chunks[i].gram.nt_dicts[round-1].clear();
+            chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
+            chunks[i].gram.fps_len[round] = 1;
         }
     }
 
-    if(!chunks[0].nt_dicts[round-1].empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].nt_dicts[round-1].size())<<std::endl;
+    if(!chunks[0].gram.nt_dicts[round-1].empty()){
+        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].gram.nt_dicts[round-1].size())<<std::endl;
     }
 }
 
 void sin_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
-    size_t size_before = chunks[0].nt_dicts[round-1].size();
+
+    size_t size_before = chunks[0].gram.nt_dicts[round-1].size();
     for(size_t i=1;i<chunks.size();i++){
-        if(!chunks[i].nt_dicts[round-1].empty()){
-            chunks[0].nt_dicts[round-1].absorb_set(chunks[i].nt_dicts[round-1],
-                                                   chunks[i].fps[round], chunks[i].fps_len[round],
-                                                   chunks[i].fps[round+1], chunks[i].fps_len[round+1]);
-            chunks[i].nt_dicts[round-1].clear();
-            chunks[i].fps[round]= mem<uint64_t>::reallocate(chunks[i].fps[round], 1);
-            chunks[i].fps_len[round] = 1;
+        if(!chunks[i].gram.nt_dicts[round-1].empty()){
+            chunks[0].gram.nt_dicts[round-1].absorb_set(chunks[i].gram.nt_dicts[round-1], chunks[i].gram.fps[round],
+                                                        chunks[i].gram.fps_len[round], chunks[i].gram.fps[round+1],
+                                                        chunks[i].gram.fps_len[round+1]);
+            chunks[i].gram.nt_dicts[round-1].clear();
+            chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
+            chunks[i].gram.fps_len[round] = 1;
         }
     }
 
-    if(!chunks[0].nt_dicts[round-1].empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].nt_dicts[round-1].size())<<std::endl;
+    if(!chunks[0].gram.nt_dicts[round-1].empty()){
+        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].gram.nt_dicts[round-1].size())<<std::endl;
     }
 }
 
@@ -247,12 +246,12 @@ void collapse_grams(std::vector<text_chunk>& text_chunks) {
 
     size_t tot_strings = 0;
     for(auto & text_chunk : text_chunks){
-        tot_strings+=text_chunk.comp_string.size();
-        text_chunk.get_gram_levels();
+        tot_strings+=text_chunk.gram.comp_string.size();
+        text_chunk.gram.get_gram_levels();
     }
 
     mul_thread_ter_collapse(text_chunks);
-    for(size_t round=1;round<=text_chunks[0].nt_dicts.size();round++){
+    for(size_t round=1;round<=text_chunks[0].gram.nt_dicts.size();round++){
         if(round<=4 && text_chunks.size()>1){
             mul_thread_nt_collapse(text_chunks, round);
         }else{
@@ -260,11 +259,11 @@ void collapse_grams(std::vector<text_chunk>& text_chunks) {
         }
     }
 
-    size_t pos = text_chunks[0].comp_string.size();
-    text_chunks[0].comp_string.resize(tot_strings);
+    size_t pos = text_chunks[0].gram.comp_string.size();
+    text_chunks[0].gram.comp_string.resize(tot_strings);
     for(size_t i=1;i<text_chunks.size();i++){
-        size_t n = text_chunks[i].n_levels;
-        for(size_t j=0;j<text_chunks[i].comp_string.size();j++){
+        size_t n = text_chunks[i].gram.n_levels;
+        for(size_t j=0;j<text_chunks[i].gram.comp_string.size();j++){
             //TODO fix this
             //assert(text_chunks[i].comp_string[j]>0 && text_chunks[i].comp_string[j]<text_chunks[i].fps_len[n]);
             //text_chunks[0].comp_string[pos++] = text_chunks[i].fps[n][text_chunks[i].comp_string[j]]+1;
@@ -272,54 +271,14 @@ void collapse_grams(std::vector<text_chunk>& text_chunks) {
     }
 
     std::cout<<"Final stats: "<<std::endl;
-    std::cout<<"Level 1\t Phrases: "<<text_chunks[0].ter_dict.size()<<" Size: "<<text_chunks[0].ter_dict.tot_symbols()<<std::endl;
-
-    text_chunks[0].ter_dict.update_fps(text_chunks[0].fps[0], text_chunks[0].fps_len[0], text_chunks[0].fps[1], text_chunks[0].fps_len[1]);
-    size_t round=1;
-    while(!text_chunks[0].nt_dicts[round-1].empty()){
-        text_chunks[0].nt_dicts[round-1].update_fps(text_chunks[0].fps[round], text_chunks[0].fps_len[round],
-                                                    text_chunks[0].fps[round+1], text_chunks[0].fps_len[round+1]);
-        std::cout<<"Level "<<round+1<<"\t Phrases: "<<text_chunks[0].nt_dicts[round-1].size()<<" Size: "<<text_chunks[0].nt_dicts[round-1].tot_symbols()<<std::endl;
-        round++;
+    size_t round=0;
+    text_chunks[0].gram.update_fps(round++);
+    std::cout<<"Level 1\t Phrases: "<<text_chunks[0].gram.ter_dict.size()<<" Size: "<<text_chunks[0].gram.ter_dict.tot_symbols()<<std::endl;
+    while(!text_chunks[0].gram.nt_dicts[round-1].empty()){
+        text_chunks[0].gram.update_fps(round++);
+        std::cout<<"Level "<<round<<"\t Phrases: "<<text_chunks[0].gram.nt_dicts[round-2].size()<<" Size: "<<text_chunks[0].gram.nt_dicts[round-2].tot_symbols()<<std::endl;
     }
-    std::cout<<"Tot. strings: "<<text_chunks[0].comp_string.size()<<std::endl;
-
-    /*std::cout<<"Merging the sets"<<std::endl;
-    std::vector<uint32_t> sym_map;
-    for(size_t i=1;i<text_chunks.size();i++){
-        size_t size_before = text_chunks[0].ter_dict.size();
-        size_t size_after = text_chunks[0].ter_dict.absorb_set(text_chunks[i].ter_dict, sym_map);
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(size_after)<<std::endl;
-        size_t l=0;
-        while(!text_chunks[i].nt_dicts[l].empty()){
-            size_before = text_chunks[0].nt_dicts[l].size();
-            size_after = text_chunks[0].nt_dicts[l].absorb_set(text_chunks[i].nt_dicts[l], sym_map);
-            std::cout<<"  Growth factor "<<l+2<<" "<<float(size_before)/float(size_after)<<std::endl;
-            l++;
-        }
-
-        size_t pos = text_chunks[0].comp_string.size();
-        text_chunks[0].comp_string.resize(pos+text_chunks[i].comp_string.size());
-        for(size_t j=0;j<text_chunks[i].comp_string.size();j++){
-            text_chunks[0].comp_string[pos++] = sym_map[text_chunks[i].comp_string[j]]+1;
-        }
-        destroy(sym_map);
-    }
-
-    text_chunks[0].ter_dict.update_fps(text_chunks[0].fps[0], text_chunks[0].fps_len[0], text_chunks[0].fps[1], text_chunks[0].fps_len[1]);
-    std::cout<<"Final stats: "<<std::endl;
-    std::cout<<"Level 1\t Phrases: "<<text_chunks[0].ter_dict.size()<<" Size: "<<text_chunks[0].ter_dict.tot_symbols()<<std::endl;
-    size_t l=0, lvl=1;
-    while(!text_chunks[0].nt_dicts[l].empty()){
-
-        text_chunks[0].nt_dicts[l].update_fps(text_chunks[0].fps[lvl], text_chunks[0].fps_len[lvl],
-                                              text_chunks[0].fps[lvl+1], text_chunks[0].fps_len[lvl+1]);
-
-        std::cout<<"Level "<<l+2<<"\t Phrases: "<<text_chunks[0].nt_dicts[l].size()<<" Size: "<<text_chunks[0].nt_dicts[l].tot_symbols()<<std::endl;
-        l++;
-        lvl++;
-    }
-    std::cout<<"Tot. strings: "<<text_chunks[0].comp_string.size()<<std::endl;*/
+    std::cout<<"Tot. strings: "<<text_chunks[0].gram.comp_string.size()<<std::endl;
 }
 
 void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
@@ -363,6 +322,7 @@ void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phr
 
 void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 
+    uint64_t * fps = chunk.gram.fps[chunk.round];
     uint8_t * text = chunk.text;
     off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, byte_offset, parse_size;
     uint8_t v_len;
@@ -373,10 +333,6 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     parse_size=4;//we will count in bytes of sizeof(uint32_t)
     off_t mbo[2]={4};
 
-    //given a phrase T[a..b-1], byte_offset tells the number of bytes (4 per mt) used by the metasymbols after T[b-1].
-    //This value defines the new size for text, now with the parse
-    //max_byte_offset tells the maximum offset
-
     std::vector<phrase_overflow> phr_with_ovf;
     bool r_cmp = true, l_cmp, new_str;
     uint32_t mt_sym, phrase_len;
@@ -384,7 +340,7 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     while(--i>0 && text[i]==mid_sym);
 
     while(i>=0){
-        l_cmp = chunk.fps[chunk.round][text[i]]>chunk.fps[chunk.round][mid_sym];
+        l_cmp = fps[text[i]]>fps[mid_sym];
         if(l_cmp && !r_cmp){
             lb = i+1;
             new_str = mid_sym==sep_sym;
@@ -394,7 +350,7 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
             byte_offset = rb + parse_size;
             mbo[byte_offset > mbo[1]] = byte_offset;
 
-            mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len) + 1;
+            mt_sym = chunk.gram.ter_dict.insert(&text[lb], phrase_len) + 1;
             v_len = vbyte_len(mt_sym);
             if(__builtin_expect(v_len>phrase_len, 0)){
                 //metasymbol does not fit its phrase
@@ -424,7 +380,7 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     byte_offset = rb + parse_size;
     mbo[byte_offset > mbo[1]] = byte_offset;
 
-    mt_sym = chunk.ter_dict.insert(&text[lb], phrase_len)+1;
+    mt_sym = chunk.gram.ter_dict.insert(&text[lb], phrase_len)+1;
     v_len = vbyte_len(mt_sym);
     if(__builtin_expect(v_len>phrase_len, 0)){
         phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
@@ -439,8 +395,7 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     off_t max_byte_offset = INT_CEIL(mbo[1], sizeof(uint32_t))*sizeof(uint32_t);
     chunk.increase_capacity(max_byte_offset);
 
-    chunk.ter_dict.update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
-                              chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
+    chunk.gram.update_fps(chunk.round);
     finish_byte_parse(chunk, max_byte_offset, phr_with_ovf);
 }
 
@@ -449,30 +404,31 @@ void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 // cell is the same as the length of cell where we store the metasymbols, so there is no overflow
 void int_par_l2r(text_chunk& chunk){
 
+    uint64_t *fps = chunk.gram.fps[chunk.round];
     uint32_t *text = chunk.parse;
     uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
     uint32_t left_sym, middle_sym;
-    uint64_t left_hash, middle_hash, right_hash;
+    uint64_t left_fp, middle_fp, right_fp;
     off_t i=0, parse_size = 0, phrase_len, lb, rb;
     bool new_str=false;
 
     lb = 0;
     left_sym = text[i];
-    left_hash = chunk.fps[chunk.round][left_sym];
+    left_fp = fps[left_sym];
     while(++i<txt_size && text[i]==left_sym);
     assert(i<txt_size);
 
     middle_sym = text[i];
-    middle_hash = chunk.fps[chunk.round][middle_sym];
+    middle_fp = fps[middle_sym];
     rb=i;
     while(++i<txt_size && text[i]==middle_sym);
 
     while(i<txt_size) {
-        right_hash = chunk.fps[chunk.round][text[i]];
-        if(left_hash>middle_hash && middle_hash<right_hash){//local minimum
+        right_fp = fps[text[i]];
 
+        if(left_fp>middle_fp && middle_fp<right_fp){//local minimum
             phrase_len = rb-lb;
-            mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
+            mt_sym = chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
             text[parse_size]=sep_sym;
             parse_size+=new_str;
@@ -481,8 +437,8 @@ void int_par_l2r(text_chunk& chunk){
             lb = rb+new_str;
         }
 
-        left_hash = middle_hash;
-        middle_hash = right_hash;
+        left_fp = middle_fp;
+        middle_fp = right_fp;
         middle_sym = text[i];
         rb = i;
         while(++i<txt_size && text[i]==middle_sym);
@@ -490,14 +446,14 @@ void int_par_l2r(text_chunk& chunk){
     assert(rb==(txt_size-1) && text[rb]==sep_sym);
 
     phrase_len = rb-lb;
-    mt_sym = chunk.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
+    mt_sym = chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len);
 
     text[parse_size]=sep_sym;
     parse_size+=new_str;
     text[parse_size++] = mt_sym+1;
     text[parse_size++] = sep_sym;
-    chunk.nt_dicts[chunk.round-1].update_fps(chunk.fps[chunk.round], chunk.fps_len[chunk.round],
-                                             chunk.fps[chunk.round+1], chunk.fps_len[chunk.round+1]);
+
+    chunk.gram.update_fps(chunk.round);
     chunk.parse_size = parse_size;
 }
 
@@ -525,110 +481,147 @@ void compress_text_chunk(text_chunk& chunk){
     }
 
     //start = std::chrono::steady_clock::now();
-    size_t pos = chunk.comp_string.size();
-    chunk.comp_string.resize(pos+(chunk.parse_size/2));
+    size_t pos = chunk.gram.comp_string.size();
+    chunk.gram.comp_string.resize(pos+(chunk.parse_size/2));
     for(off_t i=0;i<chunk.parse_size;i+=2){
         assert(i==0 || chunk.parse[i-1]==0);
-        chunk.comp_string[pos++] = chunk.parse[i];
+        chunk.gram.comp_string[pos++] = chunk.parse[i];
     }
     //chunk.p_gram.add_compressed_string(chunk.parse, chunk.parse_size);
     //end = std::chrono::steady_clock::now();
     //report_time(start, end , 2);
 }
 
-void build_partial_grammars(parsing_opts& p_opts, std::string& text_file, std::string& ct_p_grams_file) {
+struct parsing_state{
+    uint8_t sep_sym;
+    size_t chunk_size;
+    int fd_r;
+    size_t f_size=0;
+    off_t rem_bytes=0;
+    off_t read_bytes=0;
+    off_t r_page_cache_bytes=0;
+    off_t page_cache_limit=0;
+    size_t chunk_id=0;
+    size_t proc_syms=0;
+    float max_frac;
+
+    plain_gram sink_gram;
+
+    parsing_state(std::string& i_file, size_t n_lvl, uint8_t _sep_sym,
+                  size_t c_size, off_t p_cache_lim, float _max_frac): sep_sym(_sep_sym),
+                                                                      chunk_size(c_size),
+                                                                      page_cache_limit(p_cache_lim),
+                                                                      max_frac(_max_frac),
+                                                                      sink_gram(n_lvl, sep_sym){
+        fd_r = open(i_file.c_str(), O_RDONLY);
+        f_size = file_size(i_file);
+#ifdef __linux__
+        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
+#endif
+        rem_bytes = (off_t)f_size;
+    }
+
+    ~parsing_state(){
+#ifdef __linux__
+        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
+#endif
+        close(fd_r);
+    }
+
+    void flush_page_cache(){
+#ifdef __linux__
+        std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
+        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+        r_page_cache_bytes=0;
+#endif
+    }
+};
+
+void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_state){
 
     ts_queue<size_t> buffers_to_process;
     ts_queue<size_t> buffers_to_reuse;
 
     std::atomic<size_t> parser_finished{0};
-    std::vector<text_chunk> text_chunks(p_opts.n_chunks);
 
     auto io_worker = [&]() -> void {
 
-        int fd_r = open(text_file.c_str(), O_RDONLY);
+        auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
+        size_t buff_id = 0;
+        std::vector<size_t> byte_counts(text_chunks.size(), 0);
+        size_t acc_bytes = p_state.sink_gram.mem_usage();
+        float input_frac=0;
 
-        size_t f_size = file_size(text_file);
+        while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+
+            tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
+            text_chunks[buff_id].text_bytes = tmp_ck_size;
+            text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
+            text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
+            text_chunks[buff_id].id = p_state.chunk_id;
+
+            read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+            buffers_to_process.push(buff_id);
+
 #ifdef __linux__
-        off_t r_page_cache_bytes = 0, w_page_cache_bytes = 0;
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
-#endif
-
-        off_t rem_bytes = (off_t) f_size, r_acc_bytes = 0;
-        size_t chunk_id = 0;
-
-        auto tmp_ck_size = off_t(INT_CEIL(p_opts.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
-
-        while (chunk_id < p_opts.n_chunks && rem_bytes > 0) {
-
-            tmp_ck_size = std::min(tmp_ck_size, rem_bytes);
-
-            text_chunks[chunk_id].text_bytes = tmp_ck_size;
-            text_chunks[chunk_id].sep_sym = (text_chunk::size_type) p_opts.sep_sym;
-            text_chunks[chunk_id].increase_capacity((tmp_ck_size*115)/100);
-            text_chunks[chunk_id].id = chunk_id;
-
-            read_chunk_from_file(fd_r, rem_bytes, r_acc_bytes, text_chunks[chunk_id]);
-            buffers_to_process.push(chunk_id);
-#ifdef __linux__
-            r_page_cache_bytes+=text_chunks[chunk_id].e_bytes;
-            if(r_page_cache_bytes>p_opts.page_cache_limit){
-                std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<r_acc_bytes<<std::endl;
-                posix_fadvise(fd_r, r_acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
-                r_page_cache_bytes=0;
+            p_state.r_page_cache_bytes+=text_chunks[chunk_id].e_bytes;
+            if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
+                flush_page_cache();
             }
 #endif
-            chunk_id++;
-       }
+            buff_id++;
+            p_state.chunk_id++;
+        }
 
-       size_t buff_id;
-       size_t proc_syms=0;
-       while (rem_bytes > 0) {
-           buffers_to_reuse.pop(buff_id);
-           proc_syms+=text_chunks[buff_id].text_bytes;
-           std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<" buff available "<<report_space((off_t)text_chunks[buff_id].dict_buff_av())<<std::endl;
-           malloc_count_reset_peak();
-           text_chunks[buff_id].text_bytes = tmp_ck_size;
-           text_chunks[buff_id].id = chunk_id++;
+        while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
 
-           read_chunk_from_file(fd_r, rem_bytes, r_acc_bytes, text_chunks[buff_id]);
-           buffers_to_process.push(buff_id);
+            buffers_to_reuse.pop(buff_id);
+            p_state.proc_syms+=text_chunks[buff_id].text_bytes;
+
+            size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
+            acc_bytes -= byte_counts[buff_id];
+            acc_bytes += new_byte_count;
+            byte_counts[buff_id] = new_byte_count;
+            input_frac = float(acc_bytes)/float(p_state.f_size);
+
+            std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<" input_fraction "<<input_frac<<std::endl;
+            malloc_count_reset_peak();
+
+            text_chunks[buff_id].text_bytes = tmp_ck_size;
+            text_chunks[buff_id].id = p_state.chunk_id++;
+            read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+            buffers_to_process.push(buff_id);
+
 #ifdef __linux__
-           r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
-           if(r_page_cache_bytes>p_opts.page_cache_limit){
-               std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<r_acc_bytes<<std::endl;
-               posix_fadvise(fd_r, r_acc_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
-               r_page_cache_bytes=0;
-           }
+            p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+            if(r_page_cache_bytes>p_opts.page_cache_limit){
+                p_state.flush_page_cache();
+            }
 #endif
-       }
+        }
 
-       //wait for the queue to be empty and close the input file
-       while (!buffers_to_process.empty());
-       buffers_to_process.done();
-#ifdef __linux__
-       posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
-#endif
-       close(fd_r);
+        //wait for the queue to be empty and close the input file
+        while (!buffers_to_process.empty());
+        buffers_to_process.done();
 
-       //wait for all the parsers to finish
-       while(parser_finished.load(std::memory_order_acquire)!=p_opts.n_threads);
+        //wait for all the parsers to finish
+        while(parser_finished.load(std::memory_order_acquire)!=text_chunks.size());
 
-       //store the remaining grammars in the temporary file
-       while(!buffers_to_reuse.empty()){
-           buffers_to_reuse.pop(buff_id);
-           proc_syms+=text_chunks[buff_id].text_bytes;
-           std::cout<<"Parsed input "<<report_space((off_t)proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].eff_mem_usage())<<" buff available "<<report_space((off_t)text_chunks[buff_id].dict_buff_av())<<std::endl;
-           malloc_count_reset_peak();
-       }
-       buffers_to_reuse.done();
-       std::cout<<"Running the merge"<<std::endl;
-       auto start = std::chrono::steady_clock::now();
-       collapse_grams(text_chunks);
-       auto end = std::chrono::steady_clock::now();
+        while(!buffers_to_reuse.empty()){
+            buffers_to_reuse.pop(buff_id);
+            p_state.proc_syms+=text_chunks[buff_id].text_bytes;
 
-       report_time(start, end, 2);
-       std::cout<<"\nParsed finished "<<std::endl;
+            size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
+            acc_bytes -= byte_counts[buff_id];
+            acc_bytes += new_byte_count;
+            byte_counts[buff_id] = new_byte_count;
+            input_frac = float(acc_bytes)/float(p_state.f_size);
+
+            std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<"  input_fraction "<<input_frac<<std::endl;
+            malloc_count_reset_peak();
+        }
+        buffers_to_reuse.done();
+        //std::cout<<"Parsed finished "<<std::endl;
     };
 
     auto compressor_worker = [&]() {
@@ -654,18 +647,27 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file, std::s
     std::vector<std::thread> threads;
     threads.emplace_back(io_worker);
 
-    for (size_t i = 0; i < p_opts.n_threads; i++) {
+    for (size_t i = 0; i < text_chunks.size(); i++) {
         threads.emplace_back(compressor_worker);
     }
 
     for (auto &thread: threads) {
         thread.join();
     }
+}
 
-    for(auto &chunk : text_chunks){
-        //free(chunk.text);
-        mem<uint8_t>::deallocate(chunk.text);
-        chunk.text=nullptr;
+void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
+
+    std::vector<text_chunk> text_chunks(p_opts.n_chunks);
+    //TODO define max_frac in args
+    parsing_state par_state(text_file, 40, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, 0.1);
+
+    while(par_state.rem_bytes>0){
+        fill_chunk_grammars(text_chunks, par_state);
+        std::cout<<"Cleaning "<<std::endl;
+        for(auto &chunk : text_chunks){
+            chunk.gram.clear();
+        }
     }
 }
 
@@ -831,7 +833,7 @@ void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
     std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
     std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;
 
-    build_partial_grammars(p_opts, i_file, o_file);
+    build_partial_grammars(p_opts, i_file);
 
     //merge_many_grams_in_serial(ct_p_grams_file, p_opts.n_threads);
     /*std::string mg_p_gram_file = par_gram? o_file : tmp_ws.get_file("merged_p_grams");
@@ -844,299 +846,4 @@ void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
     }*/
     exit(0);
 }
-
-/*
-    off_t byte_p_round_bck(uint8_t*& text, off_t txt_size, off_t& buffer_size, uint32_t*& parse,
-                           off_t& n_strings, size_t sep_sym, uint64_t fp_seed,
-                           std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram){
-
-        size_t prev_sym, curr_sym, next_sym;
-        uint64_t prev_hash, curr_hash, next_hash;
-
-        text_chunk::size_type mt_sym;
-        off_t txt_pos = txt_size-1, parse_size = 0, lb, rb;
-        lz_like_map map(text);
-        uint32_t phrase_len;
-
-        off_t parse_distance=0, offset;
-        std::vector<phrase_overflow> phr_with_ovf;
-        uint8_t v_len;
-
-        bool inserted;
-        n_strings = 0;
-
-        while(txt_pos>0){
-
-            assert(text[txt_pos]==sep_sym);
-
-            offset = txt_pos+1+(parse_size*4);
-            parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-            text[txt_pos] = 128;//vbyte code for 0 (the separator symbol in the next levels)
-            parse_size++;
-            n_strings++;
-
-            rb = txt_pos;
-            prev_sym = text[--txt_pos];
-
-            curr_sym = text[--txt_pos];
-            while(curr_sym==prev_sym && txt_pos>0) curr_sym = text[--txt_pos];
-
-            if(curr_sym==sep_sym){
-                lb = txt_pos+1;
-                phrase_len = rb-lb;
-
-                offset = rb+(parse_size*4);
-                parse_distance = offset>parse_distance ? offset : parse_distance ;
-                //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
-                mt_sym = map.insert(lb, phrase_len, inserted)+1;
-
-                v_len = vbyte_len(mt_sym);
-                if(__builtin_expect(v_len>phrase_len, 0)){
-                    phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                }else if(!inserted){
-                    vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                    memset(&text[lb+v_len], 0, phrase_len-v_len);
-                    //test
-                    //uint32_t tmp;
-                    //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                    //assert(tmp==mt_sym);
-                    //breaks.emplace_back(lb+v_len-1, parse_size);
-                    //
-                }
-                parse_size++;
-                continue;
-            }
-
-            next_sym = text[--txt_pos];
-            while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
-
-            prev_hash = prev_fps[prev_sym];
-            curr_hash = prev_fps[curr_sym];
-
-            bool local_minimum;
-
-            while(next_sym!=sep_sym && txt_pos>0){
-
-                next_hash = prev_fps[next_sym];
-                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
-                if(local_minimum){
-                    lb = txt_pos+1;
-                    phrase_len = rb-lb;
-
-                    offset = rb+(parse_size*4);
-                    parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-                    //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
-                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
-                    v_len = vbyte_len(mt_sym);
-                    if(__builtin_expect(v_len>phrase_len, 0)){
-                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                    }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                        //test
-                        //uint32_t tmp;
-                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                        //assert(tmp==mt_sym);
-                        //breaks.emplace_back(lb+v_len-1, parse_size);
-                        //
-                        memset(&text[lb+v_len], 0, phrase_len-v_len);
-                    }
-                    parse_size++;
-                    rb = lb;
-                }
-
-                prev_hash = curr_hash;
-                curr_hash = next_hash;
-
-                curr_sym = next_sym;
-                next_sym = text[--txt_pos];
-                while(next_sym==curr_sym && txt_pos>0) next_sym = text[--txt_pos];
-            }
-
-            if(txt_pos==0){
-                next_hash = prev_fps[next_sym];
-                local_minimum = prev_hash>curr_hash && curr_hash<next_hash;
-                if(local_minimum){
-                    lb = txt_pos+1;
-                    phrase_len = rb-lb;
-
-                    offset = rb+(parse_size*4);
-                    parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-                    //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
-                    mt_sym = map.insert(lb, phrase_len, inserted)+1;
-                    v_len = vbyte_len(mt_sym);
-                    if(__builtin_expect(v_len>phrase_len, 0)){
-                        phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-                    }else if(!inserted){
-                        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                        memset(&text[lb+v_len], 0, phrase_len-v_len);
-                        //test
-                        //uint32_t tmp;
-                        //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                        //assert(tmp==mt_sym);
-                        //breaks.emplace_back(lb+v_len-1, parse_size);
-                        //
-                    }
-                    parse_size++;
-                    rb = lb;
-                }
-                lb = 0;
-            }else{
-                lb=txt_pos+1;
-            }
-
-            phrase_len = rb-lb;
-
-            offset = rb+(parse_size*4);
-            parse_distance = offset>parse_distance ? offset : parse_distance ;
-
-            //std::cout<<lb<<" "<<phrase_len<<" "<<map.size()<<" "<<parse_size<<std::endl;
-            mt_sym = map.insert(lb, phrase_len, inserted)+1;
-            v_len = vbyte_len(mt_sym);
-            if(__builtin_expect(v_len>phrase_len, 0)){
-                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
-            }else if(!inserted){
-                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
-                memset(&text[lb+v_len], 0, phrase_len-v_len);
-                //test
-                //uint32_t tmp;
-                //vbyte_decoder<uint32_t>::read_right2left(&text[lb+v_len-1], tmp);
-                //assert(tmp==mt_sym);
-                //breaks.emplace_back(lb+v_len-1, parse_size);
-                //
-            }
-
-            parse_size++;
-
-            //str_len = prev_sep_sym-txt_pos-1;
-            //longest_str = str_len>longest_str ? str_len : longest_str;
-            //prev_sep_sym = txt_pos;
-        }
-
-        map.shrink_to_fit();
-        map.destroy_table();
-
-        std::vector<uint32_t> perm;
-        create_meta_sym<uint8_t, true>(perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
-        finish_byte_parse(text, txt_size, buffer_size, parse_size, map, parse_distance, perm, parse, phr_with_ovf);
-        return parse_size;
-    }
-    */
-
-/*
-// this method parses the text and store the parse in the text itself.
-// It only works for parsing rounds other than the first one because the length of symbol each
-// cell is the same as the length of cell where we store the metasymbols, so there is no overflow
-off_t int_p_round_fwd(uint32_t* text, off_t txt_size, off_t& n_strings, uint64_t fp_seed,
-                      std::vector<uint64_t>& prev_fps, partial_gram<uint8_t>& p_gram) {
-
-    uint32_t mt_sym, sep_sym=0;
-    size_t prev_sym, curr_sym, next_sym, dummy_sym=std::numeric_limits<text_chunk::size_type>::max();
-    off_t txt_pos = 0, parse_size = 0, phrase_len, lb, rb;
-    lz_like_map<uint32_t> map(text);
-
-    bool inserted;
-    n_strings = 0;
-    off_t sym_bytes = sizeof(uint32_t);
-
-    while(txt_pos<txt_size) {
-
-        lb = txt_pos;
-        prev_sym = text[txt_pos++];
-
-        curr_sym = text[txt_pos++];
-        while(curr_sym==prev_sym) curr_sym = text[txt_pos++];
-        rb = txt_pos-1;
-
-        if(curr_sym==sep_sym){
-            phrase_len = rb-lb;
-            mt_sym = map.insert(lb, phrase_len, inserted);
-            assert(text[rb]==sep_sym);
-            if(!inserted){
-                //we can not replace the first phrase occurrence as we use it as source for the dictionary
-                assert(text[lb]!=dummy_sym);
-                text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-                memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-            }
-            text[rb] = sep_sym;
-            parse_size+=2;//+1 for the separator symbol
-            n_strings++;
-            continue;
-        }
-
-        next_sym = text[txt_pos++];
-        while(next_sym==curr_sym) next_sym = text[txt_pos++];
-
-        while(next_sym!=sep_sym){
-            uint32_t tmp_p = prev_sym;
-            uint32_t tmp_c = curr_sym;
-            uint32_t tmp_n = next_sym;
-
-            if(tmp_p>tmp_c && tmp_c<tmp_n){//local minimum
-                phrase_len = rb-lb;
-                mt_sym = map.insert(lb, phrase_len, inserted);
-                //we can not replace the first phrase occurrence as we use it as source for the dictionary
-                if(!inserted){
-                    assert(text[lb]!=dummy_sym);
-                    text[lb] = mt_sym+1;
-                    memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));
-                }
-                parse_size++;
-                lb = rb;
-            }
-            rb = txt_pos-1;
-            prev_sym = curr_sym;
-            curr_sym = next_sym;
-            next_sym = text[txt_pos++];
-            while(next_sym==curr_sym) next_sym = text[txt_pos++];
-        }
-
-        phrase_len = txt_pos-1-lb;
-        assert(text[lb+phrase_len]==sep_sym);
-        mt_sym = map.insert(lb, phrase_len, inserted);
-        //we can not replace the first phrase occurrence as we use it as source for the dictionary
-        if(!inserted){
-            assert(text[lb]!=dummy_sym);
-            text[lb] = mt_sym+1;//store the metasymbol in the first phrase position
-            memset(&text[lb+1], (int)dummy_sym, sym_bytes*(phrase_len-1));//pad the rest of the phrase with dummy symbols
-        }
-        text[lb+phrase_len] = sep_sym;
-        parse_size+=2;//+1 for the separator symbol
-        n_strings++;
-    }
-
-    map.shrink_to_fit();
-    map.destroy_table();
-
-    assert(map.phrase_set.size()<dummy_sym);
-    std::vector<uint32_t> mt_perm;
-    create_meta_sym<uint32_t, false>(mt_perm, fp_seed, map.phrase_set, text, txt_size, prev_fps, p_gram);
-
-    // create the parse in place
-    map.insert_dummy_entry({uint32_t(txt_size), 0, false, false});
-    size_t tot_phrases = map.phrase_set.size()-1;//do not count the dummy
-    mt_sym = 0, lb = 0;
-    off_t i=0, k=0;
-
-    while(mt_sym<tot_phrases) {
-        assert(i==lb);
-        text[k++] = mt_perm[mt_sym+1];
-        i+= map.phrase_set[mt_sym].len;//move out of the phrase boundary
-
-        mt_sym++;
-        lb = map.phrase_set[mt_sym].source;//position for the next phrase
-
-        while(i<lb){//process the text area between consecutive phrases
-            assert(text[i]<mt_perm.size());
-            text[k++] = mt_perm[text[i]];
-            i++;
-            while(text[i]==dummy_sym && i<lb) i++;
-        }
-    }
-
-    assert(k==parse_size);
-    return parse_size;
-}*/
 #endif //LCG_LZ_LIKE_LC_PARSING_H

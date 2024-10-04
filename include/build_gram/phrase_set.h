@@ -583,10 +583,10 @@ public:
 
     void clear(){
         stream_size=0;
-        stream_cap >>=2;
+        stream_cap = std::min<size_t>(4, stream_cap>>3);//keep 1/8 of the buffer
         phrase_stream = mem<seq_type>::reallocate(phrase_stream, stream_cap);
-        size_t new_tab_size = std::max<size_t>(4, (m_table.size()>>2));
-        assert(is_power_of_two(new_tab_size));
+        size_t new_tab_size = std::max<size_t>(4, (m_table.size()>>3));// keep 1/8 of the table
+        assert(is_power_of_two(new_tab_size));//dummy check
         m_table.resize(new_tab_size);
         memset(m_table.data(), 0xFF, m_table.size()*sizeof(table_t::value_type));
         elm_threshold = (m_table.size()*frac_lf)/100;

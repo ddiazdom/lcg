@@ -74,9 +74,8 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support for the grammar");
     comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
-    comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads*2)")->default_val(0);
+    comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
     comp->add_option("-C,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
-    comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
 
     //metadata
     CLI::App* meta = app.add_subcommand("met", "get the metadata of a grammar");
@@ -86,6 +85,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     CLI::App* merge = app.add_subcommand("mrg", "Merge grammars");
     merge->add_option("GRAM LIST", args.grammars_to_merge, "Grammars to be merged")->check(CLI::ExistingFile)->required();
     merge->add_option("-o,--output-file", args.output_file, "Output grammar")->required(true);
+    merge->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
 
     //access
     CLI::App* access = app.add_subcommand("acc", "Random access");
