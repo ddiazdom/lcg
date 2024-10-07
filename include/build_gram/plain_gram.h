@@ -45,6 +45,15 @@ struct plain_gram{
         }
     }
 
+    void swap(plain_gram& other){
+        fps.swap(other.fps);
+        fps_len.swap(other.fps_len);
+        ter_dict.swap(other.ter_dict);
+        nt_dicts.swap(other.nt_dicts);
+        comp_string.swap(other.comp_string);
+        std::swap(n_levels, other.n_levels);
+    }
+
     size_t mem_usage(){
 
         size_t bytes = ter_dict.mem_usage();
@@ -102,6 +111,17 @@ struct plain_gram{
             fps[i][0]=0;
             fps_len[i]=1;
         }
+    }
+
+    void print_stats(){
+        std::cout<<"Level 1, number of phrases: "<<ter_dict.size()<<",  number of symbols: "<<ter_dict.tot_symbols()<<std::endl;
+        size_t round=2;
+        for(auto const& lvl_set: nt_dicts){
+            if(lvl_set.empty()) break;
+            std::cout<<"Level "<<round<<", number of phrases: "<<lvl_set.size()<<", number of symbols: "<<lvl_set.tot_symbols()<<std::endl;
+            round++;
+        }
+        std::cout<<"Tot. strings: "<<comp_string.size()<<std::endl;
     }
 
     ~plain_gram(){

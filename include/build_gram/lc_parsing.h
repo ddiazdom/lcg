@@ -33,6 +33,51 @@ struct parsing_opts{
     std::vector<uint64_t> p_seeds;
 };
 
+struct parsing_state{
+    uint8_t sep_sym;
+    size_t chunk_size;
+    int fd_r;
+    size_t f_size=0;
+    off_t rem_bytes=0;
+    off_t read_bytes=0;
+    off_t r_page_cache_bytes=0;
+    off_t page_cache_limit=0;
+    size_t chunk_id=0;
+    size_t proc_syms=0;
+    float max_frac;
+
+    plain_gram sink_gram;
+
+    parsing_state(std::string& i_file, size_t n_lvl, uint8_t _sep_sym,
+                  size_t c_size, off_t p_cache_lim, float _max_frac): sep_sym(_sep_sym),
+                                                                      chunk_size(c_size),
+                                                                      page_cache_limit(p_cache_lim),
+                                                                      max_frac(_max_frac),
+                                                                      sink_gram(n_lvl, sep_sym){
+        fd_r = open(i_file.c_str(), O_RDONLY);
+        f_size = file_size(i_file);
+#ifdef __linux__
+        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
+#endif
+        rem_bytes = (off_t)f_size;
+    }
+
+    ~parsing_state(){
+#ifdef __linux__
+        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
+#endif
+        close(fd_r);
+    }
+
+    void flush_page_cache(){
+#ifdef __linux__
+        std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
+        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+        r_page_cache_bytes=0;
+#endif
+    }
+};
+
 struct phrase_overflow{
     uint32_t position;
     uint32_t length;
@@ -90,7 +135,15 @@ void create_meta_sym(text_chunk& chunk, uint64_t pf_seed, const phrase_set<sym_t
     //chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols);
 }*/
 
-void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
+void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
+
+    size_t size_before = sink_gram.ter_dict.size();
+    size_t i=0;
+    while(i<chunks.size() && chunks[i].gram.ter_dict.empty()) i++;
+    if(sink_gram.ter_dict.empty() && i<chunks.size()){
+        sink_gram.ter_dict.swap(chunks[i].gram.ter_dict);
+        i++;
+    }
 
     auto ter_worker = [&](phrase_set<uint8_t>& sink_set, phrase_set<uint8_t>& coll_set, uint64_t*& o_map, size_t& o_map_len) {
         assert(o_map_len==(coll_set.size()+1));
@@ -116,11 +169,10 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
     };
 
     std::vector<std::thread> threads;
-    std::vector<size_t> found_per_thread(chunks.size(), 0);
-    for (size_t i = 1; i < chunks.size(); i++) {
+    for (size_t j = i; j < chunks.size(); j++) {
         threads.emplace_back(ter_worker,
-                             std::ref(chunks[0].gram.ter_dict), std::ref(chunks[i].gram.ter_dict),
-                             std::ref(chunks[i].gram.fps[1]), std::ref(chunks[i].gram.fps_len[1]));
+                             std::ref(sink_gram.ter_dict), std::ref(chunks[j].gram.ter_dict),
+                             std::ref(chunks[j].gram.fps[1]), std::ref(chunks[j].gram.fps_len[1]));
     }
 
     for (auto &thread: threads) {
@@ -129,8 +181,7 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
 
     uint32_t len;
     size_t pos;
-    size_t size_before = chunks[0].gram.ter_dict.size();
-    for (size_t i = 1; i < chunks.size(); i++) {
+    while(i < chunks.size()) {
         if(!chunks[i].gram.ter_dict.empty()){
             const uint8_t *stream = chunks[i].gram.ter_dict.phr_stream();
             for(size_t j=0;j<chunks[i].gram.fps_len[1];j++){
@@ -138,22 +189,30 @@ void mul_thread_ter_collapse(std::vector<text_chunk>& chunks){
                     pos = chunks[i].gram.fps[1][j] & 0x7FFFFFFFFFFFFFFF;
                     memcpy(&len, &stream[pos], sizeof(uint32_t));
                     pos+=sizeof(uint32_t);
-                    chunks[i].gram.fps[1][j] = chunks[0].gram.ter_dict.insert(&stream[pos], len);
+                    chunks[i].gram.fps[1][j] = sink_gram.ter_dict.insert(&stream[pos], len);
                 }
             }
             chunks[i].gram.ter_dict.clear();
         }
+        i++;
     }
 
-    if(!chunks[0].gram.ter_dict.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(chunks[0].gram.ter_dict.size())<<std::endl;
+    if(!sink_gram.ter_dict.empty()){
+        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_gram.ter_dict.size())<<std::endl;
     }
 }
 
-void mul_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
+void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round){
 
-    auto nt_worker = [&](
-            phrase_set<uint32_t>& sink_set, phrase_set<uint32_t>& coll_set,
+    size_t size_before = sink_gram.nt_dicts[round-1].size();
+    size_t i=0;
+    while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
+    if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
+        sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
+        i++;
+    }
+
+    auto nt_worker = [&](phrase_set<uint32_t>& sink_set, phrase_set<uint32_t>& coll_set,
             uint64_t*& i_map, size_t& i_map_len,
             uint64_t*& o_map, size_t& o_map_len) {
 
@@ -185,12 +244,11 @@ void mul_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
     };
 
     std::vector<std::thread> threads;
-    std::vector<size_t> found_per_thread(chunks.size(), 0);
-    for (size_t i = 1; i < chunks.size(); i++) {
+    for (size_t j = i; j < chunks.size(); j++) {
         threads.emplace_back(nt_worker,
-                             std::ref(chunks[0].gram.nt_dicts[round-1]), std::ref(chunks[i].gram.nt_dicts[round-1]),
-                             std::ref(chunks[i].gram.fps[round]), std::ref(chunks[i].gram.fps_len[round]),
-                             std::ref(chunks[i].gram.fps[round+1]), std::ref(chunks[i].gram.fps_len[round+1]));
+                             std::ref(sink_gram.nt_dicts[round-1]), std::ref(chunks[j].gram.nt_dicts[round-1]),
+                             std::ref(chunks[j].gram.fps[round]), std::ref(chunks[j].gram.fps_len[round]),
+                             std::ref(chunks[j].gram.fps[round+1]), std::ref(chunks[j].gram.fps_len[round+1]));
     }
 
     for (auto &thread: threads) {
@@ -199,50 +257,56 @@ void mul_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
 
     uint32_t len;
     size_t pos;
-    size_t size_before = chunks[0].gram.nt_dicts[round-1].size();
-    for (size_t i = 1; i < chunks.size(); i++) {
+    while(i < chunks.size()) {
         if(!chunks[i].gram.nt_dicts[round-1].empty()){
-
             const uint32_t *stream = chunks[i].gram.nt_dicts[round-1].phr_stream();
             for(size_t j=0;j<chunks[i].gram.fps_len[round+1];j++){
                 if(chunks[i].gram.fps[round+1][j] & 0x8000000000000000UL){
                     pos = chunks[i].gram.fps[round+1][j] & 0x7FFFFFFFFFFFFFFF;
                     memcpy(&len, &stream[pos], sizeof(uint32_t));
                     pos++;
-                    chunks[i].gram.fps[round+1][j] = chunks[0].gram.nt_dicts[round-1].insert(&stream[pos], len);
+                    chunks[i].gram.fps[round+1][j] = sink_gram.nt_dicts[round-1].insert(&stream[pos], len);
                 }
             }
             chunks[i].gram.nt_dicts[round-1].clear();
             chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
             chunks[i].gram.fps_len[round] = 1;
         }
+        i++;
     }
 
-    if(!chunks[0].gram.nt_dicts[round-1].empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].gram.nt_dicts[round-1].size())<<std::endl;
-    }
-}
-
-void sin_thread_nt_collapse(std::vector<text_chunk>& chunks, size_t round){
-
-    size_t size_before = chunks[0].gram.nt_dicts[round-1].size();
-    for(size_t i=1;i<chunks.size();i++){
-        if(!chunks[i].gram.nt_dicts[round-1].empty()){
-            chunks[0].gram.nt_dicts[round-1].absorb_set(chunks[i].gram.nt_dicts[round-1], chunks[i].gram.fps[round],
-                                                        chunks[i].gram.fps_len[round], chunks[i].gram.fps[round+1],
-                                                        chunks[i].gram.fps_len[round+1]);
-            chunks[i].gram.nt_dicts[round-1].clear();
-            chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
-            chunks[i].gram.fps_len[round] = 1;
-        }
-    }
-
-    if(!chunks[0].gram.nt_dicts[round-1].empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(chunks[0].gram.nt_dicts[round-1].size())<<std::endl;
+    if(!sink_gram.nt_dicts[round-1].empty()){
+        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(sink_gram.nt_dicts[round-1].size())<<std::endl;
     }
 }
 
-void collapse_grams(std::vector<text_chunk>& text_chunks) {
+void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round){
+
+    size_t size_before = sink_gram.nt_dicts[round-1].size();
+
+    size_t i=0;
+    while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
+    if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
+        sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
+        i++;
+    }
+
+    while(i<chunks.size()){
+        sink_gram.nt_dicts[round-1].absorb_set(chunks[i].gram.nt_dicts[round-1],
+                                               chunks[i].gram.fps[round], chunks[i].gram.fps_len[round],
+                                               chunks[i].gram.fps[round+1], chunks[i].gram.fps_len[round+1]);
+        chunks[i].gram.nt_dicts[round-1].clear();
+        chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
+        chunks[i].gram.fps_len[round] = 1;
+        i++;
+    }
+
+    if(!sink_gram.nt_dicts[round-1].empty()){
+        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(sink_gram.nt_dicts[round-1].size())<<std::endl;
+    }
+}
+
+void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& text_chunks) {
 
     size_t tot_strings = 0;
     for(auto & text_chunk : text_chunks){
@@ -250,17 +314,17 @@ void collapse_grams(std::vector<text_chunk>& text_chunks) {
         text_chunk.gram.get_gram_levels();
     }
 
-    mul_thread_ter_collapse(text_chunks);
-    for(size_t round=1;round<=text_chunks[0].gram.nt_dicts.size();round++){
+    mul_thread_ter_collapse(sink_gram, text_chunks);
+    for(size_t round=1;round<=sink_gram.nt_dicts.size();round++){
         if(round<=4 && text_chunks.size()>1){
-            mul_thread_nt_collapse(text_chunks, round);
+            mul_thread_nt_collapse(sink_gram, text_chunks, round);
         }else{
-            sin_thread_nt_collapse(text_chunks, round);
+            sin_thread_nt_collapse(sink_gram, text_chunks, round);
         }
     }
 
     size_t pos = text_chunks[0].gram.comp_string.size();
-    text_chunks[0].gram.comp_string.resize(tot_strings);
+    sink_gram.comp_string.resize(tot_strings);
     for(size_t i=1;i<text_chunks.size();i++){
         size_t n = text_chunks[i].gram.n_levels;
         for(size_t j=0;j<text_chunks[i].gram.comp_string.size();j++){
@@ -270,15 +334,11 @@ void collapse_grams(std::vector<text_chunk>& text_chunks) {
         }
     }
 
-    std::cout<<"Final stats: "<<std::endl;
     size_t round=0;
-    text_chunks[0].gram.update_fps(round++);
-    std::cout<<"Level 1\t Phrases: "<<text_chunks[0].gram.ter_dict.size()<<" Size: "<<text_chunks[0].gram.ter_dict.tot_symbols()<<std::endl;
-    while(!text_chunks[0].gram.nt_dicts[round-1].empty()){
-        text_chunks[0].gram.update_fps(round++);
-        std::cout<<"Level "<<round<<"\t Phrases: "<<text_chunks[0].gram.nt_dicts[round-2].size()<<" Size: "<<text_chunks[0].gram.nt_dicts[round-2].tot_symbols()<<std::endl;
+    sink_gram.update_fps(round++);
+    while(!sink_gram.nt_dicts[round-1].empty()){
+        sink_gram.update_fps(round++);
     }
-    std::cout<<"Tot. strings: "<<text_chunks[0].gram.comp_string.size()<<std::endl;
 }
 
 void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
@@ -492,51 +552,6 @@ void compress_text_chunk(text_chunk& chunk){
     //report_time(start, end , 2);
 }
 
-struct parsing_state{
-    uint8_t sep_sym;
-    size_t chunk_size;
-    int fd_r;
-    size_t f_size=0;
-    off_t rem_bytes=0;
-    off_t read_bytes=0;
-    off_t r_page_cache_bytes=0;
-    off_t page_cache_limit=0;
-    size_t chunk_id=0;
-    size_t proc_syms=0;
-    float max_frac;
-
-    plain_gram sink_gram;
-
-    parsing_state(std::string& i_file, size_t n_lvl, uint8_t _sep_sym,
-                  size_t c_size, off_t p_cache_lim, float _max_frac): sep_sym(_sep_sym),
-                                                                      chunk_size(c_size),
-                                                                      page_cache_limit(p_cache_lim),
-                                                                      max_frac(_max_frac),
-                                                                      sink_gram(n_lvl, sep_sym){
-        fd_r = open(i_file.c_str(), O_RDONLY);
-        f_size = file_size(i_file);
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
-#endif
-        rem_bytes = (off_t)f_size;
-    }
-
-    ~parsing_state(){
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
-#endif
-        close(fd_r);
-    }
-
-    void flush_page_cache(){
-#ifdef __linux__
-        std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
-        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
-        r_page_cache_bytes=0;
-#endif
-    }
-};
-
 void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_state){
 
     ts_queue<size_t> buffers_to_process;
@@ -550,7 +565,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         size_t buff_id = 0;
         std::vector<size_t> byte_counts(text_chunks.size(), 0);
         size_t acc_bytes = p_state.sink_gram.mem_usage();
-        float input_frac=0;
+        float input_frac = 0;
 
         while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
 
@@ -658,17 +673,17 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
 void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
 
+    //plain_gram sink_gram(40, p_opts.sep_sym);
     std::vector<text_chunk> text_chunks(p_opts.n_chunks);
     //TODO define max_frac in args
     parsing_state par_state(text_file, 40, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, 0.1);
 
     while(par_state.rem_bytes>0){
         fill_chunk_grammars(text_chunks, par_state);
-        std::cout<<"Cleaning "<<std::endl;
-        for(auto &chunk : text_chunks){
-            chunk.gram.clear();
-        }
+        std::cout<<"Collapsing "<<std::endl;
+        collapse_grams(par_state.sink_gram, text_chunks);
     }
+    par_state.sink_gram.print_stats();
 }
 
 template<class sym_type>

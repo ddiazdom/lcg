@@ -23,19 +23,16 @@
 //1 GB
 #define STR_THRESHOLD3 1073741824
 
-template<class seq_type, bool use_ext=false>
+template<class seq_type>
 class phrase_set {
 
 private:
 
     typedef std::vector<uint64_t> table_t;
-
-    //external sources
-    const seq_type *e_stream;
-    const table_t *e_table;
-
     static constexpr uint8_t seq_bytes=sizeof(seq_type);
     static constexpr uint64_t null_addr = std::numeric_limits<uint64_t>::max();
+    static constexpr uint64_t d_one = 1UL<<44UL;
+
     seq_type *phrase_stream = nullptr;
     size_t stream_size=0;
     size_t stream_cap=0;
@@ -46,7 +43,6 @@ private:
     size_t n_phrases=0;
     size_t last_mt=0;
     size_t last_fp_pos=0;
-    static constexpr uint64_t d_one = 1UL<<44UL;
 
     void rehash(size_t new_tab_size) {
         assert(new_tab_size>m_table.size());
@@ -173,21 +169,25 @@ public:
         }
     };
 
-    explicit phrase_set(size_t min_cap=4, float max_lf=0.85,
-                        seq_type* _ext_stream= nullptr, table_t* _ext_tab=nullptr): e_stream(_ext_stream),
-                                                                                    e_table(_ext_tab){
-
-        if constexpr (use_ext){
-            assert(e_table!= nullptr && !e_table->empty());
-        }else{
-            assert(e_table== nullptr && e_stream== nullptr);
-        }
-
+    explicit phrase_set(size_t min_cap=4, float max_lf=0.85) {
         assert(min_cap>0);
         m_max_load_factor = max_lf;
         m_table = table_t(round_to_power_of_two(min_cap), null_addr);
         frac_lf = size_t(m_max_load_factor*100);
         elm_threshold = (m_table.size()*frac_lf)/100;
+    }
+
+    void swap(phrase_set<seq_type>& other){
+        std::swap(phrase_stream, other.phrase_stream);
+        std::swap(stream_size, other.stream_size);
+        std::swap(stream_cap, other.stream_cap);
+        m_table.swap(other.m_table);
+        std::swap(m_max_load_factor, other.m_max_load_factor);
+        std::swap(elm_threshold, other.elm_threshold);
+        std::swap(frac_lf, other.frac_lf);
+        std::swap(n_phrases, other.n_phrases);
+        std::swap(last_mt, other.last_mt);
+        std::swap(last_fp_pos, other.last_fp_pos);
     }
 
     inline static bool compare(const seq_type * q_phrase, size_t q_len, seq_type* phr_addr){
@@ -294,13 +294,6 @@ public:
         uint64_t hash = XXH3_64bits(q_phrase, q_bytes);
         uint32_t mt;
 
-        if constexpr (use_ext){
-            bool found = find_in_ext(q_phrase, q_len, hash, mt);
-            if(found){
-                return mt;
-            }
-        }
-
         size_t idx = hash & (m_table.size()-1);
         uint64_t bck_val = stream_size;
         if(m_table[idx]!=null_addr) {
@@ -400,37 +393,6 @@ public:
                 dist++;
                 idx = (idx+1) & (m_table.size()-1);
                 bck_dist = m_table[idx] >> 44UL;
-            }
-        }
-        return false;
-    }
-
-    inline bool find_in_ext(seq_type* q_phrase, size_t q_len, const uint64_t hash, uint32_t& mt) const {
-
-        const table_t & ext_table = *e_table;
-        size_t idx = hash & (ext_table.size()-1);
-
-        if(ext_table[idx]!=null_addr) {
-            size_t bck_dist = ext_table[idx] >> 44UL, dist=0;
-            while(bck_dist>dist && ext_table[idx]!=null_addr){
-                dist++;
-                idx = (idx+1) & (ext_table.size()-1);
-                bck_dist = ext_table[idx] >> 44UL;
-            }
-
-            while(dist==bck_dist){
-                uint64_t bck_addr = (ext_table[idx] & 0xFFFFFFFFFFFul);
-                if(compare(q_phrase, q_len, e_stream+bck_addr)){
-                    if constexpr (std::is_same<seq_type, uint8_t>::value){
-                        memcpy(&mt, e_stream+bck_addr+sizeof(uint32_t)+q_len, sizeof(uint32_t));
-                    } else {
-                        mt = e_stream[bck_addr+1+q_len];
-                    }
-                    return true;
-                }
-                dist++;
-                idx = (idx+1) & (ext_table.size()-1);
-                bck_dist = ext_table[idx] >> 44UL;
             }
         }
         return false;
@@ -538,7 +500,7 @@ public:
         }
     }
 
-    size_t tot_symbols(){
+    inline size_t tot_symbols() const {
         if constexpr (std::is_same<seq_type, uint8_t>::value){
             return stream_size- (n_phrases*sizeof(uint32_t)*2);
         }else{
@@ -549,6 +511,8 @@ public:
     size_t absorb_set(phrase_set<seq_type>& other,
                       const uint64_t* i_map, size_t i_map_len,
                       uint64_t* o_map, size_t o_map_len){
+
+        if(other.empty()) return size();
 
         assert(o_map_len==(other.size()+1));
         uint32_t len, pos=0, mt;
