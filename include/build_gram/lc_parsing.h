@@ -579,9 +579,9 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
             buffers_to_process.push(buff_id);
 
 #ifdef __linux__
-            p_state.r_page_cache_bytes+=text_chunks[chunk_id].e_bytes;
+            p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
             if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
-                flush_page_cache();
+                p_state.flush_page_cache();
             }
 #endif
             buff_id++;
@@ -609,7 +609,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
 #ifdef __linux__
             p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
-            if(r_page_cache_bytes>p_opts.page_cache_limit){
+            if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
                 p_state.flush_page_cache();
             }
 #endif
@@ -636,7 +636,6 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
             malloc_count_reset_peak();
         }
         buffers_to_reuse.done();
-        //std::cout<<"Parsed finished "<<std::endl;
     };
 
     auto compressor_worker = [&]() {
