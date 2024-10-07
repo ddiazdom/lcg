@@ -31,6 +31,7 @@ struct parsing_opts{
     size_t sep_sym{};
     uint64_t orig_seed=0;//this is the seed to create random seeds for p_seeds
     std::vector<uint64_t> p_seeds;
+    float i_frac{};
 };
 
 struct parsing_state{
@@ -295,6 +296,9 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
         sink_gram.nt_dicts[round-1].absorb_set(chunks[i].gram.nt_dicts[round-1],
                                                chunks[i].gram.fps[round], chunks[i].gram.fps_len[round],
                                                chunks[i].gram.fps[round+1], chunks[i].gram.fps_len[round+1]);
+
+        if(chunks[i].gram.nt_dicts.empty()) assert(chunks[i].gram.fps_len[round]==1 && chunks[i].gram.fps_len[round+1]==1);
+
         chunks[i].gram.nt_dicts[round-1].clear();
         chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
         chunks[i].gram.fps_len[round] = 1;
@@ -675,7 +679,7 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
     //plain_gram sink_gram(40, p_opts.sep_sym);
     std::vector<text_chunk> text_chunks(p_opts.n_chunks);
     //TODO define max_frac in args
-    parsing_state par_state(text_file, 40, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, 0.1);
+    parsing_state par_state(text_file, 40, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, p_opts.i_frac);
 
     while(par_state.rem_bytes>0){
         fill_chunk_grammars(text_chunks, par_state);
@@ -811,7 +815,7 @@ void merge_partial_grammars(std::string& ct_p_grams_file, std::string& mg_p_gram
 }
 
 void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
-                     size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram) {
+                     size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram, float i_frac) {
 
     off_t f_size = file_size(i_file);
     parsing_opts p_opts;
@@ -822,6 +826,7 @@ void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
     size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
     n_threads = std::min(n_threads, tot_chunks);
 
+    //TODO remove the control over the number of chunks
     p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
     p_opts.n_chunks = std::min<unsigned long>(p_opts.n_chunks, tot_chunks);
 
@@ -830,6 +835,7 @@ void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
     p_opts.page_cache_limit = 1024*1024*1024;
     p_opts.sep_sym = '\n';
     p_opts.orig_seed = par_seed;
+    p_opts.i_frac = i_frac;
 
     std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
     std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());

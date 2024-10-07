@@ -1015,7 +1015,8 @@ void get_par_seed(std::string& gram_file){
  */
 template<class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, size_t n_threads,
-                size_t n_chunks, off_t chunk_size, size_t par_seed, bool skip_simp, bool par_gram) {
+                size_t n_chunks, off_t chunk_size, size_t par_seed, bool skip_simp, bool par_gram,
+                float i_frac) {
 
     // the grammar encoding with random access support works differently, so this hack
     using tmp_gram_type = lc_gram_t<gram_type::has_cg_rules, gram_type::has_rl_rules, false>;
@@ -1023,7 +1024,7 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads,
     if(par_gram){
         std::cout<<"Building a partial locally-consistent grammar"<<std::endl;
         auto start = std::chrono::steady_clock::now();
-        lc_parsing_algo(i_file, o_file, n_threads, n_chunks, chunk_size, par_seed, true);
+        lc_parsing_algo(i_file, o_file, n_threads, n_chunks, chunk_size, par_seed, true, i_frac);
         auto end = std::chrono::steady_clock::now();
         report_time(start, end, 2);
         get_breakdown(o_file);
@@ -1033,7 +1034,7 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads,
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
-    lc_parsing_algo(i_file, o_file, n_threads, n_chunks, chunk_size, par_seed, false);
+    lc_parsing_algo(i_file, o_file, n_threads, n_chunks, chunk_size, par_seed, false, i_frac);
 
     tmp_gram_type gram;
     load_from_file(o_file, gram);

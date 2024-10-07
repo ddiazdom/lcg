@@ -411,7 +411,7 @@ public:
     }
 
     [[nodiscard]] inline bool empty()  const {
-        return stream_size==0;
+        return n_phrases==0;
     }
 
     [[nodiscard]] inline size_t capacity() const{
@@ -500,7 +500,7 @@ public:
         }
     }
 
-    inline size_t tot_symbols() const {
+    [[nodiscard]] inline size_t tot_symbols() const {
         if constexpr (std::is_same<seq_type, uint8_t>::value){
             return stream_size- (n_phrases*sizeof(uint32_t)*2);
         }else{
@@ -513,6 +513,8 @@ public:
                       uint64_t* o_map, size_t o_map_len){
 
         if(other.empty()) return size();
+
+        std::cout<<o_map_len<<" "<<other.size()<<std::endl;
 
         assert(o_map_len==(other.size()+1));
         uint32_t len, pos=0, mt;
