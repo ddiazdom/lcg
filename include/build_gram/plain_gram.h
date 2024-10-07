@@ -94,7 +94,6 @@ struct plain_gram{
     inline void update_fps(size_t round){
         if(round>0){
             nt_dicts[round-1].update_fps(fps[round], fps_len[round], fps[round+1], fps_len[round+1]);
-            std::cout<<"This is the round "<<round-1<<" "<<fps_len[round+1]<<" "<<nt_dicts[round-1].size()<<std::endl;
         }else{
             ter_dict.update_fps(fps[round], fps_len[round], fps[round+1], fps_len[round+1]);
         }

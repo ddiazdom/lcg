@@ -291,6 +291,9 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
 
     size_t i=0;
     while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
+
+    std::cout<<i<<" "<<chunks.size()<<" "<<round<<std::endl;
+
     if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
         sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
         std::swap(sink_gram.fps[round+1], chunks[i].gram.fps[round+1]);
@@ -322,7 +325,7 @@ void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& text_chunks)
     }
 
     mul_thread_ter_collapse(sink_gram, text_chunks);
-    for(size_t round=1;round<=sink_gram.nt_dicts.size();round++){
+    for(size_t round=1;round<sink_gram.nt_dicts.size();round++){
         if(round<=4 && text_chunks.size()>1){
             mul_thread_nt_collapse(sink_gram, text_chunks, round);
         }else{
