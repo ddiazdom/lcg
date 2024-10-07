@@ -143,6 +143,8 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
     while(i<chunks.size() && chunks[i].gram.ter_dict.empty()) i++;
     if(sink_gram.ter_dict.empty() && i<chunks.size()){
         sink_gram.ter_dict.swap(chunks[i].gram.ter_dict);
+        std::swap(sink_gram.fps[1], chunks[i].gram.fps[1]);
+        std::swap(sink_gram.fps_len[1], chunks[i].gram.fps_len[1]);
         i++;
     }
 
@@ -210,6 +212,8 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
     while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
     if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
         sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
+        std::swap(sink_gram.fps[round+1], chunks[i].gram.fps[round+1]);
+        std::swap(sink_gram.fps_len[round+1], chunks[i].gram.fps_len[round+1]);
         i++;
     }
 
@@ -289,6 +293,8 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
     while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
     if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
         sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
+        std::swap(sink_gram.fps[round+1], chunks[i].gram.fps[round+1]);
+        std::swap(sink_gram.fps_len[round+1], chunks[i].gram.fps_len[round+1]);
         i++;
     }
 
@@ -296,9 +302,6 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
         sink_gram.nt_dicts[round-1].absorb_set(chunks[i].gram.nt_dicts[round-1],
                                                chunks[i].gram.fps[round], chunks[i].gram.fps_len[round],
                                                chunks[i].gram.fps[round+1], chunks[i].gram.fps_len[round+1]);
-
-        if(chunks[i].gram.nt_dicts.empty()) assert(chunks[i].gram.fps_len[round]==1 && chunks[i].gram.fps_len[round+1]==1);
-
         chunks[i].gram.nt_dicts[round-1].clear();
         chunks[i].gram.fps[round]= mem<uint64_t>::reallocate(chunks[i].gram.fps[round], 1);
         chunks[i].gram.fps_len[round] = 1;

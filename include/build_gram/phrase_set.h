@@ -515,7 +515,6 @@ public:
         if(other.empty()) return size();
 
         std::cout<<o_map_len<<" "<<other.size()<<std::endl;
-
         assert(o_map_len==(other.size()+1));
         uint32_t len, pos=0, mt;
         size_t proc_phrases=0;
