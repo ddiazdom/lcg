@@ -177,7 +177,7 @@ public:
         elm_threshold = (m_table.size()*frac_lf)/100;
     }
 
-    void swap(phrase_set<seq_type>& other){
+    phrase_set(phrase_set&& other) noexcept {
         std::swap(phrase_stream, other.phrase_stream);
         std::swap(stream_size, other.stream_size);
         std::swap(stream_cap, other.stream_cap);
@@ -188,6 +188,48 @@ public:
         std::swap(n_phrases, other.n_phrases);
         std::swap(last_mt, other.last_mt);
         std::swap(last_fp_pos, other.last_fp_pos);
+    }
+
+    phrase_set(const phrase_set& other) noexcept {
+        copy(other);
+    }
+
+    void copy(const phrase_set& other){
+        stream_size = other.stream_size;
+        stream_cap = other.stream_cap;
+        m_table = other.m_table;
+        m_max_load_factor = other.m_max_load_factor;
+        elm_threshold = other.elm_threshold;
+        frac_lf = other.frac_lf;
+        n_phrases = other.n_phrases;
+        last_mt = other.last_mt;
+        last_fp_pos = other.last_fp_pos;
+
+        if(phrase_stream!= nullptr){
+            mem<seq_type>::deallocate(phrase_stream);
+        }
+        phrase_stream = mem<seq_type>::allocate(stream_cap);
+        memcpy(phrase_stream, other.phrase_stream, sizeof(seq_type)*stream_size);
+    }
+
+    void swap(phrase_set& other){
+        std::swap(phrase_stream, other.phrase_stream);
+        std::swap(stream_size, other.stream_size);
+        std::swap(stream_cap, other.stream_cap);
+        m_table.swap(other.m_table);
+        std::swap(m_max_load_factor, other.m_max_load_factor);
+        std::swap(elm_threshold, other.elm_threshold);
+        std::swap(frac_lf, other.frac_lf);
+        std::swap(n_phrases, other.n_phrases);
+        std::swap(last_mt, other.last_mt);
+        std::swap(last_fp_pos, other.last_fp_pos);
+    }
+
+    phrase_set& operator=(const phrase_set& other){
+        if(this!=&other){
+            copy(other);
+        }
+        return *this;
     }
 
     inline static bool compare(const seq_type * q_phrase, size_t q_len, seq_type* phr_addr){

@@ -574,7 +574,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
         size_t buff_id = 0;
         std::vector<size_t> byte_counts(text_chunks.size(), 0);
-        size_t acc_bytes = p_state.sink_gram.mem_usage();
+        size_t acc_bytes = 0;
         float input_frac = 0;
 
         while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
@@ -682,10 +682,14 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
 void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
 
-    //plain_gram sink_gram(40, p_opts.sep_sym);
-    std::vector<text_chunk> text_chunks(p_opts.n_chunks);
-    //TODO define max_frac in args
     parsing_state par_state(text_file, 40, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, p_opts.i_frac);
+    //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
+    std::vector<text_chunk> text_chunks;
+    text_chunks.reserve(p_opts.n_chunks);
+    for(size_t i=0;i<p_opts.n_chunks;i++){
+        text_chunks.emplace_back(par_state.sink_gram);
+    }
+
 
     while(par_state.rem_bytes>0){
         fill_chunk_grammars(text_chunks, par_state);

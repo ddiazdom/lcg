@@ -11,11 +11,10 @@
 struct text_chunk {
 
     typedef uint32_t size_type;
-
+    const plain_gram& sink_gram;
     size_t id{};//chunk id
     off_t n_bytes_before{};//number of bytes in the file before this chunk
     size_type sep_sym{};//symbol in the buffer delimiting consecutive strings
-
     plain_gram gram;
 
     off_t buffer_bytes{};
@@ -35,8 +34,11 @@ struct text_chunk {
     //area of the buffer free for satellite data
     off_t used_bytes=0;
 
-    explicit text_chunk(uint8_t _sep_sym='\n'): sep_sym(_sep_sym),
-                                                gram(38, sep_sym){
+    explicit text_chunk(const plain_gram& _sink_gram):   sink_gram(_sink_gram),
+                                                         sep_sym(sink_gram.sep_sym()),
+                                                         gram(sink_gram.lvl_cap(), sep_sym){
+        std::cout<<"holaa"<<std::endl;
+        //gram.fps[1]= mem<uint64_t>::reallocate(gram.fps[1], 10);
         //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
         //chunk.p_gram.sep_tsym = chunk.sep_sym;
         //chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);

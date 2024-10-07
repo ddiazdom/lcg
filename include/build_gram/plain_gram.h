@@ -12,12 +12,14 @@ struct plain_gram{
     std::vector<phrase_set<uint32_t>> nt_dicts;
     std::vector<uint32_t> comp_string;
     size_t n_levels=0;
+    uint8_t s_sym='\n';
 
-    explicit plain_gram(size_t lvl, uint8_t sep_sym){
-        assert(lvl>2);
-        fps.resize(lvl);
-        fps_len.resize(lvl);
-        nt_dicts.resize(lvl-2);
+    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym){
+        assert(lvl_cap>2);
+        fps.resize(lvl_cap);
+        fps_len.resize(lvl_cap);
+        nt_dicts.resize(lvl_cap-2);
+        s_sym = sep_sym;
 
         size_t alpha_size = std::numeric_limits<uint8_t>::max()+1;
         fps[0] = mem<uint64_t>::allocate(alpha_size);
@@ -36,6 +38,38 @@ struct plain_gram{
         }
     }
 
+    plain_gram(plain_gram&& other) noexcept {
+        fps.swap(other.fps);
+        fps_len.swap(other.fps_len);
+        ter_dict.swap(other.ter_dict);
+        nt_dicts.swap(other.nt_dicts);
+        comp_string.swap(other.comp_string);
+        std::swap(n_levels, other.n_levels);
+        std::swap(s_sym, other.s_sym);
+    }
+
+    plain_gram(const plain_gram& other) noexcept {
+        copy(other);
+    }
+
+    void copy(const plain_gram& other){
+        for(auto const& fps_set : fps){
+            if(fps_set!= nullptr) mem<uint64_t>::deallocate(fps_set);
+        }
+
+        fps.resize(other.fps.size());
+        for(size_t i=0;i<fps.size();i++){
+            fps[i] = mem<uint64_t>::allocate(other.fps_len[i]);
+            memcpy(&fps[i], &other.fps[i], other.fps_len[i]*sizeof(uint64_t));
+        }
+        fps_len = other.fps_len;
+        ter_dict = other.ter_dict;
+        nt_dicts = other.nt_dicts;
+        comp_string = other.comp_string;
+        n_levels = other.n_levels;
+        s_sym = other.s_sym;
+    }
+
     void get_gram_levels() {
         n_levels = !ter_dict.empty();
         size_t l=0;
@@ -52,6 +86,7 @@ struct plain_gram{
         nt_dicts.swap(other.nt_dicts);
         comp_string.swap(other.comp_string);
         std::swap(n_levels, other.n_levels);
+        std::swap(s_sym, other.s_sym);
     }
 
     size_t mem_usage(){
@@ -89,6 +124,14 @@ struct plain_gram{
             bytes+=dict.buff_bytes_available();
         }
         return bytes;
+    }
+
+    [[nodiscard]] inline uint8_t sep_sym() const {
+        return s_sym;
+    }
+
+    [[nodiscard]] inline size_t lvl_cap() const {
+        return fps.size();
     }
 
     inline void update_fps(size_t round){
@@ -136,6 +179,12 @@ struct plain_gram{
                 nt_dict.psl_dist();
             }
             i++;
+        }
+
+        for(auto fps_set : fps){
+            if(fps_set!= nullptr){
+                mem<uint64_t>::deallocate(fps_set);
+            }
         }
     }
 };
