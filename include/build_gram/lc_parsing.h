@@ -292,8 +292,6 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
     size_t i=0;
     while(i<chunks.size() && chunks[i].gram.nt_dicts[round-1].empty()) i++;
 
-    std::cout<<i<<" "<<chunks.size()<<" "<<round<<std::endl;
-
     if(sink_gram.nt_dicts[round-1].empty() && i<chunks.size()){
         sink_gram.nt_dicts[round-1].swap(chunks[i].gram.nt_dicts[round-1]);
         std::swap(sink_gram.fps[round+1], chunks[i].gram.fps[round+1]);

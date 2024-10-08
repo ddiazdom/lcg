@@ -37,7 +37,6 @@ struct text_chunk {
     explicit text_chunk(const plain_gram& _sink_gram):   sink_gram(_sink_gram),
                                                          sep_sym(sink_gram.sep_sym()),
                                                          gram(sink_gram.lvl_cap(), sep_sym){
-        std::cout<<"holaa"<<std::endl;
         //gram.fps[1]= mem<uint64_t>::reallocate(gram.fps[1], 10);
         //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
         //chunk.p_gram.sep_tsym = chunk.sep_sym;
