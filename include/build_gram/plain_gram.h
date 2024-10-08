@@ -142,6 +142,29 @@ struct plain_gram{
         }
     }
 
+    inline void update_fps_with_sink(size_t round, const plain_gram& sink){
+        if(round>0){
+            nt_dicts[round-1].update_fps_with_sink(sink.fps[round], sink.fps_len[round], sink.alphabet(round),
+                                                   fps[round], fps_len[round],
+                                                   fps[round+1], fps_len[round+1]);
+        }else{
+            ter_dict.update_fps_with_sink(sink.fps[round], sink.fps_len[round], sink.alphabet(round),
+                                          fps[round], fps_len[round],
+                                          fps[round+1], fps_len[round+1]);
+        }
+    }
+
+    [[nodiscard]] inline size_t alphabet(size_t round) const {
+        switch (round) {
+            case 0:
+                return std::numeric_limits<uint8_t>::max();
+            case 1:
+                return ter_dict.size();
+            default:
+                return nt_dicts[round-2].size();
+        }
+    }
+
     void clear(){
         ter_dict.clear();
         for(auto &dict: nt_dicts){
