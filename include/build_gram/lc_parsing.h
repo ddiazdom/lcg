@@ -564,87 +564,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
     ts_queue<size_t> buffers_to_process;
     ts_queue<size_t> buffers_to_reuse;
-
     std::atomic<size_t> parser_finished{0};
-
-    auto io_worker = [&]() -> void {
-
-        auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
-        size_t buff_id = 0;
-        std::vector<size_t> byte_counts(text_chunks.size(), 0);
-        size_t acc_bytes = 0;
-        float input_frac = 0;
-
-        while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
-
-            tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
-            text_chunks[buff_id].text_bytes = tmp_ck_size;
-            text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
-            text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
-            text_chunks[buff_id].id = p_state.chunk_id;
-
-            read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
-            buffers_to_process.push(buff_id);
-
-#ifdef __linux__
-            p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
-            if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
-                p_state.flush_page_cache();
-            }
-#endif
-            buff_id++;
-            p_state.chunk_id++;
-        }
-
-        while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
-
-            buffers_to_reuse.pop(buff_id);
-            p_state.proc_syms+=text_chunks[buff_id].text_bytes;
-
-            size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
-            acc_bytes -= byte_counts[buff_id];
-            acc_bytes += new_byte_count;
-            byte_counts[buff_id] = new_byte_count;
-            input_frac = float(acc_bytes)/float(p_state.f_size);
-
-            std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<" input_fraction "<<input_frac<<std::endl;
-            malloc_count_reset_peak();
-
-            text_chunks[buff_id].text_bytes = tmp_ck_size;
-            text_chunks[buff_id].id = p_state.chunk_id++;
-            read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
-            buffers_to_process.push(buff_id);
-
-#ifdef __linux__
-            p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
-            if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
-                p_state.flush_page_cache();
-            }
-#endif
-        }
-
-        //wait for the queue to be empty and close the input file
-        while (!buffers_to_process.empty());
-        buffers_to_process.done();
-
-        //wait for all the parsers to finish
-        while(parser_finished.load(std::memory_order_acquire)!=text_chunks.size());
-
-        while(!buffers_to_reuse.empty()){
-            buffers_to_reuse.pop(buff_id);
-            p_state.proc_syms+=text_chunks[buff_id].text_bytes;
-
-            size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
-            acc_bytes -= byte_counts[buff_id];
-            acc_bytes += new_byte_count;
-            byte_counts[buff_id] = new_byte_count;
-            input_frac = float(acc_bytes)/float(p_state.f_size);
-
-            std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<"  input_fraction "<<input_frac<<std::endl;
-            malloc_count_reset_peak();
-        }
-        buffers_to_reuse.done();
-    };
 
     auto compressor_worker = [&]() {
         size_t buff_id;
@@ -667,11 +587,91 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     };
 
     std::vector<std::thread> threads;
-    threads.emplace_back(io_worker);
-
     for (size_t i = 0; i < text_chunks.size(); i++) {
         threads.emplace_back(compressor_worker);
     }
+
+    auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
+    size_t buff_id = 0;
+    std::vector<size_t> byte_counts(text_chunks.size(), 0);
+    size_t acc_bytes = 0;
+    float input_frac = 0;
+
+    while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+
+        tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
+        text_chunks[buff_id].text_bytes = tmp_ck_size;
+        text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
+        text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
+        text_chunks[buff_id].id = p_state.chunk_id++;
+
+        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        buffers_to_process.push(buff_id);
+
+#ifdef __linux__
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
+            p_state.flush_page_cache();
+        }
+#endif
+        buff_id++;
+    }
+
+    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+
+        buffers_to_reuse.pop(buff_id);
+        p_state.proc_syms+=text_chunks[buff_id].text_bytes;
+
+        size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
+        acc_bytes -= byte_counts[buff_id];
+        acc_bytes += new_byte_count;
+        byte_counts[buff_id] = new_byte_count;
+        input_frac = float(acc_bytes)/float(p_state.f_size);
+
+        std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<" input_fraction "<<input_frac<<std::endl;
+        malloc_count_reset_peak();
+
+        text_chunks[buff_id].text_bytes = tmp_ck_size;
+        text_chunks[buff_id].id = p_state.chunk_id++;
+        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        buffers_to_process.push(buff_id);
+
+#ifdef __linux__
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
+            p_state.flush_page_cache();
+        }
+#endif
+    }
+
+    //wait for the queue to be empty and close the input file
+    while (!buffers_to_process.empty());
+    buffers_to_process.done();
+
+    //wait for all the parsers to finish
+    while(parser_finished.load(std::memory_order_acquire)!=text_chunks.size());
+
+    while(!buffers_to_reuse.empty()){
+        buffers_to_reuse.pop(buff_id);
+        p_state.proc_syms+=text_chunks[buff_id].text_bytes;
+
+        size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
+        acc_bytes -= byte_counts[buff_id];
+        acc_bytes += new_byte_count;
+        byte_counts[buff_id] = new_byte_count;
+        input_frac = float(acc_bytes)/float(p_state.f_size);
+
+        std::cout<<"Parsed input "<<report_space((off_t)p_state.proc_syms)<<" with peak "<<report_space((off_t)malloc_count_peak())<<" and byte usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<" and eff_byte usage "<<report_space((off_t)text_chunks[buff_id].gram.eff_mem_usage())<<"  input_fraction "<<input_frac<<std::endl;
+        malloc_count_reset_peak();
+
+#ifdef __linux__
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
+            p_state.flush_page_cache();
+        }
+#endif
+    }
+    buffers_to_reuse.done();
 
     for (auto &thread: threads) {
         thread.join();
@@ -688,10 +688,8 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
         text_chunks.emplace_back(par_state.sink_gram);
     }
 
-
     while(par_state.rem_bytes>0){
         fill_chunk_grammars(text_chunks, par_state);
-        std::cout<<"Collapsing "<<std::endl;
         collapse_grams(par_state.sink_gram, text_chunks);
     }
     par_state.sink_gram.print_stats();

@@ -328,7 +328,7 @@ static __attribute__((constructor)) void init(void)
 {
     char *error;
 
-    setlocale(LC_NUMERIC, ""); /* for better readable numbers */
+    //setlocale(LC_NUMERIC, ""); /* for better readable numbers */
 
     dlerror();
 
