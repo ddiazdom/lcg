@@ -8,20 +8,15 @@
 #include <random>
 #include <fcntl.h>
 #include <cstring>
-#include "xxhash.h"
 
-#include "cds/macros.h"
+#include "xxhash.h"
+#include "malloc_count.h"
+#include "collapse_gram.h"
+
 #include "cds/ts_queue.h"
 #include "cds/ts_priority_queue.h"
 #include "cds/utils.h"
-#include "cds/cdt_common.hpp"
-#include "cds/mmap_allocator.h"
 #include "cds/vbyte_encoding.h"
-
-#include "text_handler.h"
-#include "phrase_set.h"
-#include "grammar.h"
-#include "merge_grams.h"
 
 struct parsing_opts{
     size_t n_threads{};
@@ -29,7 +24,7 @@ struct parsing_opts{
     off_t chunk_size{};
     off_t page_cache_limit{};
     size_t sep_sym{};
-    uint64_t orig_seed=0;//this is the seed to create random seeds for p_seeds
+    //uint64_t orig_seed=0;//this is the seed to create random seeds for p_seeds
     std::vector<uint64_t> p_seeds;
     float i_frac{};
 };
@@ -133,292 +128,132 @@ void create_meta_sym(text_chunk& chunk, uint64_t pf_seed, const phrase_set<sym_t
     //chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols);
 }*/
 
-void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
+/*
+template<class sym_type>
+void merge_partial_grammars(std::string& ct_p_grams_file, std::string& mg_p_gram_file,
+                            std::vector<uint64_t>& p_seeds, size_t n_threads) {
 
-    phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
-    size_t size_before = sink_set.size();
+    using p_gram_type = partial_gram<sym_type>;
 
-    auto ter_worker = [&](plain_gram& gram, size_t& new_syms) {
+    std::vector<std::pair<p_gram_type, std::vector<std::pair<size_t, size_t>>>> initial_grams(n_threads);
 
-        uint64_t* o_map = gram.fps[1];
-        uint64_t o_map_len = gram.fps_len[1];
-        phrase_set<uint8_t>& coll_set = gram.ter_dict;
+    ts_queue<size_t> gram_to_merge_queue;
+    ts_queue<size_t> av_buff_queue;
 
-        assert(o_map_len==(coll_set.size()+1));
-        coll_set.destroy_table();
-        new_syms=0;
+    //std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
+    int fd_r = open(ct_p_grams_file.c_str(), O_RDONLY);
+    size_t tot_bytes = file_size(ct_p_grams_file);
+    size_t rem_bytes =  tot_bytes;
+    size_t read_bytes;
+    size_t i=0;
 
-        auto it = coll_set.begin();
-        auto it_end = coll_set.end();
+    while(i<n_threads && rem_bytes>0){
 
-        uint32_t mt;
-        size_t phrase=1;
-        while(it!=it_end){
-            auto phr = *it;
-            if(sink_set.find(phr.phrase, phr.len, mt)){
-                o_map[phrase] = mt;
-            }else{
-                o_map[phrase] = it.pos() | 0x8000000000000000UL;
-                new_syms+= phr.len+(2*sizeof(uint32_t));
+        read_bytes = initial_grams[i].first.load_from_fd(fd_r);
+        //store the range of strings this partial gram covers
+        initial_grams[i].second.push_back({initial_grams[i].first.txt_id,
+                                           initial_grams[i].first.tot_strings()});
+        rem_bytes-=read_bytes;
+
+        //this is just to indicate that the first n_thread buffers are ready to be
+        // loaded with n_thread grammars, which we will merge the initial grammars
+        av_buff_queue.push(i);
+        //
+
+        i++;
+    }
+
+    n_threads = i;
+    std::vector<p_gram_type> grams_to_merge(n_threads);
+    size_t prog_bytes=0;
+
+    auto gram_read_worker = [&](){
+
+        if(rem_bytes==0){
+            gram_to_merge_queue.done();
+        }else{
+            size_t buff_id;
+            while(rem_bytes > 0){
+                av_buff_queue.pop(buff_id);
+                read_bytes = grams_to_merge[buff_id].load_from_fd(fd_r);
+                gram_to_merge_queue.push(buff_id);
+                rem_bytes-=read_bytes;
+                prog_bytes+=read_bytes;
+                //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
+                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
             }
-            phrase++;
-            ++it;
+            while(av_buff_queue.size()<n_threads);
+            gram_to_merge_queue.done();
         }
-        assert(phrase==o_map_len);
+
+        //no longer needed
+        for(auto &gram : grams_to_merge){
+            gram.destroy_gram();
+        }
+
+        if(n_threads>1) {
+            //merge the partial grams of the different threads into one
+            size_t n_ranges=0;
+            for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
+            initial_grams[i].second.reserve(n_ranges);
+
+            //this step is incorrect as it assumes all the initial grams are the same size,
+            // but it gives us an estimate of the remaining %
+            size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
+
+            for (size_t i = 1; i < n_threads; i++) {
+                merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
+                //store the range of strings this partial gram covers
+                initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
+                initial_grams[i].first.destroy_gram();
+                destroy(initial_grams[i].second);
+
+                prog_bytes+=rem_prog_bytes;
+                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
+                malloc_count_reset_peak();
+            }
+            initial_grams[0].second.shrink_to_fit();
+#ifdef __linux__
+            malloc_trim(0);
+#endif
+            initial_grams[0].first.reorder_strings(initial_grams[0].second);
+        }
+
+        store_to_file(mg_p_gram_file, initial_grams[0].first);
+        initial_grams[0].first.destroy_gram();
+#ifdef __linux__
+        malloc_trim(0);
+#endif
     };
 
-    std::vector<size_t> nb(chunks.size(), 0);
+    auto gram_merge_worker = [&](size_t idx){
+
+        size_t buff_id;
+        bool res;
+
+        while (true) {
+            res = gram_to_merge_queue.pop(buff_id);
+            if (!res) break;
+            merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
+            if(n_threads>1){//this step is to later reorder the strings in the final grammar
+                initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
+                                                     grams_to_merge[buff_id].tot_strings()});
+            }
+            av_buff_queue.push(buff_id);
+        }
+    };
+
     std::vector<std::thread> threads;
-    threads.reserve(chunks.size()-1);
-    for(size_t i=0;i<chunks.size()-1;i++){
-        threads.emplace_back(ter_worker, std::ref(chunks[i].gram), std::ref(nb[i]));
+    threads.emplace_back(gram_read_worker);
+    for(size_t j=0;j<n_threads;j++){
+        threads.emplace_back(gram_merge_worker, j);
     }
-    ter_worker(chunks.back().gram, nb.back());
 
     for (auto &thread: threads) {
         thread.join();
     }
-
-    size_t tot_new_sym=0;
-    for(auto b : nb){
-        tot_new_sym+=b;
-    }
-    sink_set.set_stream_capacity(sink_set.stream_len()+tot_new_sym);
-
-    uint32_t len;
-    size_t pos;
-    for(auto & chunk : chunks) {
-        const uint8_t *stream = chunk.gram.ter_dict.phr_stream();
-        for(size_t j=0;j<chunk.gram.fps_len[1];j++){
-            if(chunk.gram.fps[1][j] & 0x8000000000000000UL){
-                pos = chunk.gram.fps[1][j] & 0x7FFFFFFFFFFFFFFF;
-                memcpy(&len, &stream[pos], sizeof(uint32_t));
-                pos+=sizeof(uint32_t);
-                chunk.gram.fps[1][j] = sink_set.insert(&stream[pos], len);
-            }
-        }
-        chunk.gram.ter_dict.clear();//the table is fully destroyed
-    }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_gram.ter_dict.size())<<std::endl;
-    }
 }
-
-void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
-
-    phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
-    size_t size_before = sink_set.size();
-
-    for(auto & chunk : chunks) {
-        uint64_t* o_map = chunk.gram.fps[1];
-        uint64_t o_map_len = chunk.gram.fps_len[1];
-        phrase_set<uint8_t>& coll_set = chunk.gram.ter_dict;
-
-        assert(o_map_len==(coll_set.size()+1));
-        coll_set.destroy_table();
-
-        auto it = coll_set.begin();
-        auto it_end = coll_set.end();
-
-        uint32_t phrase = 1;
-        while(it!=it_end){
-            auto phr = *it;
-            o_map[phrase++] = sink_set.insert(phr.phrase, phr.len);
-            ++it;
-        }
-        assert(phrase==o_map_len);
-        coll_set.clear();
-    }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_set.size())<<std::endl;
-    }
-}
-
-void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink) {
-
-    size_t size_before = sink_gram.nt_dicts[round-1].size();
-    phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
-
-    auto nt_worker = [&](plain_gram& gram, size_t& new_syms) {
-
-        const uint64_t* i_map = gram.fps[round];
-        const uint64_t i_map_len = gram.fps_len[round];
-        uint64_t* o_map = gram.fps[round+1];
-        uint64_t o_map_len = gram.fps_len[round+1];
-        phrase_set<uint32_t>& coll_set = gram.nt_dicts[round-1];
-        new_syms = 0;
-
-        assert(o_map_len==(coll_set.size()+1));
-        coll_set.destroy_table();
-
-        auto it = coll_set.begin();
-        auto it_end = coll_set.end();
-
-        uint32_t mt;
-        size_t phrase=1;
-        uint64_t flag = 0x8000000000000000UL;
-
-        while(it!=it_end){
-            auto phr = *it;
-            for(size_t j=0;j<phr.len;j++){
-                if(phr.phrase[j]>prev_alpha_sink){
-                    size_t rank = phr.phrase[j]-prev_alpha_sink;
-                    assert(rank<i_map_len);
-                    phr.phrase[j] = i_map[rank]+1;
-                }
-                assert(phr.phrase[j]>0);
-            }
-
-            if(sink_set.find(phr.phrase, phr.len, mt)){
-                o_map[phrase] = mt;
-            } else {
-                o_map[phrase] = it.pos() | flag;
-                new_syms += phr.len+2;//the +2 considers the length and the metasymbol
-            }
-            phrase++;
-            ++it;
-        }
-        assert(phrase==o_map_len);
-    };
-
-    std::vector<std::thread> threads;
-    threads.reserve(chunks.size()-1);
-    std::vector<size_t> nb(chunks.size(), 0);
-
-    for(size_t i=0;i<chunks.size()-1;i++) {
-        threads.emplace_back(nt_worker, std::ref(chunks[i].gram), std::ref(nb[i]));
-    }
-    nt_worker(chunks.back().gram, nb.back());
-
-    for (auto &thread: threads) {
-        thread.join();
-    }
-
-    size_t tot_new_sym=0;
-    for(auto b : nb){
-        tot_new_sym+=b;
-    }
-    sink_set.set_stream_capacity(sink_set.stream_len()+tot_new_sym);
-
-    uint32_t len;
-    size_t pos;
-    for(auto & chunk : chunks) {
-        const uint32_t *stream = chunk.gram.nt_dicts[round-1].phr_stream();
-        uint64_t* o_map = chunk.gram.fps[round+1];
-        uint64_t o_map_len = chunk.gram.fps_len[round+1];
-        for(size_t j=0;j<o_map_len;j++){
-            if(o_map[j] & 0x8000000000000000UL){
-                pos = o_map[j] & 0x7FFFFFFFFFFFFFFF;
-                memcpy(&len, &stream[pos], sizeof(uint32_t));
-                pos++;
-                o_map[j] = sink_set.insert(&stream[pos], len);
-            }
-        }
-        chunk.gram.nt_dicts[round-1].clear();
-        chunk.gram.fps[round]= mem<uint64_t>::reallocate(chunk.gram.fps[round], 1);
-        chunk.gram.fps_len[round] = 1;
-    }
-}
-
-void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink){
-
-    assert(round>=1);
-    size_t size_before = sink_gram.nt_dicts[round-1].size();
-    phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
-
-    for(auto & chunk : chunks){
-
-        const uint64_t* i_map = chunk.gram.fps[round];
-        const uint64_t i_map_len = chunk.gram.fps_len[round];
-        uint64_t* o_map = chunk.gram.fps[round+1];
-        uint64_t o_map_len = chunk.gram.fps_len[round+1];
-        phrase_set<uint32_t>& coll_set = chunk.gram.nt_dicts[round-1];
-
-        assert(o_map_len==(coll_set.size()+1));
-        coll_set.destroy_table();
-
-        auto it = coll_set.begin();
-        auto it_end = coll_set.end();
-
-        uint32_t phrase = 1;
-        while(it!=it_end) {
-            auto phr = *it;
-            for(size_t j=0;j<phr.len;j++){
-                if(phr.phrase[j]>prev_alpha_sink){
-                    size_t rank = phr.phrase[j]-prev_alpha_sink;
-                    assert(rank<i_map_len);
-                    phr.phrase[j] = i_map[rank]+1;
-                }
-                assert(phr.phrase[j]>0);
-            }
-            o_map[phrase++] = sink_set.insert(phr.phrase, phr.len);
-            ++it;
-        }
-        assert(phrase==o_map_len);
-        coll_set.clear();
-        chunk.gram.fps[round] = mem<uint64_t>::reallocate(chunk.gram.fps[round], 1);
-        chunk.gram.fps_len[round] = 1;
-    }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(sink_set.size())<<std::endl;
-    }
-}
-
-void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
-
-    //compute the length of each rule set
-    std::vector<uint32_t> prev_lvl_alpha(sink_gram.fps.size(), 0);
-    prev_lvl_alpha[1] = sink_gram.ter_dict.size();
-    for(size_t i=2;i<prev_lvl_alpha.size();i++){
-        prev_lvl_alpha[i] = sink_gram.nt_dicts[i-2].size();
-    }
-
-    //just swap if the sink grammar is empty
-    if(sink_gram.empty()){
-        sink_gram.swap(chunks[0].gram);
-    }
-
-    size_t tot_strings = 0;
-    for(auto & text_chunk : chunks){
-        tot_strings+=text_chunk.gram.comp_string.size();
-        text_chunk.gram.get_gram_levels();
-    }
-
-    if(chunks.size()>1){
-        mul_thread_ter_collapse(sink_gram, chunks);
-    }else{
-        sin_thread_ter_collapse(sink_gram, chunks);
-    }
-
-    for(size_t round=1;round<sink_gram.nt_dicts.size();round++){
-        if(round<=4 && chunks.size()>1){
-            mul_thread_nt_collapse(sink_gram, chunks, round, prev_lvl_alpha[round]);
-        } else {
-            sin_thread_nt_collapse(sink_gram, chunks, round, prev_lvl_alpha[round]);
-        }
-    }
-
-    size_t pos = chunks[0].gram.comp_string.size();
-    sink_gram.comp_string.resize(sink_gram.comp_string.size()+tot_strings);
-    for(auto & chunk : chunks){
-        size_t n = chunk.gram.n_levels;
-        for(size_t j=0;j<chunk.gram.comp_string.size();j++){
-            //TODO fix this
-            //assert(text_chunks[i].comp_string[j]>0 && text_chunks[i].comp_string[j]<text_chunks[i].fps_len[n]);
-            //text_chunks[0].comp_string[pos++] = text_chunks[i].fps[n][text_chunks[i].comp_string[j]]+1;
-        }
-        chunk.gram.comp_string.clear();
-    }
-
-    size_t round=0;
-    sink_gram.update_fps(round++);
-    while(!sink_gram.nt_dicts[round-1].empty()){
-        sink_gram.update_fps(round++);
-    }
-}
+*/
 
 void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
 
@@ -553,8 +388,6 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 
     chunk.gram.update_fps_with_sink(chunk.round, chunk.sink_gram);
     finish_byte_parse(chunk, max_byte_offset, phr_with_ovf);
-
-    //std::cout<<"\nThe alphabet is "<<chunk.gram.alphabet(chunk.round)<<" and the size is "<<chunk.gram.ter_dict.size()<<" "<<chunk.parse_size<<std::endl;
 }
 
 template<>
@@ -626,7 +459,7 @@ void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
         memset(&text[lb+v_len], 0, phrase_len-v_len);
     }
     parse_size+=4;
-    chunk.parse_size = parse_size/4;//divide by 4=sizeof(uint32_t) to avoid the <<
+    chunk.parse_size = parse_size/4;//divide by 4=sizeof(uint32_t) to avoid the << shift during the scan
 
     //computes how many bytes we require for the parse
     off_t max_byte_offset = INT_CEIL(mbo[1], sizeof(uint32_t))*sizeof(uint32_t);
@@ -952,130 +785,6 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
     sink_gram.print_stats();
 }
 
-template<class sym_type>
-void merge_partial_grammars(std::string& ct_p_grams_file, std::string& mg_p_gram_file,
-                            std::vector<uint64_t>& p_seeds, size_t n_threads) {
-
-    using p_gram_type = partial_gram<sym_type>;
-
-    std::vector<std::pair<p_gram_type, std::vector<std::pair<size_t, size_t>>>> initial_grams(n_threads);
-
-    ts_queue<size_t> gram_to_merge_queue;
-    ts_queue<size_t> av_buff_queue;
-
-    //std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
-    int fd_r = open(ct_p_grams_file.c_str(), O_RDONLY);
-    size_t tot_bytes = file_size(ct_p_grams_file);
-    size_t rem_bytes =  tot_bytes;
-    size_t read_bytes;
-    size_t i=0;
-
-    while(i<n_threads && rem_bytes>0){
-
-        read_bytes = initial_grams[i].first.load_from_fd(fd_r);
-        //store the range of strings this partial gram covers
-        initial_grams[i].second.push_back({initial_grams[i].first.txt_id,
-                                           initial_grams[i].first.tot_strings()});
-        rem_bytes-=read_bytes;
-
-        //this is just to indicate that the first n_thread buffers are ready to be
-        // loaded with n_thread grammars, which we will merge the initial grammars
-        av_buff_queue.push(i);
-        //
-
-        i++;
-    }
-
-    n_threads = i;
-    std::vector<p_gram_type> grams_to_merge(n_threads);
-    size_t prog_bytes=0;
-
-    auto gram_read_worker = [&](){
-
-        if(rem_bytes==0){
-            gram_to_merge_queue.done();
-        }else{
-            size_t buff_id;
-            while(rem_bytes > 0){
-                av_buff_queue.pop(buff_id);
-                read_bytes = grams_to_merge[buff_id].load_from_fd(fd_r);
-                gram_to_merge_queue.push(buff_id);
-                rem_bytes-=read_bytes;
-                prog_bytes+=read_bytes;
-                //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
-                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
-            }
-            while(av_buff_queue.size()<n_threads);
-            gram_to_merge_queue.done();
-        }
-
-        //no longer needed
-        for(auto &gram : grams_to_merge){
-            gram.destroy_gram();
-        }
-
-        if(n_threads>1) {
-            //merge the partial grams of the different threads into one
-            size_t n_ranges=0;
-            for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
-            initial_grams[i].second.reserve(n_ranges);
-
-            //this step is incorrect as it assumes all the initial grams are the same size,
-            // but it gives us an estimate of the remaining %
-            size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
-
-            for (size_t i = 1; i < n_threads; i++) {
-                merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
-                //store the range of strings this partial gram covers
-                initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
-                initial_grams[i].first.destroy_gram();
-                destroy(initial_grams[i].second);
-
-                prog_bytes+=rem_prog_bytes;
-                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
-                malloc_count_reset_peak();
-            }
-            initial_grams[0].second.shrink_to_fit();
-#ifdef __linux__
-             malloc_trim(0);
-#endif
-             initial_grams[0].first.reorder_strings(initial_grams[0].second);
-        }
-
-        store_to_file(mg_p_gram_file, initial_grams[0].first);
-        initial_grams[0].first.destroy_gram();
-#ifdef __linux__
-        malloc_trim(0);
-#endif
-    };
-
-    auto gram_merge_worker = [&](size_t idx){
-
-        size_t buff_id;
-        bool res;
-
-        while (true) {
-            res = gram_to_merge_queue.pop(buff_id);
-            if (!res) break;
-            merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
-            if(n_threads>1){//this step is to later reorder the strings in the final grammar
-                initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
-                                                     grams_to_merge[buff_id].tot_strings()});
-            }
-            av_buff_queue.push(buff_id);
-        }
-    };
-
-    std::vector<std::thread> threads;
-    threads.emplace_back(gram_read_worker);
-    for(size_t j=0;j<n_threads;j++){
-        threads.emplace_back(gram_merge_worker, j);
-    }
-
-    for (auto &thread: threads) {
-        thread.join();
-    }
-}
 
 void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
                      size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram, float i_frac) {

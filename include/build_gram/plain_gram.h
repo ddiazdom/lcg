@@ -4,6 +4,8 @@
 
 #ifndef LCG_PLAIN_GRAM_H
 #define LCG_PLAIN_GRAM_H
+#include "phrase_set.h"
+
 struct plain_gram{
 
     std::vector<uint64_t *> fps;

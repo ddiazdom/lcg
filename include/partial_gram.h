@@ -476,7 +476,7 @@ uint64_t get_par_seed_par_gram(std::string& p_gram_file){
     return p_gram.par_seed;
 }
 
-size_t vbyte_size(partial_gram<uint8_t>& p_gram){
+/*size_t vbyte_size(partial_gram<uint8_t>& p_gram){
 
     size_t pos, n_bits;
     uint8_t width;
@@ -504,7 +504,7 @@ size_t vbyte_size(partial_gram<uint8_t>& p_gram){
         assert(pos==n_bits);
     }
     return n_bytes;
-}
+}*/
 
 void get_breakdown(std::string& p_gram_file){
     partial_gram<uint8_t> p_gram;

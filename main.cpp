@@ -2,6 +2,7 @@
 
 #include "external/CLI11.hpp"
 #include "edit_gram.h"
+#include "merge_grams.h"
 #include "grammar_algorithms.h"
 
 struct arguments{
