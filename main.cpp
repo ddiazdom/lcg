@@ -77,8 +77,8 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
-    comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this fraction of the input");
-    comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. TEXT_SIZE*0.0025)")->default_val(0);
+    //comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this fraction of the input");
+    comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
 
     //metadata
     CLI::App* meta = app.add_subcommand("met", "get the metadata of a grammar");

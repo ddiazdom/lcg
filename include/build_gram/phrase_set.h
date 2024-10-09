@@ -4,7 +4,7 @@
 
 #ifndef LCG_LZL_MAP_H
 #define LCG_LZL_MAP_H
-#include "../../external/xxHash-dev/xxhash.h"
+#include "xxhash.h"
 #include "cds/cdt_common.hpp"
 #include <vector>
 #include <cstring>

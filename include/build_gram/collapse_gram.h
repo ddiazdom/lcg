@@ -8,6 +8,17 @@
 #include "plain_gram.h"
 #include "text_handler.h"
 
+#ifdef DEBUG_MESSAGES
+    #define COLL_REPORT(lvl) \
+        do{\
+            if(!sink_set.empty()){\
+                std::cout<<"  Growth_factor level_"<<lvl<<": "<<float(size_before)/float(sink_gram.ter_dict.size())<<std::endl;\
+            }\
+        }while(0);
+#else
+    #define COLL_REPORT(lvl) do{}while(0);
+#endif
+
 void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
@@ -74,10 +85,7 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
         }
         chunk.gram.ter_dict.clear();//the table is fully destroyed
     }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_gram.ter_dict.size())<<std::endl;
-    }
+    COLL_REPORT(1)
 }
 
 void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
@@ -105,10 +113,7 @@ void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
         assert(phrase==o_map_len);
         coll_set.clear();
     }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_set.size())<<std::endl;
-    }
+    COLL_REPORT(1)
 }
 
 void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink) {
@@ -195,10 +200,7 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
         chunk.gram.fps[round]= mem<uint64_t>::reallocate(chunk.gram.fps[round], 1);
         chunk.gram.fps_len[round] = 1;
     }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor 1 "<<float(size_before)/float(sink_set.size())<<std::endl;
-    }
+    COLL_REPORT((round+1))
 }
 
 void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink){
@@ -240,10 +242,7 @@ void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
         chunk.gram.fps[round] = mem<uint64_t>::reallocate(chunk.gram.fps[round], 1);
         chunk.gram.fps_len[round] = 1;
     }
-
-    if(!sink_set.empty()){
-        std::cout<<"  Growth factor "<<round+1<<" "<<float(size_before)/float(sink_set.size())<<std::endl;
-    }
+    COLL_REPORT((round+1))
 }
 
 void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
@@ -290,12 +289,6 @@ void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
             //text_chunks[0].comp_string[pos++] = text_chunks[i].fps[n][text_chunks[i].comp_string[j]]+1;
         }
         chunk.gram.comp_string.clear();
-    }
-
-    size_t round=0;
-    sink_gram.update_fps(round++);
-    while(!sink_gram.nt_dicts[round-1].empty()){
-        sink_gram.update_fps(round++);
     }
 }
 #endif //LCG_COLLAPSE_TEMP_GRAM_H

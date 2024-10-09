@@ -18,6 +18,27 @@
 #include "cds/utils.h"
 #include "cds/vbyte_encoding.h"
 
+#ifdef DEBUG_MESSAGES
+    #define PARSING_DEBUG_INFO\
+        do{std::cout<<"Parsed_input "<<report_space((off_t)p_state.proc_syms)<<\
+                      ", malloc_peak "<<report_space((off_t)malloc_count_peak())<<\
+                      ", byte_usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<\
+                      ", input_fraction "<<input_frac<<std::endl;}while(0);
+#else
+    #define PARSING_DEBUG_INFO std::cout<<std::fixed << std::setprecision(2);\
+                               std::cout<<"\rProcessed input: "<<\
+                                          report_space((off_t)p_state.proc_syms)<<\
+                                          " ("<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)"<<std::flush;
+#endif
+
+#ifdef DEBUG_MESSAGES
+    #define REPORT_GRAM_SIZE\
+        std::cout<<"Sink grammar space: real:"<<report_space((off_t)sink_gram.mem_usage())<<\
+                   " eff:"<<report_space((off_t)sink_gram.eff_mem_usage())<<std::endl;
+#else
+    #define REPORT_GRAM_SIZE do{}while(0);
+#endif
+
 struct parsing_opts{
     size_t n_threads{};
     unsigned long n_chunks{};
@@ -516,7 +537,6 @@ void int_par_l2r<true>(text_chunk& chunk){
             if(!found){
                 mt_sym = next_av_mt_in_sink + chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, hash);
             }
-
             text[parse_size]=sep_sym;
             parse_size+=new_str;
             text[parse_size++] = mt_sym+1;
@@ -709,8 +729,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
 
-        std::cout<<"Parsed_input "<<report_space((off_t)p_state.proc_syms)<<", malloc_peak "<<report_space((off_t)malloc_count_peak())<<", byte_usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<", input_fraction "<<input_frac<<" "<<std::endl;
-        //malloc_count_reset_peak();
+        PARSING_DEBUG_INFO
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].id = p_state.chunk_id++;
@@ -742,8 +761,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
 
-        std::cout<<"Parsed_input "<<report_space((off_t)p_state.proc_syms)<<", malloc_peak "<<report_space((off_t)malloc_count_peak())<<", byte_usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<", input_fraction "<<input_frac<<std::endl;
-        //malloc_count_reset_peak();
+        PARSING_DEBUG_INFO
 
 #ifdef __linux__
         p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
@@ -759,10 +777,42 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     }
 }
 
-void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
+void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
+                     size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram, float i_frac) {
+
+    off_t f_size = file_size(i_file);
+    parsing_opts p_opts;
+    p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
+    p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, 1024*1024*200);//the chunks do not exceed the 200MB by design
+
+    size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
+    n_threads = std::min(n_threads, tot_chunks);
+
+    p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
+    p_opts.n_chunks = std::min<unsigned long>(p_opts.n_chunks, tot_chunks);
+    p_opts.n_threads = n_threads;
+    p_opts.page_cache_limit = 1024*1024*1024;
+    p_opts.sep_sym = '\n';
+    //p_opts.orig_seed = par_seed;
+    p_opts.i_frac = i_frac;
+
+    /*std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
+    std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
+    p_opts.p_seeds.resize(32);
+    for(size_t i=0;i<32;i++){
+        //p_opts.p_seeds[i] = distrib(gen);
+        p_opts.p_seeds[i] = 0;
+    }*/
+
+    std::cout<<"  Settings"<<std::endl;
+    std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
+    //std::cout<<"    Parsing seed              : "<<p_opts.orig_seed<<std::endl;
+    std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
+    std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;
 
     plain_gram sink_gram(40, p_opts.sep_sym);
-    parsing_state par_state(text_file, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, p_opts.i_frac);
+    parsing_state par_state(i_file, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, p_opts.i_frac);
 
     //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
     std::vector<text_chunk> text_chunks;
@@ -773,65 +823,21 @@ void build_partial_grammars(parsing_opts& p_opts, std::string& text_file) {
 
     fill_chunk_grammars<false>(text_chunks, par_state);
     collapse_grams(sink_gram, text_chunks);
+    sink_gram.update_fps();
     par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
-    std::cout<<"Sink grammar space: tot:"<<report_space((off_t)sink_gram.mem_usage())<<" eff:"<<report_space((off_t)sink_gram.eff_mem_usage())<<std::endl;
+    REPORT_GRAM_SIZE
 
     while(par_state.rem_bytes>0){
         fill_chunk_grammars<true>(text_chunks, par_state);
         collapse_grams(sink_gram, text_chunks);
+        sink_gram.update_fps();
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
-        std::cout<<"Sink grammar space: tot:"<<report_space((off_t)sink_gram.mem_usage())<<" eff:"<<report_space((off_t)sink_gram.eff_mem_usage())<<std::endl;
+        REPORT_GRAM_SIZE
     }
+    std::cout<<""<<std::endl;
     sink_gram.print_stats();
-}
 
-
-void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
-                     size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram, float i_frac) {
-
-    off_t f_size = file_size(i_file);
-    parsing_opts p_opts;
-    p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
-    //p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, std::numeric_limits<uint32_t>::max());//the chunks cannot exceed the 4GB by design
-    p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, 1024*1024*200);//the chunks doest not exceed the 200MB by design
-
-    size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
-    n_threads = std::min(n_threads, tot_chunks);
-
-    //TODO remove the control over the number of chunks
-    p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
-    p_opts.n_chunks = std::min<unsigned long>(p_opts.n_chunks, tot_chunks);
-
-    p_opts.n_threads = n_threads;
-
-    p_opts.page_cache_limit = 1024*1024*1024;
-    p_opts.sep_sym = '\n';
-    p_opts.orig_seed = par_seed;
-    p_opts.i_frac = i_frac;
-
-    std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
-    std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
-    p_opts.p_seeds.resize(32);
-    for(size_t i=0;i<32;i++){
-        //p_opts.p_seeds[i] = distrib(gen);
-        p_opts.p_seeds[i] = 0;
-    }
-
-    std::cout<<"  Settings"<<std::endl;
-    //std::cout<<"    Parsing mode              : short strings (<= 4 GBs)"<<std::endl;
-    std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
-    //std::cout<<"    Parsing seed              : "<<p_opts.orig_seed<<std::endl;
-    std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
-    std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
-    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;
-
-    build_partial_grammars(p_opts, i_file);
-
-    //merge_many_grams_in_serial(ct_p_grams_file, p_opts.n_threads);
-    /*std::string mg_p_gram_file = par_gram? o_file : tmp_ws.get_file("merged_p_grams");
-    merge_partial_grammars<sym_type>(ct_p_grams_file, mg_p_gram_file, p_opts.p_seeds, p_opts.n_threads);
-
-    if(!par_gram){
+    /*if(!par_gram){
         gram_type final_grammar;
         partial2complete_gram(final_grammar, mg_p_gram_file, par_seed);
         store_to_file(o_file, final_grammar);

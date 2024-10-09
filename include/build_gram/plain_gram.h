@@ -150,6 +150,14 @@ struct plain_gram{
         }
     }
 
+    inline void update_fps() {
+        size_t round=0;
+        update_fps(round++);
+        while(!nt_dicts[round-1].empty()){
+            update_fps(round++);
+        }
+    }
+
     inline void update_fps_with_sink(size_t round, const plain_gram& sink){
         if(round>0){
             nt_dicts[round-1].update_fps_with_sink(sink.fps[round], sink.fps_len[round], sink.alphabet(round),

@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.7)  # CMake version check
-project(lcg)                 # Create project "simple_example"
-set(CMAKE_CXX_STANDARD 17)           # Enable c++17 standard
+cmake_minimum_required(VERSION 3.7)
+project(lcg)
+set(CMAKE_CXX_STANDARD 17)
 
 # Add main.cpp file of project root directory as source file
 set(SOURCE_FILES main.cpp
@@ -15,6 +15,10 @@ add_executable(lcg ${SOURCE_FILES})
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
         -O3
 )
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        #target_compile_definitions(lcg PRIVATE DEBUG_MESSAGES)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(STATUS "Disabling vla-extension due to ${CMAKE_CXX_COMPILER_ID}")
