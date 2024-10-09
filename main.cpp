@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
 
     if(app.got_subcommand("cmp")) {
 
-        std::cout << "\nInput file:       " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
+        std::cout << "\nInput file: " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;

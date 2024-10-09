@@ -194,6 +194,15 @@ public:
         copy(other);
     }
 
+    void set_load_factor(float new_max_lf){
+        m_max_load_factor = new_max_lf;
+        frac_lf = size_t(m_max_load_factor*100);
+        elm_threshold = (m_table.size()*frac_lf)/100;
+        if(n_phrases>=elm_threshold) {
+            rehash(next_power_of_two(m_table.size()));
+        }
+    }
+
     void copy(const phrase_set& other){
         stream_size = other.stream_size;
         stream_cap = other.stream_cap;
@@ -562,6 +571,10 @@ public:
         return m_table.size();
     };
 
+    [[nodiscard]] inline size_t stream_len() const {
+        return stream_size;
+    }
+
     [[nodiscard]] inline size_t table_mem_usage() const {
         return m_table.size()*sizeof(table_t::value_type);
     }
@@ -580,6 +593,13 @@ public:
 
     inline const seq_type* phr_stream() const {
         return phrase_stream;
+    }
+
+    inline void set_stream_capacity(size_t new_capacity){
+        if(new_capacity>=stream_size){
+            stream_cap = new_capacity;
+            phrase_stream = mem<seq_type>::reallocate(phrase_stream, stream_cap);
+        }
     }
 
     void shrink_to_fit() {
@@ -606,6 +626,10 @@ public:
 
     [[nodiscard]] size_t buff_bytes_available() const {
         return (stream_cap-stream_size)*sizeof(seq_type);
+    }
+
+    [[nodiscard]] size_t stream_capacity() const {
+        return stream_cap;
     }
 
     ~phrase_set(){

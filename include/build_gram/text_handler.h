@@ -34,14 +34,9 @@ struct text_chunk {
     //area of the buffer free for satellite data
     off_t used_bytes=0;
 
-    explicit text_chunk(const plain_gram& _sink_gram):   sink_gram(_sink_gram),
-                                                         sep_sym(sink_gram.sep_sym()),
-                                                         gram(sink_gram.lvl_cap(), sep_sym){
-        //gram.fps[1]= mem<uint64_t>::reallocate(gram.fps[1], 10);
-        //chunk.p_gram.max_tsym = std::numeric_limits<sym_type>::max();
-        //chunk.p_gram.sep_tsym = chunk.sep_sym;
-        //chunk.p_gram.text_size = chunk.text_bytes/sizeof(sym_type);
-        //chunk.p_gram.txt_id = chunk.id;
+    explicit text_chunk(const plain_gram& _sink_gram, float load_factor=0.85): sink_gram(_sink_gram),
+                                                                               sep_sym(sink_gram.sep_sym()),
+                                                                               gram(sink_gram.lvl_cap(), sep_sym, load_factor){
     }
 
     [[nodiscard]] off_t eff_buff_bytes() const{

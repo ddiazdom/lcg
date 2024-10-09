@@ -14,11 +14,16 @@ struct plain_gram{
     size_t n_levels=0;
     uint8_t s_sym='\n';
 
-    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym){
+    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, float load_factor=0.85){
+
         assert(lvl_cap>2);
+        ter_dict.set_load_factor(load_factor);
         fps.resize(lvl_cap);
         fps_len.resize(lvl_cap);
         nt_dicts.resize(lvl_cap-2);
+        for(auto &nt_lvl: nt_dicts){
+            nt_lvl.set_load_factor(load_factor);
+        }
         s_sym = sep_sym;
 
         size_t alpha_size = std::numeric_limits<uint8_t>::max()+1;
@@ -89,10 +94,12 @@ struct plain_gram{
         std::swap(s_sym, other.s_sym);
     }
 
+    [[nodiscard]] inline bool empty() const {
+        return ter_dict.empty();
+    }
+
     size_t mem_usage(){
-
         size_t bytes = ter_dict.mem_usage();
-
         for(auto const& dict: nt_dicts){
             bytes+=dict.mem_usage();
         }
@@ -101,7 +108,6 @@ struct plain_gram{
             bytes+=f_len*sizeof(uint64_t);
             bytes+=sizeof(uint64_t);//the length
         }
-
         return bytes;
     }
 
@@ -191,7 +197,7 @@ struct plain_gram{
     }
 
     ~plain_gram(){
-        if(!ter_dict.empty()){
+        /*if(!ter_dict.empty()){
             std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
             ter_dict.psl_dist();
         }
@@ -202,7 +208,7 @@ struct plain_gram{
                 nt_dict.psl_dist();
             }
             i++;
-        }
+        }*/
 
         for(auto fps_set : fps){
             if(fps_set!= nullptr){
