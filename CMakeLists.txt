@@ -21,7 +21,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
-        #-O3
+        -O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

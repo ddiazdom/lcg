@@ -62,17 +62,15 @@ struct parsing_state {
     size_t chunk_id=0;
     size_t proc_syms=0;
     size_t sink_gram_mem_usage=0;
+    size_t factor_inc = 1;
     float max_frac;
-    uint64_t max_read_chunks;
-    uint64_t read_chunks=0;
 
-    parsing_state(std::string& i_file, uint8_t s_sym, size_t c_size, size_t _n_threads,
-                  off_t p_cache_lim, float _max_frac, uint64_t rchunk_lim): chunk_size(c_size),
-                                                                            sep_sym(s_sym),
-                                                                            n_threads(_n_threads),
-                                                                            page_cache_limit(p_cache_lim),
-                                                                            max_frac(_max_frac),
-                                                                            max_read_chunks(rchunk_lim){
+    parsing_state(std::string& i_file, uint8_t s_sym, size_t c_size,
+                  size_t _n_threads, off_t p_cache_lim, float _max_frac): chunk_size(c_size),
+                                                                          sep_sym(s_sym),
+                                                                          n_threads(_n_threads),
+                                                                          page_cache_limit(p_cache_lim),
+                                                                          max_frac(_max_frac){
         fd_r = open(i_file.c_str(), O_RDONLY);
         f_size = file_size(i_file);
 #ifdef __linux__
@@ -340,7 +338,7 @@ void int_par_l2r<true>(text_chunk& chunk){
     uint32_t left_sym, middle_sym;
     uint64_t left_fp, middle_fp, right_fp;
     off_t i=0, parse_size = 0, phrase_len, lb, rb;
-    bool new_str=false, in_sink;
+    bool new_str=false, in_sink, has_new_sym;
 
     lb = 0;
     left_sym = text[i];
@@ -525,17 +523,13 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
     auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
     size_t buff_id = 0;
-    assert(p_state.max_read_chunks>=text_chunks.size());
-    p_state.read_chunks=0;
 
     while(buff_id < text_chunks.size() && p_state.rem_bytes > 0) {
-
         tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
-        p_state.read_chunks++;
 
         read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
         buffers_to_process.push(buff_id);
@@ -556,10 +550,12 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     // if the sink grammar already exceeds the input fraction limit,
     // we simulate to add a new text chunk
     if(input_frac>p_state.max_frac){
-        p_state.max_frac= input_frac+p_state.max_frac/float(text_chunks.size());
+        float inc_frac = (p_state.max_frac/float(text_chunks.size()))*(float)p_state.factor_inc;
+        p_state.max_frac= input_frac+inc_frac;
+        p_state.factor_inc++;
     }
 
-    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac && p_state.read_chunks<p_state.max_read_chunks) {
+    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
 
         buffers_to_reuse.pop(buff_id);
         p_state.proc_syms+=text_chunks[buff_id].text_bytes;
@@ -569,7 +565,6 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         acc_bytes += new_byte_count;
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
-        p_state.read_chunks++;
 
         PARSING_INFO
 
@@ -628,7 +623,6 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
     //for inputs over 100GB, each thread grammar uses up to 1.5% of the input
     //for inputs over 1000GB, each thread grammar uses up to 0.6% of the input
     float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
-    uint64_t read_chunks_limits[4] = {20, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF};
 
     //if the chunk size is undefined, we set it to 0.5% of the input file
     chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
@@ -646,19 +640,14 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
 
     //compute the rules to collapse the local grammars into the sink grammar
     float i_frac;
-    uint64_t read_chunk_limit;
     if(f_size<=COL_THRESHOLD_1){
         i_frac = i_fracs[0];
-        read_chunk_limit = read_chunks_limits[0];
     } else if(f_size<=COL_THRESHOLD_2){
         i_frac = i_fracs[1];
-        read_chunk_limit = read_chunks_limits[1];
     } else if(f_size<=COL_THRESHOLD_3){
         i_frac = i_fracs[2];
-        read_chunk_limit = read_chunks_limits[2];
-    }else{
+    } else{
         i_frac = i_fracs[3];
-        read_chunk_limit = read_chunks_limits[3];
     }
 
     //The algorithm collapse the local grammars when:
@@ -666,11 +655,6 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
     //it already read proc_chunk_limit text chunks from the input file
     //notice this is an OR condition
     i_frac *=float(n_chunks);
-
-    // The proc_chunk_limit has to be at least the number of active chunks
-    // but no more than the total number of chunks
-    read_chunk_limit = std::max<uint64_t>(read_chunk_limit, n_chunks);
-    read_chunk_limit = std::min<uint64_t>(read_chunk_limit, tot_chunks);
 
     // maximum number of bytes we accept in the page cache when reading the input file.
     // Once we exceed this threshold. we ask the kernel to remove the last file pages
@@ -685,13 +669,12 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
     std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
     std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
     std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<std::endl;
-    std::cout<<"    Collapse rules:           : "<<i_frac<<" input frac. and "<<read_chunk_limit<<" chunks"<<std::endl;
 
-    // We set a cap on the number of grammar level to 40.
+    // We set the number of grammar level to 40.
     // This limit is enough to process strings of up to 4TB in length.
-    // This combined length of the collection can be arbitrarily large.
+    // However, the combined length of the string collection can be arbitrarily large.
     plain_gram sink_gram(40, sep_sym);
-    parsing_state par_state(i_file, sep_sym, chunk_size, n_threads, page_cache_limit, i_frac, read_chunk_limit);
+    parsing_state par_state(i_file, sep_sym, chunk_size, n_threads, page_cache_limit, i_frac);
 
     //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
     std::vector<text_chunk> chunks;
