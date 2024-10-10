@@ -326,44 +326,53 @@ template<>
 void int_par_l2r<true>(text_chunk& chunk){
 
     assert(chunk.round>0);
-    const uint64_t* fps[2] = {chunk.gram.fps[chunk.round], chunk.sink_gram.fps[chunk.round]};
+    const uint64_t* fps[2] = {chunk.sink_gram.fps[chunk.round], chunk.gram.fps[chunk.round]};
 
     uint64_t hash;
     uint32_t next_av_mt_in_sink = chunk.sink_gram.nt_dicts[chunk.round-1].size();
     uint32_t alpha_sink = chunk.sink_gram.alphabet(chunk.round);
-    uint64_t sym_offset[2] = {alpha_sink, 0};
+    uint64_t sym_offset[2] = {0, alpha_sink};
 
     uint32_t *text = chunk.parse;
     uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
     uint32_t left_sym, middle_sym;
     uint64_t left_fp, middle_fp, right_fp;
     off_t i=0, parse_size = 0, phrase_len, lb, rb;
-    bool new_str=false, in_sink, has_new_sym;
+    bool new_str=false, left_is_new, middle_is_new, right_is_new, phrase_is_new;
 
     lb = 0;
     left_sym = text[i];
-    in_sink = left_sym<=alpha_sink;
-    left_fp = fps[in_sink][left_sym-sym_offset[in_sink]];
+    left_is_new = left_sym>alpha_sink;
+    phrase_is_new = left_is_new;
+
+    left_fp = fps[left_is_new][left_sym-sym_offset[left_is_new]];
 
     while(++i<txt_size && text[i]==left_sym);
     assert(i<txt_size);
 
     middle_sym = text[i];
-    in_sink = middle_sym<=alpha_sink;
-    middle_fp = fps[in_sink][middle_sym-sym_offset[in_sink]];
+    middle_is_new = middle_sym>alpha_sink;
+    middle_fp = fps[middle_is_new][middle_sym-sym_offset[middle_is_new]];
     rb=i;
     while(++i<txt_size && text[i]==middle_sym);
 
     while(i<txt_size) {
-        in_sink = text[i]<=alpha_sink;
-        right_fp = fps[in_sink][text[i]-sym_offset[in_sink]];
+        right_is_new = text[i]>alpha_sink;
+        right_fp = fps[right_is_new][text[i]-sym_offset[right_is_new]];
 
         if(left_fp>middle_fp && middle_fp<right_fp){//local minimum
             phrase_len = rb-lb;
 
+            //TODO remove this block later
+            /*bool tmp=false;
+            for(off_t k=lb;k<lb+phrase_len;k++){
+                tmp+=text[k]>alpha_sink;
+            }
+            assert(tmp==phrase_is_new);*/
+            //
+
             hash = XXH3_64bits(&text[lb], phrase_len*sizeof(uint32_t));
-            bool found = chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash);
-            if(!found){
+            if(phrase_is_new || !chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash)){
                 mt_sym = next_av_mt_in_sink + chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, hash);
             }
             text[parse_size]=sep_sym;
@@ -371,19 +380,34 @@ void int_par_l2r<true>(text_chunk& chunk){
             text[parse_size++] = mt_sym+1;
             new_str = text[rb]==sep_sym;
             lb = rb+new_str;
+            phrase_is_new=false;
         }
+
+        phrase_is_new |= middle_is_new;
         left_fp = middle_fp;
+
         middle_fp = right_fp;
+        middle_is_new = right_is_new;
         middle_sym = text[i];
+
         rb = i;
         while(++i<txt_size && text[i]==middle_sym);
     }
     assert(rb==(txt_size-1) && text[rb]==sep_sym);
 
+    phrase_is_new |= middle_is_new;
     phrase_len = rb-lb;
+
+    //TODO remove this block later
+    /*bool tmp=false;
+    for(off_t k=lb;k<lb+phrase_len;k++){
+        tmp+=text[k]>alpha_sink;
+    }
+    assert(tmp==phrase_is_new);*/
+    //
+
     hash = XXH3_64bits(&text[lb], phrase_len*sizeof(uint32_t));
-    bool found = chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash);
-    if(!found){
+    if(phrase_is_new || !chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash)){
         mt_sym = next_av_mt_in_sink+chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, hash);
     }
 
