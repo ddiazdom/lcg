@@ -6,6 +6,7 @@
 #define LCG_TEXT_HANDLER_H
 
 #include "plain_gram.h"
+#include <unistd.h>
 
 struct text_chunk {
 

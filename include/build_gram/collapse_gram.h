@@ -16,7 +16,7 @@
             }\
         }while(0);
 #else
-    #define COLL_REPORT(lvl) do{}while(0);
+    #define COLL_REPORT(lvl, output_set) do{}while(0);
 #endif
 
 void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
