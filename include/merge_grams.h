@@ -8,7 +8,10 @@
 #include "partial_gram.h"
 #include "ext_gram.h"
 #include "cds/memory_handler.hpp"
+
+#ifdef DEBUG_MODE
 #include "malloc_count.h"
+#endif
 
 struct merge_data_t{
 
@@ -57,7 +60,7 @@ struct merge_data_t{
     }
 };
 
-
+/*
 void merge_many_grams_in_serial(std::string& concat_grammars, size_t n_threads) {
     size_t rem = file_size(concat_grammars);
     int fd_r = open(concat_grammars.c_str(), O_RDONLY);
@@ -77,7 +80,7 @@ void merge_many_grams_in_serial(std::string& concat_grammars, size_t n_threads) 
         rem-=read_bytes;
         n_mrg++;
     }
-}
+}*/
 
 template<class p_gram_type>
 void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_gram_b, std::vector<uint64_t>& fp_seeds) {
@@ -193,7 +196,7 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
         }
         tmp_bytes+=mg_data.fps.size()*sizeof(uint64_t);
         //
-        std::cout<<report_space((off_t)tmp_bytes)<<" "<<malloc_count_peak()<<std::endl;
+        //std::cout<<report_space((off_t)tmp_bytes)<<" "<<malloc_count_peak()<<std::endl;
     }
 
     //NOTE: now p_gram_a.rules[min_lvl] or p_gram_b.rules[min_lvl] contains the concatenated strings, and we do not merge them

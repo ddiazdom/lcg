@@ -13,7 +13,7 @@ struct arguments{
     size_t n_threads=1;
     size_t n_chunks{};
     off_t chunk_size{};
-    float i_frac=0.1;
+    //float i_frac=0.1;
     bool ver=false;
     bool rand_acc=false;
     bool skip_simp=false;
@@ -110,22 +110,22 @@ void comp_int(std::string& input_file, arguments& args) {
         if(args.rand_acc){
             build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
                                                       args.n_chunks, args.chunk_size, args.seed,
-                                                      args.skip_simp, args.part, args.i_frac);
+                                                      args.skip_simp, args.part);
         }else{
 
             build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
                                                        args.n_chunks, args.chunk_size, args.seed,
-                                                       args.skip_simp, args.part, args.i_frac);
+                                                       args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
             build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
                                                      args.n_chunks, args.chunk_size, args.seed,
-                                                     args.skip_simp, args.part, args.i_frac);
+                                                     args.skip_simp, args.part);
         } else {
             build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
                                                       args.n_chunks, args.chunk_size, args.seed,
-                                                      args.skip_simp, args.part, args.i_frac);
+                                                      args.skip_simp, args.part);
         }
     }
 }

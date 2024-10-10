@@ -2,15 +2,24 @@
 // Created by Diaz, Diego on 17.9.2023.
 //
 
-#ifndef LCG_LZ_LIKE_LC_PARSING_H
-#define LCG_LZ_LIKE_LC_PARSING_H
+#ifndef LCG_LC_PARSING_H
+#define LCG_LC_PARSING_H
 
-#include <random>
 #include <fcntl.h>
-#include <cstring>
+
+//threshold to collapse the local grammars
+//10GB
+#define COL_THRESHOLD_1 10737418240
+//100GB
+#define COL_THRESHOLD_2 107374182400
+//1000GB = 1TB
+#define COL_THRESHOLD_3 1099511627776
+
+#ifdef DEBUG_MODE
+#include "malloc_count.h"
+#endif
 
 #include "xxhash.h"
-#include "malloc_count.h"
 #include "collapse_gram.h"
 
 #include "cds/ts_queue.h"
@@ -18,20 +27,21 @@
 #include "cds/utils.h"
 #include "cds/vbyte_encoding.h"
 
-#ifdef DEBUG_MESSAGES
-    #define PARSING_DEBUG_INFO\
+#ifdef DEBUG_MODE
+    #define PARSING_INFO\
         do{std::cout<<"Parsed_input "<<report_space((off_t)p_state.proc_syms)<<\
                       ", malloc_peak "<<report_space((off_t)malloc_count_peak())<<\
                       ", byte_usage "<<report_space((off_t)text_chunks[buff_id].gram.mem_usage())<<\
-                      ", input_fraction "<<input_frac<<std::endl;}while(0);
+                      ", input_fraction "<<input_frac<<\
+                      ", fraction_limit "<<p_state.max_frac<<std::endl;}while(0);
 #else
-    #define PARSING_DEBUG_INFO std::cout<<std::fixed << std::setprecision(2);\
-                               std::cout<<"\rProcessed input: "<<\
-                                          report_space((off_t)p_state.proc_syms)<<\
-                                          " ("<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)"<<std::flush;
+    #define PARSING_INFO std::cout<<std::fixed << std::setprecision(2);\
+                         std::cout<<"\rProcessed input: "<<\
+                                    report_space((off_t)p_state.proc_syms)<<\
+                                    " ("<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)"<<std::flush;
 #endif
 
-#ifdef DEBUG_MESSAGES
+#ifdef DEBUG_MODE
     #define REPORT_GRAM_SIZE\
         std::cout<<"Sink grammar space: real:"<<report_space((off_t)sink_gram.mem_usage())<<\
                    " eff:"<<report_space((off_t)sink_gram.eff_mem_usage())<<std::endl;
@@ -39,22 +49,12 @@
     #define REPORT_GRAM_SIZE do{}while(0);
 #endif
 
-struct parsing_opts{
-    size_t n_threads{};
-    unsigned long n_chunks{};
-    off_t chunk_size{};
-    off_t page_cache_limit{};
-    size_t sep_sym{};
-    //uint64_t orig_seed=0;//this is the seed to create random seeds for p_seeds
-    std::vector<uint64_t> p_seeds;
-    float i_frac{};
-};
-
-struct parsing_state{
+struct parsing_state {
     size_t chunk_size;
     uint8_t sep_sym;
     int fd_r;
     size_t f_size=0;
+    size_t n_threads=1;
     off_t rem_bytes=0;
     off_t read_bytes=0;
     off_t r_page_cache_bytes=0;
@@ -63,11 +63,16 @@ struct parsing_state{
     size_t proc_syms=0;
     size_t sink_gram_mem_usage=0;
     float max_frac;
+    uint64_t max_read_chunks;
+    uint64_t read_chunks=0;
 
-    parsing_state(std::string& i_file, uint8_t s_sym, size_t c_size, off_t p_cache_lim, float _max_frac): chunk_size(c_size),
-                                                                                                          sep_sym(s_sym),
-                                                                                                          page_cache_limit(p_cache_lim),
-                                                                                                          max_frac(_max_frac){
+    parsing_state(std::string& i_file, uint8_t s_sym, size_t c_size, size_t _n_threads,
+                  off_t p_cache_lim, float _max_frac, uint64_t rchunk_lim): chunk_size(c_size),
+                                                                            sep_sym(s_sym),
+                                                                            n_threads(_n_threads),
+                                                                            page_cache_limit(p_cache_lim),
+                                                                            max_frac(_max_frac),
+                                                                            max_read_chunks(rchunk_lim){
         fd_r = open(i_file.c_str(), O_RDONLY);
         f_size = file_size(i_file);
 #ifdef __linux__
@@ -101,180 +106,6 @@ struct phrase_overflow{
         return position+length-1;
     }
 };
-
-/*struct inv_perm_elm{
-    uint32_t orig_mt;
-    uint64_t fp;
-};*/
-
-/*template<class sym_type, bool p_round>
-void create_meta_sym(text_chunk& chunk, uint64_t pf_seed, const phrase_set<sym_type>& dict,
-                      buff_vector<uint64_t>& prev_fps){
-
-    sym_type* text;
-    off_t txt_size;
-    if constexpr (p_round){
-        text = chunk.text;
-        txt_size = chunk.text_bytes;
-    }else{
-        text = chunk.parse;
-        txt_size = chunk.parse_size;
-    }
-
-    auto avb_addr = chunk.get_free_mem_area();
-    buff_vector<uint64_t> new_fps(avb_addr.first, avb_addr.second);
-    new_fps.resize(dict.size()+1);
-    chunk.add_used_bytes((off_t)new_fps.static_buff_usage());
-
-    size_t source, end, tot_symbols=0;
-    std::vector<uint64_t> fp_sequence;
-    new_fps[0] = 0;
-    for(size_t i=0, mt_sym=1;i<dict.size();i++, mt_sym++) {
-        source = phrase_set[i].source;
-        end = source + phrase_set[i].len;
-        for(size_t j=source;j<end;j++){
-            assert(text[j]>0);
-            assert(text[j]<prev_fps.size());
-            fp_sequence.push_back(prev_fps[text[j]]);
-        }
-        //inv_mt_perm[i].fp = XXH3_64bits_withSeed(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
-        new_fps[mt_sym] = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
-        tot_symbols+=fp_sequence.size();
-        fp_sequence.clear();
-    }
-
-    new_fps.swap(prev_fps);
-    new_fps.destroy();
-    //TODO handle this later
-    //chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols);
-}*/
-
-/*
-template<class sym_type>
-void merge_partial_grammars(std::string& ct_p_grams_file, std::string& mg_p_gram_file,
-                            std::vector<uint64_t>& p_seeds, size_t n_threads) {
-
-    using p_gram_type = partial_gram<sym_type>;
-
-    std::vector<std::pair<p_gram_type, std::vector<std::pair<size_t, size_t>>>> initial_grams(n_threads);
-
-    ts_queue<size_t> gram_to_merge_queue;
-    ts_queue<size_t> av_buff_queue;
-
-    //std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
-    int fd_r = open(ct_p_grams_file.c_str(), O_RDONLY);
-    size_t tot_bytes = file_size(ct_p_grams_file);
-    size_t rem_bytes =  tot_bytes;
-    size_t read_bytes;
-    size_t i=0;
-
-    while(i<n_threads && rem_bytes>0){
-
-        read_bytes = initial_grams[i].first.load_from_fd(fd_r);
-        //store the range of strings this partial gram covers
-        initial_grams[i].second.push_back({initial_grams[i].first.txt_id,
-                                           initial_grams[i].first.tot_strings()});
-        rem_bytes-=read_bytes;
-
-        //this is just to indicate that the first n_thread buffers are ready to be
-        // loaded with n_thread grammars, which we will merge the initial grammars
-        av_buff_queue.push(i);
-        //
-
-        i++;
-    }
-
-    n_threads = i;
-    std::vector<p_gram_type> grams_to_merge(n_threads);
-    size_t prog_bytes=0;
-
-    auto gram_read_worker = [&](){
-
-        if(rem_bytes==0){
-            gram_to_merge_queue.done();
-        }else{
-            size_t buff_id;
-            while(rem_bytes > 0){
-                av_buff_queue.pop(buff_id);
-                read_bytes = grams_to_merge[buff_id].load_from_fd(fd_r);
-                gram_to_merge_queue.push(buff_id);
-                rem_bytes-=read_bytes;
-                prog_bytes+=read_bytes;
-                //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
-                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
-            }
-            while(av_buff_queue.size()<n_threads);
-            gram_to_merge_queue.done();
-        }
-
-        //no longer needed
-        for(auto &gram : grams_to_merge){
-            gram.destroy_gram();
-        }
-
-        if(n_threads>1) {
-            //merge the partial grams of the different threads into one
-            size_t n_ranges=0;
-            for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
-            initial_grams[i].second.reserve(n_ranges);
-
-            //this step is incorrect as it assumes all the initial grams are the same size,
-            // but it gives us an estimate of the remaining %
-            size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
-
-            for (size_t i = 1; i < n_threads; i++) {
-                merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
-                //store the range of strings this partial gram covers
-                initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
-                initial_grams[i].first.destroy_gram();
-                destroy(initial_grams[i].second);
-
-                prog_bytes+=rem_prog_bytes;
-                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
-                malloc_count_reset_peak();
-            }
-            initial_grams[0].second.shrink_to_fit();
-#ifdef __linux__
-            malloc_trim(0);
-#endif
-            initial_grams[0].first.reorder_strings(initial_grams[0].second);
-        }
-
-        store_to_file(mg_p_gram_file, initial_grams[0].first);
-        initial_grams[0].first.destroy_gram();
-#ifdef __linux__
-        malloc_trim(0);
-#endif
-    };
-
-    auto gram_merge_worker = [&](size_t idx){
-
-        size_t buff_id;
-        bool res;
-
-        while (true) {
-            res = gram_to_merge_queue.pop(buff_id);
-            if (!res) break;
-            merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
-            if(n_threads>1){//this step is to later reorder the strings in the final grammar
-                initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
-                                                     grams_to_merge[buff_id].tot_strings()});
-            }
-            av_buff_queue.push(buff_id);
-        }
-    };
-
-    std::vector<std::thread> threads;
-    threads.emplace_back(gram_read_worker);
-    for(size_t j=0;j<n_threads;j++){
-        threads.emplace_back(gram_merge_worker, j);
-    }
-
-    for (auto &thread: threads) {
-        thread.join();
-    }
-}
-*/
 
 void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
 
@@ -659,7 +490,6 @@ void compress_text_chunk(text_chunk& chunk){
     //report_time(start, end , 2);
 }
 
-
 template<bool query_sink>
 void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_state){
 
@@ -688,23 +518,24 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     };
 
     std::vector<std::thread> threads;
-    for (size_t i = 0; i < text_chunks.size(); i++) {
+    threads.reserve(p_state.n_threads);
+    for (size_t i = 0; i < p_state.n_threads; i++) {
         threads.emplace_back(compressor_worker);
     }
 
     auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
     size_t buff_id = 0;
-    std::vector<size_t> byte_counts(text_chunks.size(), 0);
-    size_t acc_bytes = p_state.sink_gram_mem_usage;
-    float input_frac = 0;//we set it to 0 to enter the loop in case the sink grammar already exceeds the fraction threshold
+    assert(p_state.max_read_chunks>=text_chunks.size());
+    p_state.read_chunks=0;
 
-    while(buff_id < text_chunks.size() && p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+    while(buff_id < text_chunks.size() && p_state.rem_bytes > 0) {
 
         tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
+        p_state.read_chunks++;
 
         read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
         buffers_to_process.push(buff_id);
@@ -718,7 +549,17 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         buff_id++;
     }
 
-    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+    std::vector<size_t> byte_counts(text_chunks.size(), 0);
+    size_t acc_bytes = p_state.sink_gram_mem_usage;
+    float input_frac = float(acc_bytes)/float(p_state.f_size);
+
+    // if the sink grammar already exceeds the input fraction limit,
+    // we simulate to add a new text chunk
+    if(input_frac>p_state.max_frac){
+        p_state.max_frac= input_frac+p_state.max_frac/float(text_chunks.size());
+    }
+
+    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac && p_state.read_chunks<p_state.max_read_chunks) {
 
         buffers_to_reuse.pop(buff_id);
         p_state.proc_syms+=text_chunks[buff_id].text_bytes;
@@ -728,8 +569,9 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         acc_bytes += new_byte_count;
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
+        p_state.read_chunks++;
 
-        PARSING_DEBUG_INFO
+        PARSING_INFO
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].id = p_state.chunk_id++;
@@ -749,7 +591,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     buffers_to_process.done();
 
     //wait for all the parsers to finish
-    while(parser_finished.load(std::memory_order_acquire)!=text_chunks.size());
+    while(parser_finished.load(std::memory_order_acquire)!=threads.size());
 
     while(!buffers_to_reuse.empty()){
         buffers_to_reuse.pop(buff_id);
@@ -761,7 +603,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
 
-        PARSING_DEBUG_INFO
+        PARSING_INFO
 
 #ifdef __linux__
         p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
@@ -777,63 +619,101 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     }
 }
 
-void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
-                     size_t n_chunks, size_t chunk_size, size_t par_seed, bool par_gram, float i_frac) {
+void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t chunk_size, size_t par_seed, bool par_gram) {
 
     off_t f_size = file_size(i_file);
-    parsing_opts p_opts;
-    p_opts.chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
-    p_opts.chunk_size = std::min<off_t>(p_opts.chunk_size, 1024*1024*200);//the chunks do not exceed the 200MB by design
 
-    size_t tot_chunks = INT_CEIL(f_size, p_opts.chunk_size);
+    //for inputs up to 10GB, we collapse every 20 processed chunks
+    //for inputs over 10GB, each thread grammar uses up to 2.5% of the input
+    //for inputs over 100GB, each thread grammar uses up to 1.5% of the input
+    //for inputs over 1000GB, each thread grammar uses up to 0.6% of the input
+    float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
+    uint64_t read_chunks_limits[4] = {20, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF};
+
+    //if the chunk size is undefined, we set it to 0.5% of the input file
+    chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
+    // we put a cap on the chunk size of 200MB by design
+    // (bigger chunks only use more RAM and do not speed up the compression process)
+    chunk_size = std::min<off_t>(chunk_size, 1024*1024*200);
+
+    //the cap for the number of threads is the number of chunks
+    size_t tot_chunks = INT_CEIL(f_size, chunk_size);
     n_threads = std::min(n_threads, tot_chunks);
 
-    p_opts.n_chunks = n_chunks==0? n_threads+1 : n_chunks;
-    p_opts.n_chunks = std::min<unsigned long>(p_opts.n_chunks, tot_chunks);
-    p_opts.n_threads = n_threads;
-    p_opts.page_cache_limit = 1024*1024*1024;
-    p_opts.sep_sym = '\n';
-    //p_opts.orig_seed = par_seed;
-    p_opts.i_frac = i_frac;
+    n_chunks = n_chunks==0? n_threads+1 : n_chunks;
+    //we cannot set more chunks thant the total number of chunks in the input file
+    n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
 
-    /*std::mt19937 gen(par_seed); // Standard mersenne_twister_engine seeded with a fixed value
-    std::uniform_int_distribution<uint64_t> distrib(1, std::numeric_limits<uint64_t>::max());
-    p_opts.p_seeds.resize(32);
-    for(size_t i=0;i<32;i++){
-        //p_opts.p_seeds[i] = distrib(gen);
-        p_opts.p_seeds[i] = 0;
-    }*/
-
-    std::cout<<"  Settings"<<std::endl;
-    std::cout<<"    Parsing threads           : "<<p_opts.n_threads<<std::endl;
-    //std::cout<<"    Parsing seed              : "<<p_opts.orig_seed<<std::endl;
-    std::cout<<"    Active text chunks in RAM : "<<p_opts.n_chunks<<std::endl;
-    std::cout<<"    Size of each chunk        : "<<report_space(p_opts.chunk_size)<<std::endl;
-    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((p_opts.chunk_size*115)/100)*p_opts.n_chunks))<<"\n"<<std::endl;
-
-    plain_gram sink_gram(40, p_opts.sep_sym);
-    parsing_state par_state(i_file, p_opts.sep_sym, p_opts.chunk_size, p_opts.page_cache_limit, p_opts.i_frac);
-
-    //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
-    std::vector<text_chunk> text_chunks;
-    text_chunks.reserve(p_opts.n_threads);
-    for(size_t i=0;i<p_opts.n_threads;i++){
-        text_chunks.emplace_back(sink_gram);
+    //compute the rules to collapse the local grammars into the sink grammar
+    float i_frac;
+    uint64_t read_chunk_limit;
+    if(f_size<=COL_THRESHOLD_1){
+        i_frac = i_fracs[0];
+        read_chunk_limit = read_chunks_limits[0];
+    } else if(f_size<=COL_THRESHOLD_2){
+        i_frac = i_fracs[1];
+        read_chunk_limit = read_chunks_limits[1];
+    } else if(f_size<=COL_THRESHOLD_3){
+        i_frac = i_fracs[2];
+        read_chunk_limit = read_chunks_limits[2];
+    }else{
+        i_frac = i_fracs[3];
+        read_chunk_limit = read_chunks_limits[3];
     }
 
-    fill_chunk_grammars<false>(text_chunks, par_state);
-    collapse_grams(sink_gram, text_chunks);
+    //The algorithm collapse the local grammars when:
+    //the sum of the space usage of the local grammars exceed f_size*i_frac
+    //it already read proc_chunk_limit text chunks from the input file
+    //notice this is an OR condition
+    i_frac *=float(n_chunks);
+
+    // The proc_chunk_limit has to be at least the number of active chunks
+    // but no more than the total number of chunks
+    read_chunk_limit = std::max<uint64_t>(read_chunk_limit, n_chunks);
+    read_chunk_limit = std::min<uint64_t>(read_chunk_limit, tot_chunks);
+
+    // maximum number of bytes we accept in the page cache when reading the input file.
+    // Once we exceed this threshold. we ask the kernel to remove the last file pages
+    // from the cache. This option only applies on linux
+    off_t page_cache_limit = 1024*1024*1024;
+
+    //hardcoding the separator symbol to '\n' for the moment
+    uint8_t sep_sym = '\n';
+
+    std::cout<<"  Settings"<<std::endl;
+    std::cout<<"    Parsing threads           : "<<n_threads<<std::endl;
+    std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
+    std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<std::endl;
+    std::cout<<"    Collapse rules:           : "<<i_frac<<" input frac. and "<<read_chunk_limit<<" chunks"<<std::endl;
+
+    // We set a cap on the number of grammar level to 40.
+    // This limit is enough to process strings of up to 4TB in length.
+    // This combined length of the collection can be arbitrarily large.
+    plain_gram sink_gram(40, sep_sym);
+    parsing_state par_state(i_file, sep_sym, chunk_size, n_threads, page_cache_limit, i_frac, read_chunk_limit);
+
+    //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
+    std::vector<text_chunk> chunks;
+    chunks.reserve(n_chunks);
+    for(size_t i=0;i<n_chunks;i++){
+        chunks.emplace_back(sink_gram);
+    }
+
+    fill_chunk_grammars<false>(chunks, par_state);
+    collapse_grams(sink_gram, chunks);
     sink_gram.update_fps();
     par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
     REPORT_GRAM_SIZE
 
     while(par_state.rem_bytes>0){
-        fill_chunk_grammars<true>(text_chunks, par_state);
-        collapse_grams(sink_gram, text_chunks);
+        fill_chunk_grammars<true>(chunks, par_state);
+        collapse_grams(sink_gram, chunks);
         sink_gram.update_fps();
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
         REPORT_GRAM_SIZE
     }
+
     std::cout<<""<<std::endl;
     sink_gram.print_stats();
 
@@ -844,4 +724,177 @@ void lc_parsing_algo(std::string& i_file, std::string& o_file, size_t n_threads,
     }*/
     exit(0);
 }
-#endif //LCG_LZ_LIKE_LC_PARSING_H
+/*struct inv_perm_elm{
+    uint32_t orig_mt;
+    uint64_t fp;
+};*/
+
+/*template<class sym_type, bool p_round>
+void create_meta_sym(text_chunk& chunk, uint64_t pf_seed, const phrase_set<sym_type>& dict,
+                      buff_vector<uint64_t>& prev_fps){
+
+    sym_type* text;
+    off_t txt_size;
+    if constexpr (p_round){
+        text = chunk.text;
+        txt_size = chunk.text_bytes;
+    }else{
+        text = chunk.parse;
+        txt_size = chunk.parse_size;
+    }
+
+    auto avb_addr = chunk.get_free_mem_area();
+    buff_vector<uint64_t> new_fps(avb_addr.first, avb_addr.second);
+    new_fps.resize(dict.size()+1);
+    chunk.add_used_bytes((off_t)new_fps.static_buff_usage());
+
+    size_t source, end, tot_symbols=0;
+    std::vector<uint64_t> fp_sequence;
+    new_fps[0] = 0;
+    for(size_t i=0, mt_sym=1;i<dict.size();i++, mt_sym++) {
+        source = phrase_set[i].source;
+        end = source + phrase_set[i].len;
+        for(size_t j=source;j<end;j++){
+            assert(text[j]>0);
+            assert(text[j]<prev_fps.size());
+            fp_sequence.push_back(prev_fps[text[j]]);
+        }
+        //inv_mt_perm[i].fp = XXH3_64bits_withSeed(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t), pf_seed);
+        new_fps[mt_sym] = XXH3_64bits(fp_sequence.data(), fp_sequence.size()*sizeof(uint64_t));
+        tot_symbols+=fp_sequence.size();
+        fp_sequence.clear();
+    }
+
+    new_fps.swap(prev_fps);
+    new_fps.destroy();
+    //TODO handle this later
+    //chunk.p_gram.template append_new_lvl<sym_type>(text, phrase_set, tot_symbols);
+}*/
+
+/*
+template<class sym_type>
+void merge_partial_grammars(std::string& ct_p_grams_file, std::string& mg_p_gram_file,
+                            std::vector<uint64_t>& p_seeds, size_t n_threads) {
+
+    using p_gram_type = partial_gram<sym_type>;
+
+    std::vector<std::pair<p_gram_type, std::vector<std::pair<size_t, size_t>>>> initial_grams(n_threads);
+
+    ts_queue<size_t> gram_to_merge_queue;
+    ts_queue<size_t> av_buff_queue;
+
+    //std::string p_grams_file = tmp_ws.get_file("concatenated_grams");
+    int fd_r = open(ct_p_grams_file.c_str(), O_RDONLY);
+    size_t tot_bytes = file_size(ct_p_grams_file);
+    size_t rem_bytes =  tot_bytes;
+    size_t read_bytes;
+    size_t i=0;
+
+    while(i<n_threads && rem_bytes>0){
+
+        read_bytes = initial_grams[i].first.load_from_fd(fd_r);
+        //store the range of strings this partial gram covers
+        initial_grams[i].second.push_back({initial_grams[i].first.txt_id,
+                                           initial_grams[i].first.tot_strings()});
+        rem_bytes-=read_bytes;
+
+        //this is just to indicate that the first n_thread buffers are ready to be
+        // loaded with n_thread grammars, which we will merge the initial grammars
+        av_buff_queue.push(i);
+        //
+
+        i++;
+    }
+
+    n_threads = i;
+    std::vector<p_gram_type> grams_to_merge(n_threads);
+    size_t prog_bytes=0;
+
+    auto gram_read_worker = [&](){
+
+        if(rem_bytes==0){
+            gram_to_merge_queue.done();
+        }else{
+            size_t buff_id;
+            while(rem_bytes > 0){
+                av_buff_queue.pop(buff_id);
+                read_bytes = grams_to_merge[buff_id].load_from_fd(fd_r);
+                gram_to_merge_queue.push(buff_id);
+                rem_bytes-=read_bytes;
+                prog_bytes+=read_bytes;
+                //std::cout<<"Processed data: "<<double(prog_bytes)/double(tot_bytes)*100<<std::endl;
+                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
+            }
+            while(av_buff_queue.size()<n_threads);
+            gram_to_merge_queue.done();
+        }
+
+        //no longer needed
+        for(auto &gram : grams_to_merge){
+            gram.destroy_gram();
+        }
+
+        if(n_threads>1) {
+            //merge the partial grams of the different threads into one
+            size_t n_ranges=0;
+            for (size_t i = 1; i < n_threads; i++)  n_ranges+=initial_grams[i].second.size();
+            initial_grams[i].second.reserve(n_ranges);
+
+            //this step is incorrect as it assumes all the initial grams are the same size,
+            // but it gives us an estimate of the remaining %
+            size_t rem_prog_bytes = INT_CEIL((tot_bytes-prog_bytes), n_threads);
+
+            for (size_t i = 1; i < n_threads; i++) {
+                merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[0].first, initial_grams[i].first, p_seeds);
+                //store the range of strings this partial gram covers
+                initial_grams[0].second.insert(initial_grams[0].second.end(), initial_grams[i].second.begin(), initial_grams[i].second.end());
+                initial_grams[i].first.destroy_gram();
+                destroy(initial_grams[i].second);
+
+                prog_bytes+=rem_prog_bytes;
+                std::cout<<"  Merged data: "<<double(prog_bytes)/double(tot_bytes)*100<<"% with peak "<<report_space((off_t)malloc_count_peak())<<std::endl;
+                malloc_count_reset_peak();
+            }
+            initial_grams[0].second.shrink_to_fit();
+#ifdef __linux__
+            malloc_trim(0);
+#endif
+            initial_grams[0].first.reorder_strings(initial_grams[0].second);
+        }
+
+        store_to_file(mg_p_gram_file, initial_grams[0].first);
+        initial_grams[0].first.destroy_gram();
+#ifdef __linux__
+        malloc_trim(0);
+#endif
+    };
+
+    auto gram_merge_worker = [&](size_t idx){
+
+        size_t buff_id;
+        bool res;
+
+        while (true) {
+            res = gram_to_merge_queue.pop(buff_id);
+            if (!res) break;
+            merge_two_partial_grammars_in_memory<p_gram_type>(initial_grams[idx].first, grams_to_merge[buff_id], p_seeds);
+            if(n_threads>1){//this step is to later reorder the strings in the final grammar
+                initial_grams[idx].second.push_back({grams_to_merge[buff_id].txt_id,
+                                                     grams_to_merge[buff_id].tot_strings()});
+            }
+            av_buff_queue.push(buff_id);
+        }
+    };
+
+    std::vector<std::thread> threads;
+    threads.emplace_back(gram_read_worker);
+    for(size_t j=0;j<n_threads;j++){
+        threads.emplace_back(gram_merge_worker, j);
+    }
+
+    for (auto &thread: threads) {
+        thread.join();
+    }
+}
+*/
+#endif //LCG_LC_PARSING_H

@@ -5,7 +5,6 @@
 #ifndef LCG_TEXT_HANDLER_H
 #define LCG_TEXT_HANDLER_H
 
-#include "partial_gram.h"
 #include "plain_gram.h"
 
 struct text_chunk {
