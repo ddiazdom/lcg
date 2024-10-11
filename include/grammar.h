@@ -1372,5 +1372,4 @@ struct lc_gram_t {
         }
     }
 };
-
 #endif //LCG_GRAMMAR_H

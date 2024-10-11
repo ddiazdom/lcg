@@ -7,6 +7,8 @@
 
 #include <fcntl.h>
 
+std::mutex m_;
+
 //threshold to collapse the local grammars
 //10GB
 #define COL_THRESHOLD_1 10737418240
@@ -421,7 +423,7 @@ void int_par_l2r<true>(text_chunk& chunk){
 }
 
 template<>
-void int_par_l2r<false>(text_chunk& chunk){
+void int_par_l2r<false>(text_chunk& chunk) {
 
     uint64_t *fps = chunk.gram.fps[chunk.round];
     uint32_t *text = chunk.parse;
@@ -501,12 +503,18 @@ void compress_text_chunk(text_chunk& chunk){
     }
 
     //start = std::chrono::steady_clock::now();
+
+    //the chunks are small, so they do not can hold many strings
+    assert((chunk.parse_size>>1)<=0xFFFFFFF);
+    chunk.gram.str_orders.emplace_back(chunk.id, (uint8_t)chunk.round,
+                                       chunk.gram.comp_string.size(), (uint32_t)(chunk.parse_size/2));
     size_t pos = chunk.gram.comp_string.size();
     chunk.gram.comp_string.resize(pos+(chunk.parse_size/2));
     for(off_t i=0;i<chunk.parse_size;i+=2){
         assert(i==0 || chunk.parse[i-1]==0);
         chunk.gram.comp_string[pos++] = chunk.parse[i];
     }
+
     //chunk.p_gram.add_compressed_string(chunk.parse, chunk.parse_size);
     //end = std::chrono::steady_clock::now();
     //report_time(start, end , 2);
@@ -638,9 +646,9 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     }
 }
 
-void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t chunk_size, size_t par_seed, bool par_gram) {
+void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads, off_t chunk_size) {
 
-    off_t f_size = file_size(i_file);
+    auto f_size = (off_t)sink_gram.txt_size();
 
     //for inputs up to 10GB, we collapse every 20 processed chunks
     //for inputs over 10GB, each thread grammar uses up to 2.5% of the input
@@ -658,11 +666,11 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
     size_t tot_chunks = INT_CEIL(f_size, chunk_size);
     n_threads = std::min(n_threads, tot_chunks);
 
-    n_chunks = n_chunks==0? n_threads+1 : n_chunks;
+    size_t n_chunks = n_threads+1;
     //we cannot set more chunks thant the total number of chunks in the input file
     n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
 
-    //compute the rules to collapse the local grammars into the sink grammar
+    //compute the rule to collapse local grammars into the sink grammar
     float i_frac;
     if(f_size<=COL_THRESHOLD_1){
         i_frac = i_fracs[0];
@@ -676,8 +684,6 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
 
     //The algorithm collapse the local grammars when:
     //the sum of the space usage of the local grammars exceed f_size*i_frac
-    //it already read proc_chunk_limit text chunks from the input file
-    //notice this is an OR condition
     i_frac *=float(n_chunks);
 
     // maximum number of bytes we accept in the page cache when reading the input file.
@@ -685,20 +691,16 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
     // from the cache. This option only applies on linux
     off_t page_cache_limit = 1024*1024*1024;
 
-    //hardcoding the separator symbol to '\n' for the moment
-    uint8_t sep_sym = '\n';
-
     std::cout<<"  Settings"<<std::endl;
     std::cout<<"    Parsing threads           : "<<n_threads<<std::endl;
     std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
     std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
-    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<"\n"<<std::endl;
 
     // We set the number of grammar level to 40.
     // This limit is enough to process strings of up to 4TB in length.
-    // However, the combined length of the string collection can be arbitrarily large.
-    plain_gram sink_gram(40, sep_sym);
-    parsing_state par_state(i_file, sep_sym, chunk_size, n_threads, page_cache_limit, i_frac);
+    // In any case, the combined length of the strings in the collection can be arbitrarily large.
+    parsing_state par_state(i_file, sink_gram.sep_sym(), chunk_size, n_threads, page_cache_limit, i_frac);
 
     //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
     std::vector<text_chunk> chunks;
@@ -720,16 +722,11 @@ void build_lc_gram(std::string& i_file, size_t n_threads, size_t n_chunks, off_t
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
         REPORT_GRAM_SIZE
     }
+    std::cout<<" "<<std::endl;
 
-    std::cout<<""<<std::endl;
+    sink_gram.reorder_strings();
+    sink_gram.clear_fps();
     sink_gram.print_stats();
-
-    /*if(!par_gram){
-        gram_type final_grammar;
-        partial2complete_gram(final_grammar, mg_p_gram_file, par_seed);
-        store_to_file(o_file, final_grammar);
-    }*/
-    exit(0);
 }
 /*struct inv_perm_elm{
     uint32_t orig_mt;

@@ -109,23 +109,19 @@ void comp_int(std::string& input_file, arguments& args) {
     if(args.skip_rl){
         if(args.rand_acc){
             build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
-                                                      args.n_chunks, args.chunk_size, args.seed,
-                                                      args.skip_simp, args.part);
+                                                       args.chunk_size, args.skip_simp, args.part);
         }else{
 
             build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
-                                                       args.n_chunks, args.chunk_size, args.seed,
-                                                       args.skip_simp, args.part);
+                                                       args.chunk_size, args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
             build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
-                                                     args.n_chunks, args.chunk_size, args.seed,
-                                                     args.skip_simp, args.part);
+                                                     args.chunk_size, args.skip_simp, args.part);
         } else {
             build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
-                                                      args.n_chunks, args.chunk_size, args.seed,
-                                                      args.skip_simp, args.part);
+                                                      args.chunk_size, args.skip_simp, args.part);
         }
     }
 }

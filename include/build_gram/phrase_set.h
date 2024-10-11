@@ -624,6 +624,23 @@ public:
         std::vector<uint64_t>().swap(m_table);
     }
 
+    void destroy_stream(){
+        if(phrase_stream!= nullptr){
+            mem<seq_type>::deallocate(phrase_stream);
+        }
+        phrase_stream= nullptr;
+        stream_size = 0;
+        stream_cap = 0;
+        n_phrases = 0;
+        last_fp_pos = 0;
+        last_mt = 0;
+    }
+
+    void destroy(){
+        destroy_table();
+        destroy_stream();
+    }
+
     [[nodiscard]] size_t buff_bytes_available() const {
         return (stream_cap-stream_size)*sizeof(seq_type);
     }
@@ -633,11 +650,7 @@ public:
     }
 
     ~phrase_set(){
-        if(phrase_stream!= nullptr){
-            mem<seq_type>::deallocate(phrase_stream);
-            phrase_stream= nullptr;
-            destroy_table();
-        }
+        destroy();
     }
 
     void psl_dist(){

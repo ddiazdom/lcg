@@ -6,19 +6,38 @@
 #define LCG_PLAIN_GRAM_H
 #include "phrase_set.h"
 
-struct plain_gram{
+//a string subset is a subset of consecutive strings compressed in a text chunk.
+// Text chunks are smalls (a couple of hundreds MBs), so they should not contain
+// that many strings. We need this struct to sort the compressed strings after
+// the compression
+struct string_subset{
+    uint64_t txt_id:48;
+    uint8_t lvl;
+    uint64_t offset:38; //a grammar can have up to 274877 million of strings
+    uint32_t n_strings:26;//a string subset (i.e., those in chunk) can have up to 67 million of strings
+
+    string_subset(size_t _txt_id, uint8_t _lvl, uint32_t _offset, uint32_t _n_strings): txt_id(_txt_id),
+                                                                                        lvl(_lvl),
+                                                                                        offset(_offset),
+                                                                                        n_strings(_n_strings){}
+};
+
+struct plain_gram {
 
     std::vector<uint64_t *> fps;
     std::vector<size_t> fps_len;
     phrase_set<uint8_t> ter_dict;
     std::vector<phrase_set<uint32_t>> nt_dicts;
     std::vector<uint32_t> comp_string;
+    std::vector<string_subset> str_orders;
+
+    uint64_t text_size=0;
     size_t n_levels=0;
     uint8_t s_sym='\n';
 
-    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, float load_factor=0.85){
-
+    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, uint64_t _text_size, float load_factor=0.85){
         assert(lvl_cap>2);
+        text_size = _text_size;
         ter_dict.set_load_factor(load_factor);
         fps.resize(lvl_cap);
         fps_len.resize(lvl_cap);
@@ -51,6 +70,7 @@ struct plain_gram{
         ter_dict.swap(other.ter_dict);
         nt_dicts.swap(other.nt_dicts);
         comp_string.swap(other.comp_string);
+        str_orders.swap(other.str_orders);
         std::swap(n_levels, other.n_levels);
         std::swap(s_sym, other.s_sym);
     }
@@ -73,6 +93,7 @@ struct plain_gram{
         ter_dict = other.ter_dict;
         nt_dicts = other.nt_dicts;
         comp_string = other.comp_string;
+        str_orders = other.str_orders;
         n_levels = other.n_levels;
         s_sym = other.s_sym;
     }
@@ -92,6 +113,7 @@ struct plain_gram{
         ter_dict.swap(other.ter_dict);
         nt_dicts.swap(other.nt_dicts);
         comp_string.swap(other.comp_string);
+        str_orders.swap(other.str_orders);
         std::swap(n_levels, other.n_levels);
         std::swap(s_sym, other.s_sym);
     }
@@ -110,6 +132,10 @@ struct plain_gram{
             bytes+=f_len*sizeof(uint64_t);
             bytes+=sizeof(uint64_t);//the length
         }
+
+        bytes+=comp_string.capacity()*sizeof(uint32_t);
+        bytes+=str_orders.capacity()*sizeof(string_subset);
+
         return bytes;
     }
 
@@ -123,6 +149,10 @@ struct plain_gram{
             bytes+=f_len*sizeof(uint64_t);
             bytes+=sizeof(uint64_t);//the length
         }
+
+        bytes+=comp_string.size()*sizeof(uint32_t);
+        bytes+=str_orders.size()*sizeof(string_subset);
+
         return bytes;
     }
 
@@ -181,6 +211,52 @@ struct plain_gram{
         }
     }
 
+    void clear_fps(){
+        for(size_t i=1;i<fps.size();i++){
+            fps[i] = mem<uint64_t>::reallocate(fps[i], 1);
+            fps[i][0]=0;
+            fps_len[i]=1;
+        }
+    }
+
+    void destroy_tables(){
+        ter_dict.destroy_table();
+        for(auto & nt_dict : nt_dicts){
+            nt_dict.destroy_table();
+        }
+    }
+
+    [[nodiscard]] inline size_t gram_alphabet() const {
+        size_t tot_symbols = std::numeric_limits<uint8_t>::max()+1;//alphabet of terminals
+
+        //alphabet of nonterminals (different from the grammar's start symbol)
+        tot_symbols+=ter_dict.size();
+        for(auto const& nt_dict : nt_dicts){
+            tot_symbols+=nt_dict.size();
+        }
+        //
+
+        return tot_symbols+1;//the +1 counts for the grammar's start symbol, where comp_string is the right-hand side
+    }
+
+    [[nodiscard]] inline size_t gram_size() const {
+        size_t size = std::numeric_limits<uint8_t>::max()+1;
+        size+=ter_dict.tot_symbols();
+        for(auto const& nt_dict : nt_dicts){
+            size+=nt_dict.tot_symbols();
+        }
+        size+=comp_string.size();
+        return size;
+    }
+
+    [[nodiscard]] inline uint8_t tot_rounds() const {
+        uint8_t max_lvl = 0;
+        for(auto const& subset : str_orders){
+            if(subset.lvl>max_lvl) max_lvl = subset.lvl;
+        }
+        return max_lvl;
+    }
+
     void clear(){
         ter_dict.clear();
         for(auto &dict: nt_dicts){
@@ -192,6 +268,39 @@ struct plain_gram{
             //small hack as the metasymbols are one-based
             fps[i][0]=0;
             fps_len[i]=1;
+        }
+    }
+
+    void reorder_strings(){
+        std::vector<uint32_t> new_string(comp_string.size(), 0);
+        std::sort(str_orders.begin(), str_orders.end(), [](auto const& a, auto const& b) -> bool{
+            return a.txt_id < b.txt_id;
+        });
+
+        size_t i=0;
+        for(auto & subset : str_orders){
+            memcpy(&new_string[i], &comp_string[subset.offset], subset.n_strings*sizeof(uint32_t));
+            subset.offset = i;
+            i+=subset.n_strings;
+        }
+
+        assert(i==new_string.size());
+        new_string.swap(comp_string);
+    }
+
+    [[nodiscard]] inline size_t tot_strings() const {
+        return comp_string.size();
+    }
+
+    [[nodiscard]] inline size_t txt_size() const {
+        return text_size;
+    }
+
+    [[nodiscard]] inline size_t phrases_round(size_t round) const {
+        if(round>0){
+            return nt_dicts[round-1].size();
+        }else{
+            return ter_dict.size();
         }
     }
 
