@@ -312,5 +312,10 @@ void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
     for(auto &chunk : chunks){
         chunk.gram.clear_fps();
     }
+
+    //TODO remove later
+    std::cout<<"The new sink grammar "<<std::endl;
+    sink_gram.print_stats();
+    //
 }
 #endif //LCG_COLLAPSE_TEMP_GRAM_H

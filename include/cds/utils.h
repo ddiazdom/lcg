@@ -166,6 +166,9 @@ std::string report_speed(off_t bytes, time_t start, time_t end){
 
 std::string report_space(off_t bytes);
 
+bool ends_with(std::string const & value, std::string const & ending);
+bool ends_with(std::string const & value, std::vector<std::string> const & ending, std::string& ext);
+
 void report_mem_peak();
 
 #endif //CDS_UTILS_H

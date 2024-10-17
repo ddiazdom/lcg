@@ -7,8 +7,6 @@
 
 #include <fcntl.h>
 
-std::mutex m_;
-
 //threshold to collapse the local grammars
 //10GB
 #define COL_THRESHOLD_1 10737418240
@@ -646,7 +644,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     }
 }
 
-void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads, off_t chunk_size) {
+void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
 
     auto f_size = (off_t)sink_gram.txt_size();
 
@@ -670,21 +668,21 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
     //we cannot set more chunks thant the total number of chunks in the input file
     n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
 
-    //compute the rule to collapse local grammars into the sink grammar
-    float i_frac;
-    if(f_size<=COL_THRESHOLD_1){
-        i_frac = i_fracs[0];
-    } else if(f_size<=COL_THRESHOLD_2){
-        i_frac = i_fracs[1];
-    } else if(f_size<=COL_THRESHOLD_3){
-        i_frac = i_fracs[2];
-    } else{
-        i_frac = i_fracs[3];
+    if(i_frac==0){
+        //compute the rule to collapse local grammars into the sink grammar
+        if(f_size<=COL_THRESHOLD_1){
+            i_frac = i_fracs[0];
+        } else if(f_size<=COL_THRESHOLD_2){
+            i_frac = i_fracs[1];
+        } else if(f_size<=COL_THRESHOLD_3){
+            i_frac = i_fracs[2];
+        } else{
+            i_frac = i_fracs[3];
+        }
+        //The algorithm collapse the local grammars when:
+        //the sum of the space usage of the local grammars exceed f_size*i_frac
+        i_frac *=float(n_chunks);
     }
-
-    //The algorithm collapse the local grammars when:
-    //the sum of the space usage of the local grammars exceed f_size*i_frac
-    i_frac *=float(n_chunks);
 
     // maximum number of bytes we accept in the page cache when reading the input file.
     // Once we exceed this threshold. we ask the kernel to remove the last file pages

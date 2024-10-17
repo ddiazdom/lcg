@@ -1151,13 +1151,13 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
  * @param n_threads : number of working threads
  */
 template<class gram_type>
-void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size, bool skip_simp, bool par_gram) {
+void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size, float i_frac, bool skip_simp, bool par_gram) {
 
     plain_gram p_gram(40, '\n', file_size(i_file));
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
-    build_lc_gram(i_file, p_gram, n_threads, chunk_size);
+    build_lc_gram(i_file, p_gram, n_threads, chunk_size, i_frac);
     auto end = std::chrono::steady_clock::now();
     report_time(start, end, 2);
 

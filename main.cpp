@@ -13,7 +13,7 @@ struct arguments{
     size_t n_threads=1;
     size_t n_chunks{};
     off_t chunk_size{};
-    //float i_frac=0.1;
+    float i_frac=0.0;
     bool ver=false;
     bool rand_acc=false;
     bool skip_simp=false;
@@ -54,6 +54,34 @@ public:
     std::string make_option_opts(const CLI::Option *) const override { return ""; }
 };
 
+/*
+std::function<std::string(std::string)> unit_scale = [](std::string str) -> std::string {
+
+    std::vector<std::string> pats_mb = {"mb", "MB", "mbs", "MBs", "m", "M"};
+    std::vector<std::string> pats_kb = {"kb", "KB", "kbs", "KBs", "k", "K"};
+    std::vector<std::string> pats_gb = {"gb", "GB", "gbs", "GBs", "g", "G"};
+    std::string ext;
+
+    size_t size, scale=0, val;
+
+    if(ends_with(str, pats_mb, ext)){
+        scale = 1048576;
+    }else if(ends_with(str, pats_gb, ext)){
+        scale = 1073741824;
+    } else if(ends_with(str, pats_kb, ext)){
+        scale = 1024;
+    }
+
+    if(!ext.empty()){
+        str = str.substr(0, str.length() - ext.length());
+        std::stringstream stream(str);
+        stream >> val;
+        size = size_t(val*scale);
+        str = std::to_string(size);
+    }
+    return str;
+};*/
+
 static void parse_app(CLI::App& app, struct arguments& args){
 
     auto fmt = std::make_shared<MyFormatter>();
@@ -77,7 +105,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
-    //comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this fraction of the input");
+    comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this fraction of the input");
     comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
 
     //metadata
@@ -109,19 +137,19 @@ void comp_int(std::string& input_file, arguments& args) {
     if(args.skip_rl){
         if(args.rand_acc){
             build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.skip_simp, args.part);
+                                                       args.chunk_size, args.i_frac, args.skip_simp, args.part);
         }else{
 
             build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.skip_simp, args.part);
+                                                       args.chunk_size, args.i_frac, args.skip_simp, args.part);
         }
     }else{
         if(args.rand_acc){
             build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
-                                                     args.chunk_size, args.skip_simp, args.part);
+                                                     args.chunk_size, args.i_frac, args.skip_simp, args.part);
         } else {
             build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
-                                                      args.chunk_size, args.skip_simp, args.part);
+                                                      args.chunk_size, args.i_frac, args.skip_simp, args.part);
         }
     }
 }

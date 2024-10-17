@@ -217,3 +217,20 @@ str_collection collection_stats(std::string& input_file){
     }
     return str_coll;
 }
+
+bool ends_with(std::string const & value, std::string const & ending) {
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
+//a helper function to modify the output
+bool ends_with(std::string const & value, std::vector<std::string> const & pats, std::string& ext) {
+    for(auto const &pat : pats){
+        if (pat.size() > value.size()) continue;
+        if(std::equal(pat.rbegin(), pat.rend(), value.rbegin())){
+            ext=pat;
+            return true;
+        }
+    }
+    return false;
+}
