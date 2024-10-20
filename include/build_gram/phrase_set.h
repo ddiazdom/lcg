@@ -6,6 +6,7 @@
 #define LCG_LZL_MAP_H
 #include "xxhash.h"
 #include "cds/cdt_common.hpp"
+#include "cds/vbyte_encoding.h"
 #include <vector>
 #include <cstring>
 #include <cstdlib>
@@ -50,8 +51,9 @@ private:
         memset(m_table.data(), (int)null_addr, m_table.size()*sizeof(table_t::value_type));
 
         //rehash the values
-        uint32_t len, phr_addr, pos=0;
-        size_t proc_phrases=0;
+        uint32_t len;
+        uint64_t phr_addr;
+        size_t proc_phrases=0, pos=0;
         while(pos<stream_size){
             phr_addr=pos;
             if constexpr (std::is_same<seq_type, uint8_t>::value){
@@ -692,8 +694,8 @@ public:
 
         if(other.empty()) return size();
         assert(o_map_len==(other.size()+1));
-        uint32_t len, pos=0, mt;
-        size_t proc_phrases=0;
+        uint32_t len, mt;
+        size_t pos=0, proc_phrases=0;
         while(pos<other.stream_size){
             if constexpr (std::is_same<seq_type, uint8_t>::value){
                 memcpy(&len, &other.phrase_stream[pos], sizeof(uint32_t));//read the length
@@ -761,6 +763,23 @@ public:
             }
             last_fp_pos=stream_size;
         }
+    }
+
+    [[nodiscard]] inline size_t vbyte_size() const {
+
+            auto it = begin();
+            auto it_end = end();
+            size_t vbytes=0;
+            while(it!=it_end){
+                auto phr = *it;
+                vbytes += vbyte_len(phr.mt);
+                vbytes += vbyte_len(phr.len);
+                for(size_t j=0;j<phr.len;j++){
+                    vbytes+= vbyte_len(phr.phrase[j]);
+                }
+                ++it;
+            }
+            return vbytes;
     }
 
     inline void update_fps_with_sink(const uint64_t* prev_fps_sink, const size_t& len_prev_fps_sink, uint32_t alpha_sink,

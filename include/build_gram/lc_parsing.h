@@ -721,8 +721,10 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
         REPORT_GRAM_SIZE
     }
     std::cout<<" "<<std::endl;
-
     sink_gram.reorder_strings();
+
+    std::cout<<"Grammar size plain: "<<report_space((off_t)sink_gram.eff_mem_usage())<<" versus vbyte_encoded:"<< report_space((off_t)sink_gram.vbyte_usage())<<std::endl;
+
     sink_gram.clear_fps();
     sink_gram.print_stats();
 }

@@ -7,13 +7,13 @@
 #include "phrase_set.h"
 
 //a string subset is a subset of consecutive strings compressed in a text chunk.
-// Text chunks are smalls (a couple of hundreds MBs), so they should not contain
-// that many strings. We need this struct to sort the compressed strings after
-// the compression
+// Text chunks are small (a couple of hundreds MBs), so they should not contain
+// that many strings. We need this struct to sort the compressed strings in input
+// order after the compression algorithm finishes
 struct string_subset{
     uint64_t txt_id:48;
     uint8_t lvl;
-    uint64_t offset:38; //a grammar can have up to 274877 million of strings
+    uint64_t offset:38; //a grammar can have up to 274,877 million of strings
     uint32_t n_strings:26;//a string subset (i.e., those in chunk) can have up to 67 million of strings
 
     string_subset(size_t _txt_id, uint8_t _lvl, uint32_t _offset, uint32_t _n_strings): txt_id(_txt_id),
@@ -209,6 +209,23 @@ struct plain_gram {
             default:
                 return nt_dicts[round-2].size();
         }
+    }
+
+    [[nodiscard]] inline size_t vbyte_usage() const {
+        size_t bytes= ter_dict.vbyte_size();
+        for(auto const& nt_dict : nt_dicts){
+            bytes+=nt_dict.vbyte_size();
+        }
+
+        for(unsigned int i : comp_string){
+            bytes+= vbyte_len(i);
+        }
+
+        for(auto const& f_len : fps_len){
+            bytes+=f_len*5;
+            bytes+=sizeof(uint64_t);//the length
+        }
+        return bytes;
     }
 
     void clear_fps(){
