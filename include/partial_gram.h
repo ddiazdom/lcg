@@ -220,10 +220,11 @@ struct partial_gram {
         return read_bytes;
     }
 
+    /*
     template<class sym_type>
     off_t append_new_lvl(sym_type* text, sym_type* &phrase_set, size_t tot_symbols){
 
-        /*lvl_metadata_type lvl_met{};
+        lvl_metadata_type lvl_met{};
         lvl_met.n_rules = phrase_set.size();
 
         //the extra bit is to mark the end of each rule
@@ -251,9 +252,8 @@ struct partial_gram {
         assert(acc_bits==lvl_met.n_bits());
         metadata.push_back(lvl_met);
         lvl++;
-        return rules[lvl-1].capacity_in_bytes();*/
-        return 0;
-    }
+        return rules[lvl-1].capacity_in_bytes();
+    }*/
 
     template<class sym_type>
     void add_compressed_string(sym_type* text, size_t size){
@@ -515,7 +515,7 @@ void get_breakdown(std::string& p_gram_file){
 
 template<class stream_type>
 inline void get_rule_info(stream_type& rule_stream, size_t& pos, size_t width,
-                          std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map, size_t fp_seed,
+                          std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map,
                           std::vector<uint64_t>& fp_seq, std::vector<uint32_t>& phrase,
                           uint64_t& fp, size_t& len){
     size_t sym;
@@ -650,10 +650,4 @@ void partial2complete_gram(comp_gram_type& new_gram, std::string& p_gram_file, u
     assert(new_gram.str_boundaries[0]==offset);
     assert(new_gram.str_boundaries.back()==bit_pos/r_bits);
 }
-
-template<class com_gram_type>
-void complete2partial_gram(com_gram_type& gram, std::string& new_p_gram_file){
-
-}
-
 #endif //LCG_PARTIAL_GRAM_H

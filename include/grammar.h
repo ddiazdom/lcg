@@ -1125,7 +1125,7 @@ struct lc_gram_t {
         return rule_stream.read(end - bps, end - 1);
     }
 
-    uint64_t fps2fps(std::vector<uint64_t> &buffer, size_t pos, size_t e_pos, uint64_t seed) const {
+    uint64_t fps2fps(std::vector<uint64_t> &buffer, size_t pos, size_t e_pos) const {
 
         //corner case: the buffer has only one symbol
         if((e_pos-pos)==1){
@@ -1272,7 +1272,7 @@ struct lc_gram_t {
                     in_min_p_level =  buff_fp_lvl[start] == min_g_level;
                     n_fps = i - start;
                     if(in_min_p_level) {
-                        n_fps = fps2fps(buff_fp_seq, start, i, p_seeds[buff_fp_lvl[start]+1]);
+                        n_fps = fps2fps(buff_fp_seq, start, i);
                     }
                     for (size_t u = start; u < start + n_fps; u++) {
                         buff_fp_seq[comp_pos] = buff_fp_seq[u];
@@ -1285,7 +1285,7 @@ struct lc_gram_t {
             in_min_p_level =  buff_fp_lvl[start] == min_g_level;
             n_fps = buff_fp_seq.size() - start;
             if (in_min_p_level) {
-                n_fps = fps2fps(buff_fp_seq, start, buff_fp_seq.size(), p_seeds[buff_fp_lvl[start]+1]);
+                n_fps = fps2fps(buff_fp_seq, start, buff_fp_seq.size());
             }
 
             for (size_t u = start; u < start + n_fps; u++) {

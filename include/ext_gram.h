@@ -114,8 +114,7 @@ struct i_gram_stream{
     void compute_level_fps(sym_type* lvl_stream,
                            size_t stream_size,
                            buff_vector<uint64_t> & prev_fps,
-                           buff_vector<uint64_t> & new_fps,
-                           vector_uint64_t & partition) const {
+                           buff_vector<uint64_t> & new_fps) const {
 
         vector_uint64_t fp_seq(comp_gram.longest_rule);
         size_t pos = 0, end, tmp_pos, rule=0;//, tmp;
@@ -178,7 +177,7 @@ struct i_gram_stream{
 
     void create_new_level(buff_vector<uint32_t>& rule_stream, size_t new_lvl,
                           buff_vector<uint32_t>& comp_strings,
-                          buff_vector<uint64_t>& prev_fps, buff_vector<uint64_t>& new_fps, uint64_t fp_seed,
+                          buff_vector<uint64_t>& prev_fps, buff_vector<uint64_t>& new_fps,
                           buff_vector<uint32_t>& map){
 
         assert(metadata[new_lvl-1].n_rules == map.size());
@@ -674,7 +673,7 @@ struct extensible_gram {
             ng_mt_lvl = ng.metadata_curr_lvl();
             ng.load_curr_rule_set(ng_buff.data, ng_buff.size(), ng_part);
             ng_fps.resize(ng_mt_lvl->n_rules);
-            ng.compute_level_fps(ng_buff.data, ng_buff.size(), gram_fps[0], ng_fps, ng_part);
+            ng.compute_level_fps(ng_buff.data, ng_buff.size(), gram_fps[0], ng_fps);
             merge_level(ter_rules, metadata[1], gram_fps[1], map_a, ng_buff, *ng_mt_lvl, ng_fps, map_b);
         }
 
@@ -684,19 +683,19 @@ struct extensible_gram {
         while(mg_lvl<=max_lvl){
 
             if(max_lvl_a<mg_lvl){
-                create_new_level(nt_rules[mg_lvl-2], mg_lvl, nt_rules.back(), gram_fps[mg_lvl-1], 0, map_a);
+                create_new_level(nt_rules[mg_lvl-2], mg_lvl, nt_rules.back(), gram_fps[mg_lvl-1], map_a);
             }else{
                 transform_level(mg_lvl, map_a);
             }
 
             ng_mt_lvl = ng.metadata_curr_lvl();
             if(max_lvl_b<mg_lvl){
-                ng.create_new_level(ng_buff, mg_lvl, ng_cmp_string, gram_fps[mg_lvl-1], ng_fps, 0, map_b);
+                ng.create_new_level(ng_buff, mg_lvl, ng_cmp_string, gram_fps[mg_lvl-1], ng_fps, map_b);
             }else {
                 ng_buff.resize(ng.bytes_curr_level()/sizeof(uint32_t));
                 ng.load_and_transform_curr_rule_set(ng_buff.data, ng_buff.size(), map_b, ng_part);
                 ng_fps.resize(ng_mt_lvl->n_rules);
-                ng.compute_level_fps(ng_buff.data, ng_buff.size(), gram_fps[mg_lvl-1], ng_fps, ng_part);
+                ng.compute_level_fps(ng_buff.data, ng_buff.size(), gram_fps[mg_lvl-1], ng_fps);
 
                 if(max_lvl_b==mg_lvl){
                     ng.load_compressed_string(ng_cmp_string);
@@ -718,7 +717,7 @@ struct extensible_gram {
 
     void create_new_level(buff_vector<uint32_t>& rule_stream, size_t new_lvl,
                           buff_vector<uint32_t>& comp_strings,
-                          buff_vector<uint64_t>& prev_fps, uint64_t fp_seed,
+                          buff_vector<uint64_t>& prev_fps,
                           buff_vector<uint32_t>& map){
 
         assert(mt_prev_lv.n_rules == map.size());

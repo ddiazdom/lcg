@@ -212,14 +212,15 @@ struct plain_gram {
     }
 
     [[nodiscard]] inline size_t vbyte_usage() const {
-        size_t bytes= ter_dict.vbyte_size();
+        size_t bytes= ter_dict.vbyte_usage();
         for(auto const& nt_dict : nt_dicts){
-            bytes+=nt_dict.vbyte_size();
+            bytes+=nt_dict.vbyte_usage();
         }
 
         for(unsigned int i : comp_string){
             bytes+= vbyte_len(i);
         }
+        bytes+=str_orders.capacity()*sizeof(string_subset);
 
         for(auto const& f_len : fps_len){
             bytes+=f_len*5;
@@ -227,7 +228,6 @@ struct plain_gram {
         }
         return bytes;
     }
-
     void clear_fps(){
         for(size_t i=1;i<fps.size();i++){
             fps[i] = mem<uint64_t>::reallocate(fps[i], 1);

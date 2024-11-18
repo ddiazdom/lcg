@@ -298,8 +298,7 @@ int main(int argc, char** argv) {
             assert(args.output_file!=args.input_file);
         }
         std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
-        rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
-
+        //rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
     }
     return 0;
 }

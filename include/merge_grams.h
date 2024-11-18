@@ -22,7 +22,7 @@ struct merge_data_t{
     size_t longest_rule=0;
     bitstream<size_t> buffer;
 
-    void initialize(size_t lvl_sigma_, size_t sym_bytes, uint64_t seed, size_t longest_rule_){
+    void initialize(size_t lvl_sigma_, size_t sym_bytes, size_t longest_rule_){
         lvl_sigma = lvl_sigma_;
         map_a.resize(lvl_sigma);
         map_b.resize(lvl_sigma);
@@ -148,7 +148,7 @@ void merge_two_partial_grammars_in_memory(p_gram_type& p_gram_a, p_gram_type& p_
 
 template<class p_gram_type>
 void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gram_b_file,
-                                   std::string& p_gram_c_file, std::vector<uint64_t>& fp_seeds) {
+                                   std::string& p_gram_c_file) {
 
     p_gram_type p_gram_a, p_gram_b;
     std::ifstream ifs_a(p_gram_a_file, std::ios::binary);
@@ -161,7 +161,7 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
     size_t longest_rule = std::max(p_gram_a.longest_rule, p_gram_b.longest_rule);
     merge_data_t mg_data;
     //in the first level, tot_symbols represents the alphabet of terminals
-    mg_data.initialize(p_gram_a.metadata[0].tot_symbols, sizeof(typename p_gram_type::sym_type), fp_seeds[0], longest_rule);
+    mg_data.initialize(p_gram_a.metadata[0].tot_symbols, sizeof(typename p_gram_type::sym_type),  longest_rule);
 
     //we subtract one because the last level contains the compressed strings,
     // and we do not merge but concatenate
@@ -179,8 +179,7 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
         p_gram_b.load_next_rule_set(ifs_b, i, rules_buffer_b);
 
         buffer_metadata = merge_level(rules_buffer_a, p_gram_a.metadata[i+1],
-                                      rules_buffer_b, p_gram_b.metadata[i+1],
-                                      fp_seeds[i+1], mg_data);
+                                      rules_buffer_b, p_gram_b.metadata[i+1], mg_data);
         i++;
         p_gram_a.metadata[i] = buffer_metadata;
         mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
@@ -254,12 +253,11 @@ void merge_two_partial_grammars_se(std::string& p_gram_a_file, std::string& p_gr
         std::swap(st_gram->metadata[min_lvl+1], st_gram->metadata[max_lvl+1]);
 
         while(i<max_lvl){
-            create_fake_level_se(*st_gram, *st_rules_buffer, i, mg_data.fps, fp_seeds[i+1], *st_gram_map);
+            create_fake_level_se(*st_gram, *st_rules_buffer, i, mg_data.fps, *st_gram_map);
             ht_gram->load_next_rule_set(*ht_ifs, i, *ht_rules_buffer);
 
             buffer_metadata = merge_level(rules_buffer_a, p_gram_a.metadata[i+1],
-                                          rules_buffer_b, p_gram_b.metadata[i+1],
-                                          fp_seeds[i+1], mg_data);
+                                          rules_buffer_b, p_gram_b.metadata[i+1], mg_data);
             i++;
             p_gram_a.metadata[i] = buffer_metadata;
             mg_data.buffer.copy(p_gram_a.metadata[i].n_bits(), p_gram_a.rules[i-1]);
@@ -305,12 +303,10 @@ void merge_gramms(std::vector<std::string>& grams_to_merge, std::string& merged_
     }
 
     std::cout << "Merged grammars: " <<0<<"/"<<grams_to_merge.size()<<std::flush;
-    merge_two_partial_grammars_se<partial_gram<uint8_t>>(grams_to_merge[0], grams_to_merge[1], merged_grammar,
-                                                         par_seeds);
+    merge_two_partial_grammars_se<partial_gram<uint8_t>>(grams_to_merge[0], grams_to_merge[1], merged_grammar);
     std::cout << "\r" << "Merged grammars: " <<2<<"/"<<grams_to_merge.size()<<std::flush;
     for(size_t i=2;i<grams_to_merge.size();i++){
-        merge_two_partial_grammars_se<partial_gram<uint8_t>>(merged_grammar, grams_to_merge[i], merged_grammar,
-                                                             par_seeds);
+        merge_two_partial_grammars_se<partial_gram<uint8_t>>(merged_grammar, grams_to_merge[i], merged_grammar);
         std::cout << "\r" << "Merged grammars: " <<(i+1)<<"/"<<grams_to_merge.size()<<std::flush;
     }
     std::cout<<""<<std::endl;
@@ -388,7 +384,7 @@ void print_merge_stats(std::vector<lvl_metadata_type>& met_a, std::vector<lvl_me
 template<class stream_type>
 lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_a,
                               stream_type &stream_b, lvl_metadata_type &lvl_met_b,
-                              uint64_t &fp_seed, merge_data_t& mg_data) {
+                              merge_data_t& mg_data) {
     uint64_t fp_a, fp_b;
     size_t curr_rule_a=0, curr_rule_b=0;
     size_t curr_pos_a=0, curr_pos_b=0;
@@ -417,10 +413,10 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
     std::vector<uint32_t> phrase_a(mg_data.longest_rule, 0);
     std::vector<uint32_t> phrase_b(mg_data.longest_rule, 0);
 
-    get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, fp_seq,
+    get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a,  fp_seq,
                   phrase_a, fp_a, len_a);
     assert(len_a<=mg_data.longest_rule);
-    get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
+    get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seq,
                   phrase_b, fp_b, len_b);
     assert(len_b<=mg_data.longest_rule);
 
@@ -487,14 +483,14 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
         }
 
         if((merge_marks.back() & 1) && curr_rule_a<lvl_met_a.n_rules){
-            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed, fp_seq,
+            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seq,
                           phrase_a, fp_a, len_a);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
 
         if((merge_marks.back() & 2) && curr_rule_b<lvl_met_b.n_rules){
-            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
+            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seq,
                           phrase_b, fp_b, len_b);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
@@ -511,8 +507,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
         merge_marks.push_back(1);
 
         if(curr_rule_a<lvl_met_a.n_rules){
-            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seed,
-                          fp_seq, phrase_a, fp_a, len_a);
+            get_rule_info(stream_a, curr_pos_a, a_width, mg_data.fps, mg_data.map_a, fp_seq, phrase_a, fp_a, len_a);
             assert(fp_a>=prev_fp_a);
             prev_fp_a = fp_a;
         }
@@ -528,7 +523,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
         merge_marks.push_back(2);
 
         if(curr_rule_b<lvl_met_b.n_rules){
-            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seed, fp_seq,
+            get_rule_info(stream_b, curr_pos_b, b_width, mg_data.fps, mg_data.map_b, fp_seq,
                           phrase_b, fp_b, len_b);
             assert(fp_b>=prev_fp_b);
             prev_fp_b = fp_b;
@@ -572,8 +567,7 @@ lvl_metadata_type merge_level(stream_type &stream_a, lvl_metadata_type &lvl_met_
 }
 
 template<class gram_type>
-void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>& prev_fps,
-                       uint64_t fp_seed, std::vector<uint32_t>& mt_map){
+void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>& prev_fps, std::vector<uint32_t>& mt_map){
 
     // new_level is to the previous level in the metadata because
     // the first element of the metadata vector has the terminal alphabet
@@ -634,7 +628,7 @@ void create_fake_level(gram_type& p_gram, size_t new_lvl, std::vector<uint64_t>&
 
 template<class gram_type>
 void create_fake_level_se(gram_type& p_gram, bitstream<size_t>& buffer, size_t new_lvl, std::vector<uint64_t>& prev_fps,
-                          uint64_t fp_seed, std::vector<uint32_t>& mt_map){
+                          std::vector<uint32_t>& mt_map){
 
     // new_level is new_lvl+1 in the metadata because
     // the first element of the metadata vector has the terminal alphabet

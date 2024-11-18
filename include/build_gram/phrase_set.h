@@ -593,6 +593,23 @@ public:
         return (n_phrases*sizeof(table_t::value_type)) + (stream_size*sizeof(seq_type));
     }
 
+    [[nodiscard]] inline size_t vbyte_usage() const {
+        auto it = begin();
+        auto it_end = end();
+        size_t bytes=0;
+        while(it!=it_end){
+            auto phr = *it;
+            bytes += vbyte_len(phr.mt);
+            bytes += vbyte_len(phr.len);
+            for(size_t j=0;j<phr.len;j++){
+                bytes+= vbyte_len(phr.phrase[j]);
+            }
+            ++it;
+        }
+        bytes+=n_phrases*sizeof(table_t::value_type);
+        return bytes;
+    }
+
     inline const seq_type* phr_stream() const {
         return phrase_stream;
     }
@@ -765,22 +782,7 @@ public:
         }
     }
 
-    [[nodiscard]] inline size_t vbyte_size() const {
 
-            auto it = begin();
-            auto it_end = end();
-            size_t vbytes=0;
-            while(it!=it_end){
-                auto phr = *it;
-                vbytes += vbyte_len(phr.mt);
-                vbytes += vbyte_len(phr.len);
-                for(size_t j=0;j<phr.len;j++){
-                    vbytes+= vbyte_len(phr.phrase[j]);
-                }
-                ++it;
-            }
-            return vbytes;
-    }
 
     inline void update_fps_with_sink(const uint64_t* prev_fps_sink, const size_t& len_prev_fps_sink, uint32_t alpha_sink,
                                      const uint64_t* prev_fps, size_t& len_prev_fps,

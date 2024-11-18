@@ -143,12 +143,13 @@ void insert_right_offset(std::stack<rule_type>& offset_stack, exp_data& rhs_data
     }
 }
 
+/*
 template<class gram_t>
 off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
                 std::vector<std::vector<new_rule_type>>& new_gram_rules,
                 std::vector<uint64_t>& all_fps, uint64_t pf_seed, uint8_t p_level) {
 
-    /*size_t mt_sym, next_av_nt=gram.r;
+    size_t mt_sym, next_av_nt=gram.r;
     size_t prev_sym, curr_sym, next_sym, end_sym = std::numeric_limits<size_t>::max();
     off_t txt_pos = 0, phrase_len, lb, rb;
     lz_like_map<size_t> map(text);
@@ -256,9 +257,9 @@ off_t parse_seq(size_t* text, off_t txt_size, gram_t& gram,
             while(text[i]==end_sym && i<lb) i++;
         }
     }
-    return parse_size;*/
+    return parse_size;
     return 0;
-}
+}*/
 
 template<bool nt_type, class gram_type>
 std::pair<off_t, off_t> store_new_rule(std::vector<size_t>& rhs, gram_type& gram, uint8_t lvl,
@@ -713,6 +714,7 @@ void subtract_int_par_trees(gram_t& gram, vector_t& nt_freqs, std::vector<std::p
 }
 
 
+/*
 template<class gram_type>
 void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordinates, tmp_workspace& ws){
 
@@ -725,26 +727,6 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
     std::vector<uint64_t> all_fps = gram.get_all_fps();
     std::vector<size_t> nt_freqs(gram.r-1, 0);
     gram.get_nt_freqs(nt_freqs);
-
-    /*std::cout<<"71 "<<nt_freqs[71]<<std::endl;
-    std::cout<<"84 "<<nt_freqs[84]<<std::endl;
-    std::cout<<"1560 "<<nt_freqs[1560]<<std::endl;
-    std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;
-    std::cout<<"18752 "<<nt_freqs[18752]<<std::endl;
-    std::cout<<"30938 "<<nt_freqs[30938]<<std::endl;
-    std::cout<<"47171 "<<nt_freqs[47171]<<std::endl;
-    std::cout<<"46466 "<<nt_freqs[46466]<<std::endl;
-    std::cout<<"49504 "<<nt_freqs[49504]<<std::endl;
-    std::cout<<"52087 "<<nt_freqs[52087]<<std::endl;
-    std::cout<<"27590 "<<nt_freqs[27590]<<std::endl;
-    std::cout<<"3439 "<<nt_freqs[3439]<<std::endl;
-    std::cout<<"3518 "<<nt_freqs[3518]<<std::endl;
-    std::cout<<"8522 "<<nt_freqs[8522]<<std::endl;
-    std::cout<<"25351 "<<nt_freqs[25351]<<std::endl;
-    std::cout<<"1021 "<<nt_freqs[1021]<<std::endl;
-    std::cout<<"2255 "<<nt_freqs[2255]<<std::endl;
-    std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;*/
-
     off_t n_parsing_rounds = gram.lc_par_tree_height()-1;
 
     std::stack<rule_type> left_off_stack;
@@ -879,91 +861,14 @@ void rem_txt_from_gram_int(gram_type& gram, std::vector<str_coord_type>& coordin
             left_off_stack.pop();
             right_off_stack.pop();
 
-            /*off_t parsing_break = find_parsing_break(left_offset->rhs, right_offset->rhs, all_fps, new_gram_rules);
-            if(parsing_break>0){//there is a break
-
-                rm_sym = left_offset->nt;
-                if(left_offset->nt==-1){
-                    std::vector<uint64_t> fp_seq;
-                    for(unsigned long & s : left_offset->rhs){
-                        if(s>gram.r){
-                            fp_seq.push_back(new_gram_rules[s].second);
-                        }else{
-                            fp_seq.push_back(all_fps[s]);
-                        }
-                    }
-                    uint64_t new_fp = XXH3_64bits(fp_seq.data(), sizeof(uint64_t)*fp_seq.size());
-                    rm_sym = next_av_nt++;
-                    new_gram_rules[rm_sym] = {left_offset->rhs, new_fp};
-                }
-
-                lm_sym = right_offset->nt;
-                if(right_offset->nt==-1){
-                    std::vector<uint64_t> fp_seq;
-                    for(unsigned long & s : right_offset->rhs){
-                        if(s>gram.r){
-                            fp_seq.push_back(new_gram_rules[s].second);
-                        }else{
-                            fp_seq.push_back(all_fps[s]);
-                        }
-                    }
-                    uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
-                    lm_sym = next_av_nt++;
-                    new_gram_rules[lm_sym] = {right_offset->rhs, new_fp};
-                }
-                right_off_stack.pop();
-                right_off_stack.top().rhs.push_back(lm_sym);
-                right_off_stack.top().exp_branch = false;
-
-            } else {//the phrases are merged
-
-                std::vector<uint64_t> fp_seq;
-                std::vector<size_t> new_seq;
-                for(unsigned long s : left_offset->rhs){
-                    fp_seq.push_back(all_fps[s]);
-                    new_seq.push_back(s);
-                }
-                for(unsigned long & s : right_offset->rhs){
-                    fp_seq.push_back(all_fps[s]);
-                    new_seq.push_back(s);
-                }
-                uint64_t new_fp = XXH64(fp_seq.data(), sizeof(uint64_t)*fp_seq.size(), p_seeds[g_level+1]);
-                rm_sym = next_av_nt++;
-                new_gram_rules[rm_sym] = {new_seq, new_fp};
-
-                right_off_stack.pop();
-            }
-            left_off_stack.pop();
-            left_off_stack.top().rhs.push_back(rm_sym);
-            left_off_stack.top().exp_branch = false;*/
             g_level++;
         }
         edited_strings.emplace_back(coord.str, new_seq);
         find_grammar_places(edited_rules, edited_strings, gram, nt_freqs);
         subtract_int_par_trees(gram, nt_freqs, int_par_trees);
-
-        /*std::cout<<"71 "<<nt_freqs[71]<<std::endl;
-        std::cout<<"84 "<<nt_freqs[84]<<std::endl;
-        std::cout<<"1560 "<<nt_freqs[1560]<<std::endl;
-        std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;
-        std::cout<<"18752 "<<nt_freqs[18752]<<std::endl;
-        std::cout<<"30938 "<<nt_freqs[30938]<<std::endl;
-        std::cout<<"47171 "<<nt_freqs[47171]<<std::endl;
-        std::cout<<"46466 "<<nt_freqs[46466]<<std::endl;
-        std::cout<<"49504 "<<nt_freqs[49504]<<std::endl;
-        std::cout<<"52087 "<<nt_freqs[52087]<<std::endl;
-        std::cout<<"27590 "<<nt_freqs[27590]<<std::endl;
-        std::cout<<"3439 "<<nt_freqs[3439]<<std::endl;
-        std::cout<<"3518 "<<nt_freqs[3518]<<std::endl;
-        std::cout<<"8522 "<<nt_freqs[8522]<<std::endl;
-        std::cout<<"25351 "<<nt_freqs[25351]<<std::endl;
-        std::cout<<"1021 "<<nt_freqs[1021]<<std::endl;
-        std::cout<<"2255 "<<nt_freqs[2255]<<std::endl;
-        std::cout<<"2436 "<<nt_freqs[2436]<<std::endl;*/
     }
     update_grammar(edited_rules, edited_strings, nt_freqs, gram, ws);
 }
-
 void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem_coordinates, std::string& tmp_dir, std::string& o_file){
 
     tmp_workspace ws(tmp_dir, true, "rm_lcg");
@@ -997,5 +902,5 @@ void rem_txt_from_gram(std::string& input_gram, std::vector<str_coord_type>& rem
         }
     }
     std::cout<<"The edited grammar was stored in "<<o_file<<std::endl;
-}
+}*/
 #endif //LCG_EDITION_ALGORITHMS_H
