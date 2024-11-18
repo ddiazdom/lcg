@@ -88,7 +88,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.formatter(fmt);
     app.add_flag("-v,--version", args.ver, "Print the software version and exit");
 
-    CLI::App* comp = app.add_subcommand("cmp", "Compress text");
+    CLI::App* comp = app.add_subcommand("cmp", "compress text");
 
     //compression
     comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();

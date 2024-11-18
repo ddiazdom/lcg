@@ -115,7 +115,7 @@ Compress with random access support:
 ./lcg cmp sample_file.txt -r -o sample_file.lcg
 ```
 
-Now you can query the area T_x[7-25] (1-based indexes) of the xth string in
+Now you can query the area T_x[7-25] (zero-based indexes) of the xth string in
 sample_file.txt as follows:
 
 ```
