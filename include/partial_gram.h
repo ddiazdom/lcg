@@ -5,6 +5,7 @@
 #ifndef LCG_PARTIAL_GRAM_H
 #define LCG_PARTIAL_GRAM_H
 
+#include <unistd.h>
 #include "cds/bitstream.h"
 #include "build_gram/phrase_set.h"
 #include "cds/utils.h"

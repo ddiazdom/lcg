@@ -88,7 +88,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.formatter(fmt);
     app.add_flag("-v,--version", args.ver, "Print the software version and exit");
 
-    CLI::App* comp = app.add_subcommand("cmp", "compress text");
+    CLI::App* comp = app.add_subcommand("cmp", "Compress text");
 
     //compression
     comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
@@ -98,7 +98,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     //comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
-    comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support for the grammar");
+    comp->add_flag("-r,--random-support", args.rand_acc, "Augment the grammar with random access support");
     comp->add_flag("-g,--check-gram", args.check_gram, "Check that the grammar was compressed correctly");
     //comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
@@ -107,7 +107,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
 
     //metadata
-    CLI::App* meta = app.add_subcommand("met", "get the metadata of a grammar");
+    CLI::App* meta = app.add_subcommand("met", "Get the metadata of a grammar");
     meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
 
     //merge
