@@ -38,7 +38,7 @@
     #define PARSING_INFO std::cout<<std::fixed << std::setprecision(2);\
                          std::cout<<"\rProcessed input: "<<\
                                     report_space((off_t)p_state.proc_syms)<<\
-                                    " ("<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)"<<std::flush;
+                                    " ("<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)    "<<std::flush;
 #endif
 
 #ifdef DEBUG_MODE
@@ -723,10 +723,12 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
     std::cout<<" "<<std::endl;
     sink_gram.reorder_strings();
 
-    std::cout<<"Grammar size plain: "<<report_space((off_t)sink_gram.eff_mem_usage())<<" versus vbyte_encoded:"<< report_space((off_t)sink_gram.vbyte_usage())<<std::endl;
-
     sink_gram.clear_fps();
+
+#ifdef DEBUG_MODE
     sink_gram.print_stats();
+#endif
+
 }
 /*struct inv_perm_elm{
     uint32_t orig_mt;

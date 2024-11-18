@@ -63,16 +63,16 @@ std::string report_space(off_t bytes){
         return std::to_string(bytes)+" bytes";
     }else if(bytes<1000000){
         float b = float(bytes)/1000;
-        return to_string_with_precision(b, 2)+" KBs";
+        return to_string_with_precision(b, 2)+" KB";
     } else if(bytes < 1000000000L){
         float b = float(bytes)/1000000;
-        return to_string_with_precision(b, 2)+" MBs";
+        return to_string_with_precision(b, 2)+" MB";
     } else if(bytes < 1000000000000L){
         double b = double(bytes)/1000000000L;
-        return to_string_with_precision(b, 2)+" GBs";
+        return to_string_with_precision(b, 2)+" GB";
     } else {
         double b = double(bytes)/1000000000000L;
-        return to_string_with_precision(b, 2)+" TBs";
+        return to_string_with_precision(b, 2)+" TB";
     }
 }
 

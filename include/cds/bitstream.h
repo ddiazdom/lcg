@@ -5,12 +5,13 @@
 #ifndef LPG_COMPRESSOR_BITSTREAM_H
 #define LPG_COMPRESSOR_BITSTREAM_H
 
-#include<iostream>
+#include <iostream>
 #include <limits>
 #include <cstring>
+#include <cassert>
+
 #include "macros.h"
 #include "cdt_common.hpp"
-//#include "mmap_allocator.h"
 #include "memory_handler.hpp"
 
 template<class word_t, uint8_t max_dist=std::numeric_limits<word_t>::digits>

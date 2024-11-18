@@ -1,7 +1,4 @@
-#include <thread>
-
 #include "external/CLI11.hpp"
-#include "edit_gram.h"
 #include "merge_grams.h"
 #include "grammar_algorithms.h"
 
@@ -19,6 +16,7 @@ struct arguments{
     bool skip_simp=false;
     bool skip_rl=false;
     bool part=false;
+    bool check_gram=false;
     size_t seed=0;
 
     std::string p_file;
@@ -98,14 +96,14 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
 
     //comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
-    //comp->add_flag("-l,--long-strings", args.se_par_rounds, "The input collection contains strings longer than 4GB");
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
     comp->add_flag("-r,--random-support", args.rand_acc, "Add random access support for the grammar");
-    comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
+    comp->add_flag("-g,--check-gram", args.check_gram, "Check that the grammar was compressed correctly");
+    //comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
-    comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this fraction of the input");
+    comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this input fraction");
     comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
 
     //metadata
@@ -113,10 +111,10 @@ static void parse_app(CLI::App& app, struct arguments& args){
     meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
 
     //merge
-    CLI::App* merge = app.add_subcommand("mrg", "Merge grammars");
-    merge->add_option("GRAM LIST", args.grammars_to_merge, "Grammars to be merged")->check(CLI::ExistingFile)->required();
-    merge->add_option("-o,--output-file", args.output_file, "Output grammar")->required(true);
-    merge->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
+    //CLI::App* merge = app.add_subcommand("mrg", "Merge grammars");
+    //merge->add_option("GRAM LIST", args.grammars_to_merge, "Grammars to be merged")->check(CLI::ExistingFile)->required();
+    //merge->add_option("-o,--output-file", args.output_file, "Output grammar")->required(true);
+    //merge->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory)->default_val("/tmp");
 
     //access
     CLI::App* access = app.add_subcommand("acc", "Random access");
@@ -124,32 +122,34 @@ static void parse_app(CLI::App& app, struct arguments& args){
     access->add_option("STR:START-END", args.ra_positions, "Coordinates to be accessed");
 
     //edit
-    CLI::App* edt = app.add_subcommand("edt", "Edit grammar-compressed text");
-    edt->add_option("GRAM", args.input_file, "Grammar to be edited")->check(CLI::ExistingFile)->required();
-    edt->add_option("STR:START-END", args.ra_positions, "Coordinates to be removed");
-    edt->add_option("-o,--output-file", args.output_file, "Output grammar");
-
+    //CLI::App* edt = app.add_subcommand("edt", "Edit grammar-compressed text");
+    //edt->add_option("GRAM", args.input_file, "Grammar to be edited")->check(CLI::ExistingFile)->required();
+    //edt->add_option("STR:START-END", args.ra_positions, "Coordinates to be removed");
+    //edt->add_option("-o,--output-file", args.output_file, "Output grammar");
     app.require_subcommand(1,1);
-    app.footer("Report bugs to <diego.diaz@helsinki.fi>");
 }
 
 void comp_int(std::string& input_file, arguments& args) {
     if(args.skip_rl){
         if(args.rand_acc){
             build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.i_frac, args.skip_simp, args.part);
+                                                       args.chunk_size, args.i_frac, args.skip_simp,
+                                                       args.part, args.check_gram);
         }else{
 
             build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.i_frac, args.skip_simp, args.part);
+                                                       args.chunk_size, args.i_frac, args.skip_simp,
+                                                       args.part, args.check_gram);
         }
     }else{
         if(args.rand_acc){
             build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
-                                                     args.chunk_size, args.i_frac, args.skip_simp, args.part);
+                                                     args.chunk_size, args.i_frac, args.skip_simp,
+                                                     args.part, args.check_gram);
         } else {
             build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
-                                                      args.chunk_size, args.i_frac, args.skip_simp, args.part);
+                                                      args.chunk_size, args.i_frac, args.skip_simp,
+                                                      args.part, args.check_gram);
         }
     }
 }
@@ -267,38 +267,21 @@ int main(int argc, char** argv) {
     }
 
     if(app.got_subcommand("cmp")) {
-
         std::cout << "\nInput file: " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
         std::string input_collection = args.input_file;
         comp_int(input_collection, args);
-
-    } if(app.got_subcommand("met")){
-
+    } else if(app.got_subcommand("met")){
         print_metadata(args.input_file);
-
-    } else if(app.got_subcommand("mrg")){
-
-        merge_gramms(args.grammars_to_merge, args.output_file);
-
-    } else if(app.got_subcommand("acc")){
-
+    } else if (app.got_subcommand("acc")){
         std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
-
-    } else if(app.got_subcommand("edt")){
-
-        if (args.output_file.empty()){
-            args.output_file = std::filesystem::path(args.input_file).filename();
-            args.output_file = std::filesystem::path(args.output_file).replace_extension("rm.lcg");
-        }else{
-            assert(args.output_file!=args.input_file);
-        }
-        std::vector<str_coord_type> rem_coords = parse_query_coords(args.ra_positions);
-        //rem_txt_from_gram(args.input_file, rem_coords, args.tmp_dir, args.output_file);
+    } else {
+        std::cout<<" Unknown command "<<std::endl;
+        return 1;
     }
     return 0;
 }

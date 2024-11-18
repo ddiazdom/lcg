@@ -2,11 +2,12 @@
 // Created by Diaz, Diego on 9.10.2024.
 //
 
-#ifndef LCG_COLLAPSE_TEMP_GRAM_H
-#define LCG_COLLAPSE_TEMP_GRAM_H
+#ifndef LCG_COLLAPSE_GRAM_H
+#define LCG_COLLAPSE_GRAM_H
 
 #include "plain_gram.h"
 #include "text_handler.h"
+#include <thread>
 
 #ifdef DEBUG_MODE
     #define COLL_REPORT(lvl, output_set) \
@@ -22,7 +23,7 @@
 void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
-    size_t size_before = sink_set.size();
+    [[maybe_unused]] size_t size_before = sink_set.size();
 
     auto ter_worker = [&](plain_gram& gram, size_t& new_syms) {
 
@@ -91,7 +92,7 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
 void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
-    size_t size_before = sink_set.size();
+    [[maybe_unused]] size_t size_before = sink_set.size();
 
     for(auto & chunk : chunks) {
         uint64_t* o_map = chunk.gram.fps[1];
@@ -118,8 +119,8 @@ void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
 
 void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink) {
 
-    size_t size_before = sink_gram.nt_dicts[round-1].size();
     phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
+    [[maybe_unused]] size_t size_before = sink_gram.nt_dicts[round-1].size();
 
     auto nt_worker = [&](plain_gram& gram, size_t& new_syms) {
 
@@ -204,8 +205,8 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
 void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink){
 
     assert(round>=1);
-    size_t size_before = sink_gram.nt_dicts[round-1].size();
     phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
+    [[maybe_unused]] size_t size_before = sink_gram.nt_dicts[round-1].size();
 
     for(auto & chunk : chunks){
 
@@ -313,9 +314,10 @@ void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
         chunk.gram.clear_fps();
     }
 
-    //TODO remove later
+#ifdef DEBUG_MODE
     std::cout<<"The new sink grammar "<<std::endl;
     sink_gram.print_stats();
-    //
+#endif
+
 }
-#endif //LCG_COLLAPSE_TEMP_GRAM_H
+#endif //LCG_COLLAPSE_GRAM_H

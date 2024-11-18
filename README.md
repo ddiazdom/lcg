@@ -24,6 +24,9 @@ read it, thus avoiding contention between the threads.
 Overall, our scheme allows us to compress a text collection in parallel and obtain a result equivalent to the one
 we would get with the compression of all the strings with one instance.
 
+After producing the locally consistent grammar in parallel, we run-length compress it, and finally we simplify it.
+We **do not** apply any kind of statistical compression.
+
 # Third-party libraries
 
 1. [xxHash](https://github.com/Cyan4973/xxHash)
@@ -70,15 +73,16 @@ For the moment, these are the options we support:
 
 ```
 Usage: ./lcg cmp [OPTIONS] TEXT
-TEXT                     Input file in one-string-per-line format
--h,--help                Print this help message and exit
--o,--output-file         Output file
--t,--threads             Maximum number of parsing threads
--q,--skip-simp           Do not simplify the grammar
--e,--skip-rl             Do not perform run-length compression
--r,--random-support      Add random access support for the grammar
--f,--fraction            The parsing threads will try to use at most this fraction of the input
--c,--chunk-size          Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))
+  TEXT                     Input file in one-string-per-line format
+  -h,--help                Print this help message and exit
+  -o,--output-file         Output file
+  -t,--threads             Maximum number of parsing threads
+  -q,--skip-simp           Do not simplify the grammar
+  -e,--skip-rl             Do not perform run-length compression
+  -r,--random-support      Add random access support for the grammar
+  -g,--check-gram          Check that the grammar was compressed correctly
+  -f,--fraction            The parsing threads will try to use at most this input fraction
+  -c,--chunk-size          Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))
 ```
 
 `--skip-simp` will skip the simplification of the grammar. Skipping the simplification will increase space usage, but 
@@ -86,6 +90,9 @@ it is convenient if one needs to add some structure to the output grammar.
 
 `--skip-rl` will skip the run-length compression of the grammar. Like `--skip-simp`, it increases space usage but it
 is convenient to operate over the strings.
+
+`--check-gram` will check that the output grammar generates exactly the strings in the input. This step is optional and
+mostly for debugging purposes.
 
 `--fraction` says that the combined space of the text chunks plus the satellite data should not exceed this
 fraction of the input. This parameter is only **a request** and it could use more space if, for instance, the compressed
@@ -98,7 +105,7 @@ representation of the input exceeds this limit.
 
 For the moment, we offer inefficient random access support to the compressed text. It is inefficient because it needs
 to load the full compressed text on RAM to access the query area. We can do much better in practice, but we must 
-implement it. 
+implement it. However, the cost of random access is still logarithmic on the text size once the grammar is built. 
 
 Here is an example:
 
@@ -209,8 +216,8 @@ We plan to support the following features in the near future:
 
 - Semi external mode for situations where the compression process uses considerable working memory.
   For instance, terabytes of no-so-repetitive data.
-- A better algorithm for random access 
-- Editions on the text in compressed space
+- A better algorithm for random access. 
+- Text edition in compressed space.
 - Combine different compressed representation into one.
   This functionality is already implemented but only to support parallel compression. 
 - Support for other input formats. For instance, FASTA/Q files.

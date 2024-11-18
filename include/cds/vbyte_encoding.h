@@ -5,6 +5,7 @@
 #ifndef SIMPLE_EXAMPLE_VBYTE_ENCODING_H
 #define SIMPLE_EXAMPLE_VBYTE_ENCODING_H
 #include<iostream>
+#include<cassert>
 
 /*
 //maximum n-bytes integer we can encode in vbyte format

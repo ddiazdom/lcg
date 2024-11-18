@@ -6,7 +6,8 @@
 #define LCG_PARTIAL_GRAM_H
 
 #include "cds/bitstream.h"
-#include "build_gram//phrase_set.h"
+#include "build_gram/phrase_set.h"
+#include "cds/utils.h"
 
 typedef std::vector<uint64_t, mallocator<uint64_t>> vector_uint64_t;
 

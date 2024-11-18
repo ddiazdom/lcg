@@ -470,7 +470,9 @@ size_t get_new_rl_rules(gram_t& gram, par_string_map<size_t>& ht) {
 template<class gram_t>
 void run_length_compress(gram_t& gram) {
 
+    [[maybe_unused]] auto start = std::chrono::steady_clock::now();
     assert(gram.run_len_nt.second==0);
+
     par_string_map<size_t> ht(4, 0.6, 1);
     size_t new_size = get_new_rl_rules(gram, ht);
     uint8_t new_r_bits = sym_width(gram.r+ht.size());
@@ -604,11 +606,7 @@ void run_length_compress(gram_t& gram) {
     assert(gram.str2bitrange(gram.n_strings()-1).second==off_t(new_bit_pos-new_r_bits));
     assert(new_rl_ptrs.size()==(gram.rl_ptr.size()+ht.size()));
 
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:        "<<gram.g<<std::endl;
-    std::cout<<"    Grammar size after:         "<<new_size<<std::endl;
-    std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
-    std::cout<<"    Compression ratio:          "<<float(new_size)/float(gram.g)<<std::endl;
+    [[maybe_unused]] size_t old_size = gram.g;
 
     gram.run_len_nt.first = start_sym;
     gram.run_len_nt.second = ht.size();
@@ -618,6 +616,17 @@ void run_length_compress(gram_t& gram) {
 
     new_rule_stream.swap(gram.rule_stream);
     new_rl_ptrs.swap(gram.rl_ptr);
+    [[maybe_unused]] auto end = std::chrono::steady_clock::now();
+
+#ifdef DEBUG_MODE
+    std::cout<<"  Stats:"<<std::endl;
+    std::cout<<"    Grammar size before:        "<<old_size<<std::endl;
+    std::cout<<"    Grammar size after:         "<<new_size<<std::endl;
+    std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
+    std::cout<<"    Compression ratio:          "<<float(new_size)/float(old_size)<<std::endl;
+    report_time(start, end, 2);
+#endif
+
 }
 
 template<class gram_t>
@@ -829,6 +838,7 @@ template<class gram_t>
 void simplify_grammar(gram_t& gram) {
 
     assert(!gram.is_simplified);
+    [[maybe_unused]] auto start = std::chrono::steady_clock::now();
 
     auto rem_syms = mark_disposable_symbols(gram);
     //bitstream<size_t> new_rules(gram.g-rem_syms.second, sym_width(gram.r-rem_syms.second));
@@ -960,14 +970,7 @@ void simplify_grammar(gram_t& gram) {
     assert(new_rl_ptrs.size()==(gram.rl_ptr.size()-del_nt));
 
     size_t new_size = bit_pos/new_r_bits;
-    float rm_per = float(rem_syms.second)/float(gram.r)*100;
-    float comp_rat = float(new_size)/float(gram.g);
-
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:  "<<gram.g<<std::endl;
-    std::cout<<"    Grammar size after:   "<<new_size<<std::endl;
-    std::cout<<"    Deleted nonterminals: "<<rem_syms.second<<" ("<<rm_per<<"%)"<<std::endl;
-    std::cout<<"    Compression ratio:    "<<comp_rat<<std::endl;
+    [[maybe_unused]] size_t old_size = gram.g;
 
     gram.g = new_size;
     gram.r -= rem_syms.second;
@@ -984,6 +987,18 @@ void simplify_grammar(gram_t& gram) {
 
     gram.max_tsym = n_ter-1;
     gram.is_simplified = true;
+    [[maybe_unused]] auto end = std::chrono::steady_clock::now();
+
+#ifdef DEBUG_MODE
+    float rm_per = float(rem_syms.second)/float(gram.r)*100;
+    float comp_rat = float(new_size)/float(old_size);
+    std::cout<<"  Stats:"<<std::endl;
+    std::cout<<"    Grammar size before:  "<<old_size<<std::endl;
+    std::cout<<"    Grammar size after:   "<<new_size<<std::endl;
+    std::cout<<"    Deleted nonterminals: "<<rem_syms.second<<" ("<<rm_per<<"%)"<<std::endl;
+    std::cout<<"    Compression ratio:    "<<comp_rat<<std::endl;
+    report_time(start, end, 2);
+#endif
 }
 
 void print_metadata(std::string& gram_file){
@@ -1151,7 +1166,8 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
  * @param n_threads : number of working threads
  */
 template<class gram_type>
-void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size, float i_frac, bool skip_simp, bool par_gram) {
+void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
+                float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
     plain_gram p_gram(40, '\n', file_size(i_file));
 
@@ -1159,7 +1175,10 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     auto start = std::chrono::steady_clock::now();
     build_lc_gram(i_file, p_gram, n_threads, chunk_size, i_frac);
     auto end = std::chrono::steady_clock::now();
+
+#ifdef DEBUG_MODE
     report_time(start, end, 2);
+#endif
 
     if(par_gram){
         //TODO uncomment the line below
@@ -1186,18 +1205,12 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
 
     if(gram_type::has_rl_rules){
         std::cout<<"Run-length compressing the grammar"<<std::endl;
-        start = std::chrono::steady_clock::now();
         run_length_compress(compact_gram);
-        end = std::chrono::steady_clock::now();
-        report_time(start, end, 2);
     }
 
     if(!skip_simp){
         std::cout<<"Simplifying the grammar"<<std::endl;
-        start = std::chrono::steady_clock::now();
         simplify_grammar(compact_gram);
-        end = std::chrono::steady_clock::now();
-        report_time(start, end, 2);
     }
 
     if(gram_type::has_rand_access){
@@ -1205,7 +1218,9 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
         start = std::chrono::steady_clock::now();
         add_random_access_support(compact_gram);
         end = std::chrono::steady_clock::now();
+#ifdef DEBUG_MODE
         report_time(start, end, 2);
+#endif
     }
 
     // we need to do this final swap because the grammar
@@ -1214,11 +1229,16 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     final_gram.swap(compact_gram);
 
     //optional check
-    //check_plain_grammar(final_gram, i_file);
+    if(check_gram) {
+        check_plain_grammar(final_gram, i_file);
+    }
     //
 
+#if DEBUG_MODE
     std::cout<<"Stats for the final grammar:"<<std::endl;
     final_gram.breakdown(2);
+#endif
+
     size_t written_bytes = store_to_file(o_file, final_gram);
     std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
 }
