@@ -94,8 +94,8 @@ is convenient to operate over the strings.
 `--check-gram` will check that the output grammar generates exactly the strings in the input. This step is optional and
 mostly for debugging purposes.
 
-`--fraction` says that the combined space of the text chunks plus the satellite data should not exceed this
-fraction of the input. This parameter is only **a request** and it could use more space if, for instance, the compressed
+`--fraction` indicates that the combined space of the text chunks plus the satellite data should not exceed this
+fraction of the input. This parameter is only **a request**, and it could use more space if, for instance, the compressed
 representation of the input exceeds this limit.
 
 `--chunk-size` tells the program the approximate size of the text chunks processed in parallel by the threads.
@@ -105,7 +105,7 @@ representation of the input exceeds this limit.
 
 For the moment, we offer inefficient random access support to the compressed text. It is inefficient because it needs
 to load the full compressed text on RAM to access the query area. We can do much better in practice, but we must 
-implement it. However, the cost of random access is still logarithmic on the text size once the grammar is built. 
+implement it. However, the cost of random access is still logarithmic on the text size once the grammar is loaded. 
 
 Here is an example:
 
@@ -138,7 +138,7 @@ sample_file.txt as follows:
 
 We considered four massive string collections for the experiments. 
 
-- **HUM**: all the human genome assemblies available in [NCBI](https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon=9606) up to **August 27, 2024**. This collection has 1,270 assemblies and is 3.46 TB in size.
+- **HUMANS**: all the human genome assemblies available in [NCBI](https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon=9606) up to **August 27, 2024**. This collection has 1,270 assemblies and is 3.46 TB in size.
 - **ATB**: release 2.0 of the AllTheBacteria dataset from Hunt et al.. It contains 1,932,812 curated genome assemblies from different bacteria and archaea.
 - **ECOLI**: a subset of **ATB** with 8,000 assemblies of the E. coli genome, totalling 40.57 GB.
 - **COVID**: all the assemblies available in NCBI for SARS-CoV-2 up to **November 5, 2024**. This collection has 8,989,016 genomes and a size of 267.39 GB.
@@ -174,7 +174,7 @@ Table~\ref{tab:results}.
 
 ### Compression ratio (plain/compressed)
 
-| Tool      | ATB       | humans     | covid      | ecoli      |
+| Tool      | ATB       | HUMANS     | COVID      | ECOLI      |
 |-----------|-----------|------------|------------|------------|
 | LCG       | **85.26** | 135.54     | 328.10     | 104.33     |
 | agc       | -         | **144.90** | 237.93     | 34.74      |
@@ -220,7 +220,7 @@ We plan to support the following features in the near future:
 - Text edition in compressed space.
 - Combine different compressed representation into one.
   This functionality is already implemented but only to support parallel compression. 
-- Support for other input formats. For instance, FASTA/Q files.
+- Support for other text formats, like FASTA/Q.
 
 # Bugs
 

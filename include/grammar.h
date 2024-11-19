@@ -139,7 +139,6 @@ struct lc_gram_t {
         load_plain_vector(ifs, lvl_rules);
     }
 
-
     template<class gram_type>
     void swap(gram_type &other) {
         std::swap(n, other.n);
@@ -312,21 +311,20 @@ struct lc_gram_t {
         size_t n_ter = n_terminals();
         size_t n_nter = n_nonterminals();
 
-        auto pt_bytes = INT_CEIL(rl_ptr.n_bits(), 8);//space of the pointers for the nonterminals
-        auto g_bytes = INT_CEIL(g * r_bits, 8); //space of the expansions
+        auto pt_bytes = INT_CEIL((r * sym_width(g)), 8);//space of the pointers for the nonterminals
+        auto g_bytes = INT_CEIL((g * r_bits), 8); //space of the expansions
         auto pt_str_bytes = (s + 1) * sizeof(size_t);  //space of the pointers to the strings
 
         float comp_ratio = float(n) / float(pt_bytes + g_bytes + pt_str_bytes);
 
         std::string pad_string(pad, ' ');
-        std::cout << pad_string << "Seed for the parsing:           " << par_seed << std::endl;
         std::cout << pad_string << "Number of compressed symbols:   " << n << " (" << report_space((off_t) n) << ")"
                   << std::endl;
         std::cout << pad_string << "Number of compressed strings:   " << s << " (" << report_space((off_t) pt_str_bytes)
                   << " in pointers)" << std::endl;
         std::cout << pad_string << "Separator symbol:               " << (int) sep_tsym << std::endl;
         std::cout << pad_string << "Number of terminals:            " << n_ter << std::endl;
-        std::cout << pad_string << "Number of non-terminals:        " << n_nter << " ("
+        std::cout << pad_string << "Number of nonterminals:         " << n_nter << " ("
                   << report_space((off_t) pt_bytes) << " in pointers)" << std::endl;
         std::cout << pad_string << "Grammar size:                   " << g << " (" << report_space((off_t) g_bytes)
                   << ")" << std::endl;
@@ -342,8 +340,10 @@ struct lc_gram_t {
             ras_bytes = INT_CEIL(ras_bytes, 8);
             std::cout << pad_string << "  Samp. rate for non.ter exps:  1/" << rl_samp_rate << std::endl;
             std::cout << pad_string << "  Samp. rate for string exps:   1/" << str_samp_rate << std::endl;
-            std::cout << pad_string << "  Space overhead:               " << report_space((off_t) ras_bytes)
-                      << std::endl;
+
+            if(rule_stream.bit_capacity()!=0){//for the cases when we are reading from a file, and we do not have the grammar loaded
+                std::cout << pad_string << "  Space overhead:               " << report_space((off_t) ras_bytes)<< std::endl;
+            }
         }
     }
 

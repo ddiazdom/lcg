@@ -1001,14 +1001,6 @@ void simplify_grammar(gram_t& gram) {
 #endif
 }
 
-void print_metadata(std::string& gram_file){
-    lc_gram_t gram;
-    std::ifstream ifs(gram_file, std::ios::binary);
-    gram.load_metadata(ifs);
-    std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
-    gram.stats(2);
-}
-
 std::tuple<bool, bool, bool> read_grammar_flags(std::string& file){
     std::ifstream ifs(file, std::ios::binary);
     bool tmp_has_rl_rules, tmp_has_cg_rules, tmp_has_rand_rules;
@@ -1016,6 +1008,39 @@ std::tuple<bool, bool, bool> read_grammar_flags(std::string& file){
     load_elm(ifs, tmp_has_cg_rules);
     load_elm(ifs, tmp_has_rand_rules);
     return {tmp_has_rl_rules, tmp_has_cg_rules, tmp_has_rand_rules};
+}
+
+void print_metadata(std::string& gram_file){
+
+    bool has_rl_rules, has_cg_rules, has_rand_access;
+    std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(gram_file);
+    std::ifstream ifs(gram_file, std::ios::binary);
+
+    if(has_cg_rules){
+        if(has_rl_rules){
+            lc_gram_t<true, true, true> gram;
+            gram.load_metadata(ifs);
+            std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
+            gram.stats(2);
+        }else{
+            lc_gram_t<true, false, true> gram;
+            gram.load_metadata(ifs);
+            std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
+            gram.stats(2);
+        }
+    }else{
+        if(has_rl_rules){
+            lc_gram_t<false, true, true> gram;
+            gram.load_metadata(ifs);
+            std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
+            gram.stats(2);
+        }else{
+            lc_gram_t<false, false, true> gram;
+            gram.load_metadata(ifs);
+            std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
+            gram.stats(2);
+        }
+    }
 }
 
 void get_par_seed(std::string& gram_file){
