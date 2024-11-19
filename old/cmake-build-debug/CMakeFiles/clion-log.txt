@@ -1,8 +1,0 @@
-/Users/ddiaz/Applications/CLion.app/Contents/bin/cmake/mac/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - Unix Makefiles" -S /Users/ddiaz/CLionProjects/lcg-2023 -B /Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug
--- Disabling vla-extension due to AppleClang
--- Disabling SSE4.2 instructions due to conflict with host system processor arm64
--- Disabling vla-extension due to AppleClang
--- Disabling SSE4.2 instructions due to conflict with host system processor arm64
--- Configuring done
--- Generating done
--- Build files have been written to: /Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug

@@ -1,2 +1,0 @@
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar qc libbiopar.a CMakeFiles/biopar.dir/lib/dna_string.cpp.o CMakeFiles/biopar.dir/lib/fastx_handler.cpp.o
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib libbiopar.a

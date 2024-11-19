@@ -1,2 +1,0 @@
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar qc liblcg.a CMakeFiles/lcg.dir/lib/build_lc_grammar.cpp.o "CMakeFiles/lcg.dir/external/malloc_count-master/malloc_count.c.o"
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib liblcg.a

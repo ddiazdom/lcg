@@ -1,7 +1,0 @@
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/CMakeFiles/lcg.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/CMakeFiles/lcg-cli.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/CMakeFiles/edit_cache.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/CMakeFiles/cdt.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/CMakeFiles/edit_cache.dir
-/Users/ddiaz/CLionProjects/lcg-2023/cmake-build-debug/external/cdt/CMakeFiles/rebuild_cache.dir
