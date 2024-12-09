@@ -1,5 +1,5 @@
+#include "logger.h"
 #include "external/CLI11.hpp"
-#include "merge_grams.h"
 #include "grammar_algorithms.h"
 
 struct arguments{
@@ -18,6 +18,7 @@ struct arguments{
     bool part=false;
     bool check_gram=false;
     size_t seed=0;
+    log_lvl verbose_lvl=INFO;
 
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
@@ -105,6 +106,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
     comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this input fraction");
     comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
+    comp->add_option("-v,--verbose-level", args.verbose_lvl, "Verbose level (0=error, 1=warning, 0=info, 1=debug)")->default_val(INFO);
 
     //metadata
     CLI::App* meta = app.add_subcommand("met", "Get the metadata of a grammar");
@@ -129,27 +131,51 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.require_subcommand(1,1);
 }
 
-void comp_int(std::string& input_file, arguments& args) {
+template<class gram_type>
+void comp_int2(arguments& args){
+    switch (args.verbose_lvl) {
+        case ERROR:
+            build_gram<gram_type, ERROR>(args.input_file, args.output_file, args.n_threads,
+                                         args.chunk_size, args.i_frac, args.skip_simp,
+                                         args.part, args.check_gram);
+            break;
+        case WARNING:
+            build_gram<gram_type, WARNING>(args.input_file, args.output_file, args.n_threads,
+                                           args.chunk_size, args.i_frac, args.skip_simp,
+                                           args.part, args.check_gram);
+            break;
+        case INFO:
+            build_gram<gram_type, INFO>(args.input_file, args.output_file, args.n_threads,
+                                        args.chunk_size, args.i_frac, args.skip_simp,
+                                        args.part, args.check_gram);
+            break;
+        case DEBUG:
+            build_gram<gram_type, DEBUG>(args.input_file, args.output_file, args.n_threads,
+                                         args.chunk_size, args.i_frac, args.skip_simp,
+                                         args.part, args.check_gram);
+            break;
+        default:
+            logger<ERROR>::error("Unknown log level");
+            exit(1);
+    }
+}
+
+void comp_int(arguments& args) {
     if(args.skip_rl){
         if(args.rand_acc){
-            build_gram<lc_gram_t<false, false, true>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.i_frac, args.skip_simp,
-                                                       args.part, args.check_gram);
+            using gram_type = lc_gram_t<false, false, true>;
+            comp_int2<gram_type>(args);
         }else{
-
-            build_gram<lc_gram_t<false, false, false>>(input_file, args.output_file, args.n_threads,
-                                                       args.chunk_size, args.i_frac, args.skip_simp,
-                                                       args.part, args.check_gram);
+            using gram_type = lc_gram_t<false, false, false>;
+            comp_int2<gram_type>(args);
         }
     }else{
         if(args.rand_acc){
-            build_gram<lc_gram_t<false, true, true>>(input_file, args.output_file, args.n_threads,
-                                                     args.chunk_size, args.i_frac, args.skip_simp,
-                                                     args.part, args.check_gram);
+            using gram_type = lc_gram_t<false, true, true>;
+            comp_int2<gram_type>(args);
         } else {
-            build_gram<lc_gram_t<false, true, false>>(input_file, args.output_file, args.n_threads,
-                                                      args.chunk_size, args.i_frac, args.skip_simp,
-                                                      args.part, args.check_gram);
+            using gram_type = lc_gram_t<false, true, false>;
+            comp_int2<gram_type>(args);
         }
     }
 }
@@ -267,11 +293,10 @@ int main(int argc, char** argv) {
     }
 
     if(app.got_subcommand("cmp")) {
-        std::cout << "\nInput file: " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
-        std::string input_collection = args.input_file;
-        comp_int(input_collection, args);
+        comp_int(args);
+
     } else if(app.got_subcommand("met")){
         print_metadata(args.input_file);
     } else if (app.got_subcommand("acc")){

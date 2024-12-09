@@ -20,7 +20,7 @@
     #define COLL_REPORT(lvl, output_set) do{}while(0);
 #endif
 
-void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks){
+void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams){
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
     [[maybe_unused]] size_t size_before = sink_set.size();
@@ -54,13 +54,13 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
         assert(phrase==o_map_len);
     };
 
-    std::vector<size_t> nb(chunks.size(), 0);
+    std::vector<size_t> nb(grams.size(), 0);
     std::vector<std::thread> threads;
-    threads.reserve(chunks.size()-1);
-    for(size_t i=0;i<chunks.size()-1;i++){
-        threads.emplace_back(ter_worker, std::ref(chunks[i].gram), std::ref(nb[i]));
+    threads.reserve(grams.size()-1);
+    for(size_t i=0;i<grams.size()-1;i++){
+        threads.emplace_back(ter_worker, std::ref(grams[i]), std::ref(nb[i]));
     }
-    ter_worker(chunks.back().gram, nb.back());
+    ter_worker(grams.back(), nb.back());
 
     for (auto &thread: threads) {
         thread.join();
@@ -74,30 +74,30 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
 
     uint32_t len;
     size_t pos;
-    for(auto & chunk : chunks) {
-        const uint8_t *stream = chunk.gram.ter_dict.phr_stream();
-        for(size_t j=0;j<chunk.gram.fps_len[1];j++){
-            if(chunk.gram.fps[1][j] & 0x8000000000000000UL){
-                pos = chunk.gram.fps[1][j] & 0x7FFFFFFFFFFFFFFF;
+    for(auto & gram : grams) {
+        const uint8_t *stream = gram.ter_dict.phr_stream();
+        for(size_t j=0;j<gram.fps_len[1];j++){
+            if(gram.fps[1][j] & 0x8000000000000000UL){
+                pos = gram.fps[1][j] & 0x7FFFFFFFFFFFFFFF;
                 memcpy(&len, &stream[pos], sizeof(uint32_t));
                 pos+=sizeof(uint32_t);
-                chunk.gram.fps[1][j] = sink_set.insert(&stream[pos], len);
+                gram.fps[1][j] = sink_set.insert(&stream[pos], len);
             }
         }
-        chunk.gram.ter_dict.clear();//the table is fully destroyed
+        gram.ter_dict.clear();//the table is fully destroyed
     }
     COLL_REPORT(1, sink_set)
 }
 
-void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
+void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
     [[maybe_unused]] size_t size_before = sink_set.size();
 
-    for(auto & chunk : chunks) {
-        uint64_t* o_map = chunk.gram.fps[1];
-        uint64_t o_map_len = chunk.gram.fps_len[1];
-        phrase_set<uint8_t>& coll_set = chunk.gram.ter_dict;
+    for(auto & gram : grams) {
+        uint64_t* o_map = gram.fps[1];
+        uint64_t o_map_len = gram.fps_len[1];
+        phrase_set<uint8_t>& coll_set = gram.ter_dict;
 
         assert(o_map_len==(coll_set.size()+1));
         coll_set.destroy_table();
@@ -117,7 +117,7 @@ void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chu
     COLL_REPORT(1, sink_set)
 }
 
-void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink) {
+void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams, size_t round, uint32_t prev_alpha_sink) {
 
     phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
     [[maybe_unused]] size_t size_before = sink_gram.nt_dicts[round-1].size();
@@ -165,13 +165,13 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
     };
 
     std::vector<std::thread> threads;
-    threads.reserve(chunks.size()-1);
-    std::vector<size_t> nb(chunks.size(), 0);
+    threads.reserve(grams.size()-1);
+    std::vector<size_t> nb(grams.size(), 0);
 
-    for(size_t i=0;i<chunks.size()-1;i++) {
-        threads.emplace_back(nt_worker, std::ref(chunks[i].gram), std::ref(nb[i]));
+    for(size_t i=0;i<grams.size()-1;i++) {
+        threads.emplace_back(nt_worker, std::ref(grams[i]), std::ref(nb[i]));
     }
-    nt_worker(chunks.back().gram, nb.back());
+    nt_worker(grams.back(), nb.back());
 
     for (auto &thread: threads) {
         thread.join();
@@ -185,10 +185,10 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
 
     uint32_t len;
     size_t pos;
-    for(auto & chunk : chunks) {
-        const uint32_t *stream = chunk.gram.nt_dicts[round-1].phr_stream();
-        uint64_t* o_map = chunk.gram.fps[round+1];
-        uint64_t o_map_len = chunk.gram.fps_len[round+1];
+    for(auto & gram : grams) {
+        const uint32_t *stream = gram.nt_dicts[round-1].phr_stream();
+        uint64_t* o_map = gram.fps[round+1];
+        uint64_t o_map_len = gram.fps_len[round+1];
         for(size_t j=0;j<o_map_len;j++){
             if(o_map[j] & 0x8000000000000000UL){
                 pos = o_map[j] & 0x7FFFFFFFFFFFFFFF;
@@ -197,24 +197,24 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chun
                 o_map[j] = sink_set.insert(&stream[pos], len);
             }
         }
-        chunk.gram.nt_dicts[round-1].clear();
+        gram.nt_dicts[round-1].clear();
     }
     COLL_REPORT((round+1), sink_set)
 }
 
-void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<text_chunk>& chunks, size_t round, uint32_t prev_alpha_sink){
+void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams, size_t round, uint32_t prev_alpha_sink){
 
     assert(round>=1);
     phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
     [[maybe_unused]] size_t size_before = sink_gram.nt_dicts[round-1].size();
 
-    for(auto & chunk : chunks){
+    for(auto & gram : grams){
 
-        const uint64_t* i_map = chunk.gram.fps[round];
-        const uint64_t i_map_len = chunk.gram.fps_len[round];
-        uint64_t* o_map = chunk.gram.fps[round+1];
-        uint64_t o_map_len = chunk.gram.fps_len[round+1];
-        phrase_set<uint32_t>& coll_set = chunk.gram.nt_dicts[round-1];
+        const uint64_t* i_map = gram.fps[round];
+        const uint64_t i_map_len = gram.fps_len[round];
+        uint64_t* o_map = gram.fps[round+1];
+        uint64_t o_map_len = gram.fps_len[round+1];
+        phrase_set<uint32_t>& coll_set = gram.nt_dicts[round-1];
 
         assert(o_map_len==(coll_set.size()+1));
         coll_set.destroy_table();
@@ -270,7 +270,7 @@ void add_compressed_strings(plain_gram& sink_gram, plain_gram& gram, std::vector
     gram.str_orders.clear();
 }
 
-void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
+void collapse_grams(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
 
     //compute the length of each rule set
     std::vector<uint32_t> prev_lvl_alpha(sink_gram.fps.size(), 0);
@@ -281,37 +281,37 @@ void collapse_grams(plain_gram& sink_gram, std::vector<text_chunk>& chunks) {
 
     //just swap grammars if the sink grammar is empty
     if(sink_gram.empty()){
-        sink_gram.swap(chunks[0].gram);
+        sink_gram.swap(grams[0]);
     }
 
     //destroy the tables to free some working memory
-    for(auto & text_chunk : chunks){
-        text_chunk.gram.destroy_tables();
+    for(auto & gram : grams){
+        gram.destroy_tables();
     }
 
-    if(chunks.size()>1){
-        mul_thread_ter_collapse(sink_gram, chunks);
+    if(grams.size()>1){
+        mul_thread_ter_collapse(sink_gram, grams);
     }else{
-        sin_thread_ter_collapse(sink_gram, chunks);
+        sin_thread_ter_collapse(sink_gram, grams);
     }
 
     for(size_t round=1;round<sink_gram.nt_dicts.size();round++){
-        if(round<=4 && chunks.size()>1){
-            mul_thread_nt_collapse(sink_gram, chunks, round, prev_lvl_alpha[round]);
+        if(round<=4 && grams.size()>1){
+            mul_thread_nt_collapse(sink_gram, grams, round, prev_lvl_alpha[round]);
         } else {
-            sin_thread_nt_collapse(sink_gram, chunks, round, prev_lvl_alpha[round]);
+            sin_thread_nt_collapse(sink_gram, grams, round, prev_lvl_alpha[round]);
         }
     }
 
     //add the compressed strings
-    for(auto &chunk : chunks){
-        add_compressed_strings(sink_gram, chunk.gram, prev_lvl_alpha);
+    for(auto &gram : grams){
+        add_compressed_strings(sink_gram, gram, prev_lvl_alpha);
     }
 
     //reset the fingerprints. I can't do it before because the symbols
     // in the compressed strings have different levels
-    for(auto &chunk : chunks){
-        chunk.gram.clear_fps();
+    for(auto &gram : grams){
+        gram.clear_fps();
     }
 
 #ifdef DEBUG_MODE

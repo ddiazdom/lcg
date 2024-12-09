@@ -15,7 +15,7 @@ struct text_chunk {
     size_t id{};//chunk id
     off_t n_bytes_before{};//number of bytes in the file before this chunk
     size_type sep_sym{};//symbol in the buffer delimiting consecutive strings
-    plain_gram gram;
+    plain_gram& gram;
 
     off_t buffer_bytes{};
     off_t e_bytes{};
@@ -34,9 +34,9 @@ struct text_chunk {
     //area of the buffer free for satellite data
     off_t used_bytes=0;
 
-    explicit text_chunk(const plain_gram& _sink_gram, float load_factor=0.85): sink_gram(_sink_gram),
-                                                                               sep_sym(sink_gram.sep_sym()),
-                                                                               gram(sink_gram.lvl_cap(), sep_sym, load_factor){
+    explicit text_chunk(const plain_gram& _sink_gram, plain_gram& ck_gram): sink_gram(_sink_gram),
+                                                                            sep_sym(sink_gram.sep_sym()),
+                                                                            gram(ck_gram){
     }
 
     [[nodiscard]] off_t eff_buff_bytes() const{

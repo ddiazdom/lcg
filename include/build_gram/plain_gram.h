@@ -79,16 +79,25 @@ struct plain_gram {
         copy(other);
     }
 
+    plain_gram& operator=(const plain_gram& other){
+        copy(other);
+        return *this;
+    }
+
     void copy(const plain_gram& other){
-        for(auto const& fps_set : fps){
-            if(fps_set!= nullptr) mem<uint64_t>::deallocate(fps_set);
+
+        for(auto& fps_set : fps){
+            if(fps_set!= nullptr){
+                mem<uint64_t>::deallocate(fps_set);
+            }
         }
 
         fps.resize(other.fps.size());
         for(size_t i=0;i<fps.size();i++){
             fps[i] = mem<uint64_t>::allocate(other.fps_len[i]);
-            memcpy(&fps[i], &other.fps[i], other.fps_len[i]*sizeof(uint64_t));
+            memcpy(fps[i], other.fps[i], other.fps_len[i]*sizeof(uint64_t));
         }
+
         fps_len = other.fps_len;
         ter_dict = other.ter_dict;
         nt_dicts = other.nt_dicts;
@@ -228,6 +237,7 @@ struct plain_gram {
         }
         return bytes;
     }
+
     void clear_fps(){
         for(size_t i=1;i<fps.size();i++){
             fps[i] = mem<uint64_t>::reallocate(fps[i], 1);
@@ -332,7 +342,8 @@ struct plain_gram {
         std::cout<<"Tot. strings: "<<comp_string.size()<<std::endl;
     }
 
-    ~plain_gram(){
+    ~plain_gram() {
+
         /*if(!ter_dict.empty()){
             std::cout<<" dict ter "<<ter_dict.size()<<", "<<ter_dict.load_factor()<<std::endl;
             ter_dict.psl_dist();

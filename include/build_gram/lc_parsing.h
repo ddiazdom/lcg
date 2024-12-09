@@ -644,6 +644,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     }
 }
 
+template<log_lvl msg_lvl>
 void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
 
     auto f_size = (off_t)sink_gram.txt_size();
@@ -689,46 +690,48 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
     // from the cache. This option only applies on linux
     off_t page_cache_limit = 1024*1024*1024;
 
-    std::cout<<"  Settings"<<std::endl;
-    std::cout<<"    Parsing threads           : "<<n_threads<<std::endl;
-    std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
-    std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
-    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<"\n"<<std::endl;
+    std::string msg = "  Settings\n";
+    msg+="    Parsing threads           : "+std::to_string(n_threads)+"\n";
+    msg+="    Active text chunks in RAM : "+std::to_string(n_chunks)+"\n";
+    msg+="    Size of each chunk        : "+report_space(chunk_size)+"\n";
+    msg+="    Chunks' approx. mem usage : "+report_space(off_t(((chunk_size*115)/100)*n_chunks));
+
+    logger<msg_lvl>::info(msg);
 
     // We set the number of grammar level to 40.
     // This limit is enough to process strings of up to 4TB in length.
     // In any case, the combined length of the strings in the collection can be arbitrarily large.
     parsing_state par_state(i_file, sink_gram.sep_sym(), chunk_size, n_threads, page_cache_limit, i_frac);
 
-    //std::vector<text_chunk> text_chunks(p_opts.n_chunks, text_chunk(par_state.sink_gram));
-    std::vector<text_chunk> chunks;
-    chunks.reserve(n_chunks);
+    std::vector<plain_gram> ck_grams(n_chunks,
+                                     plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym(), sink_gram.txt_size()));
+
+    std::vector<text_chunk> txt_chunks;
+    txt_chunks.reserve(n_chunks);
     for(size_t i=0;i<n_chunks;i++){
-        chunks.emplace_back(sink_gram);
+        txt_chunks.emplace_back(sink_gram, ck_grams[i]);
     }
 
-    fill_chunk_grammars<false>(chunks, par_state);
-    collapse_grams(sink_gram, chunks);
+    fill_chunk_grammars<false>(txt_chunks, par_state);
+    collapse_grams(sink_gram, ck_grams);
     sink_gram.update_fps();
     par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
     REPORT_GRAM_SIZE
 
     while(par_state.rem_bytes>0){
-        fill_chunk_grammars<true>(chunks, par_state);
-        collapse_grams(sink_gram, chunks);
+        fill_chunk_grammars<true>(txt_chunks, par_state);
+        collapse_grams(sink_gram, ck_grams);
         sink_gram.update_fps();
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
         REPORT_GRAM_SIZE
     }
     std::cout<<" "<<std::endl;
     sink_gram.reorder_strings();
-
     sink_gram.clear_fps();
 
 #ifdef DEBUG_MODE
     sink_gram.print_stats();
 #endif
-
 }
 /*struct inv_perm_elm{
     uint32_t orig_mt;

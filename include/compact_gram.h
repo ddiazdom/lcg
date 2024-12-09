@@ -2,8 +2,8 @@
 // Created by Diaz, Diego on 3.7.2023.
 //
 
-#ifndef LCG_GRAMMAR_H
-#define LCG_GRAMMAR_H
+#ifndef LCG_COMPACT_GRAM_H
+#define LCG_COMPACT_GRAM_H
 #include <stack>
 #include <queue>
 #include <random>
@@ -1372,4 +1372,4 @@ struct lc_gram_t {
         }
     }
 };
-#endif //LCG_GRAMMAR_H
+#endif //LCG_COMPACT_GRAM_H

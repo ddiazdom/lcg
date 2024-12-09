@@ -5,7 +5,7 @@
 #ifndef LCG_GRAMMAR_ALGORITHMS_H
 #define LCG_GRAMMAR_ALGORITHMS_H
 
-#include "grammar.h"
+#include "compact_gram.h"
 #include "build_gram/lc_parsing.h"
 #include "cds/file_streams.hpp"
 #include "cds/ts_string_map.h"
@@ -251,10 +251,6 @@ void add_random_access_support(gram_t& gram) {
     size_t n_sampled, r_len, s_bits;
     for(size_t sym = gram.max_tsym+1; sym<last_sym; sym++){
 
-        /*if(sym==781){
-            std::cout<<"holaa"<<std::endl;
-        }*/
-
         new_rl_ptrs.push_back(bit_pos);
         auto range = gram.nt2bitrange(sym);
         offset = bit_pos+(range.second-range.first+gram.r_bits);
@@ -264,30 +260,17 @@ void add_random_access_support(gram_t& gram) {
         s_bits=sym_width(exp_tmp[sym]);
 
         exp_acc = 0;
-        //if(sym==133){
-        //    std::cout<<sym<<" -> ";
-        //}
 
         for(off_t i=range.first, j=1;i<=range.second;i+=gram.r_bits,j++){
             tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
             new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_sym);
             bit_pos+=gram.r_bits;
             exp_acc+=exp_tmp[tmp_sym];
-            //if(sym==133){
-            //    std::cout<<" (sym:"<<tmp_sym<<",exp_acc:"<<exp_acc<<")";
-            //}
             if(j%gram.rl_samp_rate==0){
                 new_rule_stream.write(offset, offset+s_bits-1, exp_acc);
                 offset+=s_bits;
-                //if(sym==133){
-                //    std::cout<<"*";
-                //}
             }
         }
-
-        //if(sym==133){
-        //    std::cout<<""<<std::endl;
-        //}
 
         assert(exp_acc==exp_tmp[sym]);
         new_rule_stream.write(offset, offset+s_bits-1, exp_acc);
@@ -335,28 +318,18 @@ void add_random_access_support(gram_t& gram) {
         s_bits = str_width[str];
 
         exp_acc = 0;
-        //if(str==192){
-        //    std::cout<<str<<" ---> ";
-        //}
+
         for(off_t i=range.first, j=1;i<=range.second;i+=gram.r_bits,j++){
             tmp_sym = gram.rule_stream.read(i, i+gram.r_bits-1);
             new_rule_stream.write(bit_pos, bit_pos+gram.r_bits-1, tmp_sym);
             bit_pos+=gram.r_bits;
             exp_acc+=exp_tmp[tmp_sym];
-            //if(str==192){
-            //    std::cout<<" (sym:"<<tmp_sym<<",exp_acc:"<<exp_acc<<")";
-            //}
+
             if(j%gram.str_samp_rate==0){
                 new_rule_stream.write(offset, offset+s_bits-1, exp_acc);
                 offset+=s_bits;
-                //if(str==192){
-                //    std::cout<<"*";
-                //}
             }
         }
-        //if(str==192){
-        //    std::cout<<" "<<std::endl;
-        //}
 
         new_rule_stream.write(offset, offset+str_samp_bits-1, s_bits*n_sampled);
         offset+=str_samp_bits;
@@ -626,7 +599,6 @@ void run_length_compress(gram_t& gram) {
     std::cout<<"    Compression ratio:          "<<float(new_size)/float(old_size)<<std::endl;
     report_time(start, end, 2);
 #endif
-
 }
 
 template<class gram_t>
@@ -642,8 +614,6 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
     std::stack<size_t> stack;
     size_t idx=0;
     std::string decompression;
-
-    //gram.print_parse_tree(0, true);
 
     for(size_t str=0; str <gram.n_strings(); str++) {
 
@@ -1185,20 +1155,16 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
     assert(new_gram.str_boundaries.back()==(bit_pos/r_bits));
 }
 
-/***
- *
- * @param i_file : input text file
- * @param n_threads : number of working threads
- */
-template<class gram_type>
+template<class gram_type, log_lvl msg_lvl=INFO>
 void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
                 float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
+    logger<msg_lvl>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
+    logger<msg_lvl>::info("Building a locally-consistent grammar");
     plain_gram p_gram(40, '\n', file_size(i_file));
 
-    std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
-    build_lc_gram(i_file, p_gram, n_threads, chunk_size, i_frac);
+    build_lc_gram<msg_lvl>(i_file, p_gram, n_threads, chunk_size, i_frac);
     auto end = std::chrono::steady_clock::now();
 
 #ifdef DEBUG_MODE
@@ -1208,7 +1174,7 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     if(par_gram){
         //TODO uncomment the line below
         //store_to_file(o_file, sink_gram);
-        std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
+        logger<msg_lvl>::info("The resulting grammar was stored in "+o_file);
         return;
     }
 
@@ -1229,17 +1195,17 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     }*/
 
     if(gram_type::has_rl_rules){
-        std::cout<<"Run-length compressing the grammar"<<std::endl;
+        logger<msg_lvl>::info("Run-length compressing the grammar");
         run_length_compress(compact_gram);
     }
 
     if(!skip_simp){
-        std::cout<<"Simplifying the grammar"<<std::endl;
+        logger<msg_lvl>::info("Simplifying the grammar");
         simplify_grammar(compact_gram);
     }
 
     if(gram_type::has_rand_access){
-        std::cout<<"Adding random access support"<<std::endl;
+        logger<msg_lvl>::info("Adding random access support");
         start = std::chrono::steady_clock::now();
         add_random_access_support(compact_gram);
         end = std::chrono::steady_clock::now();
@@ -1265,14 +1231,6 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
 #endif
 
     size_t written_bytes = store_to_file(o_file, final_gram);
-    std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
+    logger<msg_lvl>::info("The resulting grammar uses "+report_space((off_t)written_bytes)+" and was stored in "+o_file);
 }
-
-//template<class gram_type>
-//void se_rand_access(std::string& gram_file, size_t str_id, size_t start, size_t end){
-//    gram_type gram;
-//    std::ifstream ifs(gram_file, std::ios::binary);
-//    gram.load_metadata(ifs);
-//    gram.load_pointers(ifs);
-//}
 #endif //LCG_GRAMMAR_ALGORITHMS_H
