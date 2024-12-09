@@ -9,17 +9,14 @@
 #include "text_handler.h"
 #include <thread>
 
-#ifdef DEBUG_MODE
-    #define COLL_REPORT(lvl, output_set) \
-        do{\
-            if(!sink_set.empty()){\
-                std::cout<<"  Growth_factor level_"<<lvl<<": "<<float(size_before)/float(output_set.size())<<std::endl;\
-            }\
-        }while(0);
-#else
-    #define COLL_REPORT(lvl, output_set) do{}while(0);
-#endif
+#define COLL_REPORT(lvl, output_set) \
+do{\
+    if(!sink_set.empty()){\
+        logger<lvl_msg>::debug("  Growth_factor level_"+std::to_string(lvl)+": "+std::to_string(float(size_before)/float(output_set.size())));\
+    }\
+}while(0);
 
+template<log_lvl lvl_msg=INFO>
 void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams){
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
@@ -89,6 +86,7 @@ void mul_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& gra
     COLL_REPORT(1, sink_set)
 }
 
+template<log_lvl lvl_msg=INFO>
 void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
 
     phrase_set<uint8_t>& sink_set = sink_gram.ter_dict;
@@ -117,6 +115,7 @@ void sin_thread_ter_collapse(plain_gram& sink_gram, std::vector<plain_gram>& gra
     COLL_REPORT(1, sink_set)
 }
 
+template<log_lvl lvl_msg=INFO>
 void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams, size_t round, uint32_t prev_alpha_sink) {
 
     phrase_set<uint32_t>& sink_set = sink_gram.nt_dicts[round-1];
@@ -202,6 +201,7 @@ void mul_thread_nt_collapse(plain_gram& sink_gram, std::vector<plain_gram>& gram
     COLL_REPORT((round+1), sink_set)
 }
 
+template<log_lvl lvl_msg=INFO>
 void sin_thread_nt_collapse(plain_gram& sink_gram, std::vector<plain_gram>& grams, size_t round, uint32_t prev_alpha_sink){
 
     assert(round>=1);
@@ -270,7 +270,10 @@ void add_compressed_strings(plain_gram& sink_gram, plain_gram& gram, std::vector
     gram.str_orders.clear();
 }
 
+template<log_lvl lvl_msg=INFO>
 void collapse_grams(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
+
+    logger<lvl_msg>::debug("Collapsing temp grammars");
 
     //compute the length of each rule set
     std::vector<uint32_t> prev_lvl_alpha(sink_gram.fps.size(), 0);
@@ -290,16 +293,16 @@ void collapse_grams(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
     }
 
     if(grams.size()>1){
-        mul_thread_ter_collapse(sink_gram, grams);
+        mul_thread_ter_collapse<lvl_msg>(sink_gram, grams);
     }else{
-        sin_thread_ter_collapse(sink_gram, grams);
+        sin_thread_ter_collapse<lvl_msg>(sink_gram, grams);
     }
 
     for(size_t round=1;round<sink_gram.nt_dicts.size();round++){
         if(round<=4 && grams.size()>1){
-            mul_thread_nt_collapse(sink_gram, grams, round, prev_lvl_alpha[round]);
+            mul_thread_nt_collapse<lvl_msg>(sink_gram, grams, round, prev_lvl_alpha[round]);
         } else {
-            sin_thread_nt_collapse(sink_gram, grams, round, prev_lvl_alpha[round]);
+            sin_thread_nt_collapse<lvl_msg>(sink_gram, grams, round, prev_lvl_alpha[round]);
         }
     }
 
@@ -314,10 +317,6 @@ void collapse_grams(plain_gram& sink_gram, std::vector<plain_gram>& grams) {
         gram.clear_fps();
     }
 
-#ifdef DEBUG_MODE
-    std::cout<<"The new sink grammar "<<std::endl;
-    sink_gram.print_stats();
-#endif
-
+    logger<lvl_msg>::debug("The new sink grammar:\n"+sink_gram.get_stats(4));
 }
 #endif //LCG_COLLAPSE_GRAM_H

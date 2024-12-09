@@ -220,9 +220,12 @@ std::tuple<size_t, uint8_t, uint8_t> compute_exp_info(gram_t& gram, std::vector<
     return {tot_samp_bits, max_r_samp_bits, max_str_samp_bits};
 }
 
-template<class gram_t>
+template<log_lvl lvl_msg=INFO, class gram_t>
 void add_random_access_support(gram_t& gram) {
 
+    logger<lvl_msg>::info("Adding random access support");
+
+    auto start = std::chrono::steady_clock::now();
     assert(!gram.has_cg_rules);
 
     std::vector<uint64_t> exp_tmp(gram.r, 0);
@@ -345,6 +348,9 @@ void add_random_access_support(gram_t& gram) {
 
     new_rule_stream.swap(gram.rule_stream);
     new_rl_ptrs.swap(gram.rl_ptr);
+
+    auto end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 }
 
 template<class gram_t>
@@ -440,10 +446,12 @@ size_t get_new_rl_rules(gram_t& gram, par_string_map<size_t>& ht) {
     return new_size+(ht.size()*2);
 }
 
-template<class gram_t>
+template<log_lvl msg_lvl=INFO, class gram_t>
 void run_length_compress(gram_t& gram) {
 
-    [[maybe_unused]] auto start = std::chrono::steady_clock::now();
+    logger<msg_lvl>::info("Run-length compressing the grammar");
+
+    auto start = std::chrono::steady_clock::now();
     assert(gram.run_len_nt.second==0);
 
     par_string_map<size_t> ht(4, 0.6, 1);
@@ -589,16 +597,16 @@ void run_length_compress(gram_t& gram) {
 
     new_rule_stream.swap(gram.rule_stream);
     new_rl_ptrs.swap(gram.rl_ptr);
-    [[maybe_unused]] auto end = std::chrono::steady_clock::now();
+    auto end = std::chrono::steady_clock::now();
 
-#ifdef DEBUG_MODE
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:        "<<old_size<<std::endl;
-    std::cout<<"    Grammar size after:         "<<new_size<<std::endl;
-    std::cout<<"    Number of new nonterminals: "<<ht.size()<<std::endl;
-    std::cout<<"    Compression ratio:          "<<float(new_size)/float(old_size)<<std::endl;
+    std::string msg ="  Stats:";
+    msg+="\n    Grammar size before:        "+std::to_string(old_size);
+    msg+="\n    Grammar size after:         "+std::to_string(new_size);
+    msg+="\n    Number of new nonterminals: "+std::to_string(ht.size());
+    msg+="\n    Compression ratio:          "+std::to_string(float(new_size)/float(old_size));
+
+    logger<msg_lvl>::debug(msg);
     report_time(start, end, 2);
-#endif
 }
 
 template<class gram_t>
@@ -804,8 +812,10 @@ void balanced_simplification(gram_t& gram){
     }
 }
 
-template<class gram_t>
+template<log_lvl lvl_msg=INFO, class gram_t>
 void simplify_grammar(gram_t& gram) {
+
+    logger<lvl_msg>::info("Simplifying the grammar");
 
     assert(!gram.is_simplified);
     [[maybe_unused]] auto start = std::chrono::steady_clock::now();
@@ -959,16 +969,17 @@ void simplify_grammar(gram_t& gram) {
     gram.is_simplified = true;
     [[maybe_unused]] auto end = std::chrono::steady_clock::now();
 
-#ifdef DEBUG_MODE
     float rm_per = float(rem_syms.second)/float(gram.r)*100;
     float comp_rat = float(new_size)/float(old_size);
-    std::cout<<"  Stats:"<<std::endl;
-    std::cout<<"    Grammar size before:  "<<old_size<<std::endl;
-    std::cout<<"    Grammar size after:   "<<new_size<<std::endl;
-    std::cout<<"    Deleted nonterminals: "<<rem_syms.second<<" ("<<rm_per<<"%)"<<std::endl;
-    std::cout<<"    Compression ratio:    "<<comp_rat<<std::endl;
+
+    std::string msg ="  Stats:";
+    msg+="\n    Grammar size before:  "+std::to_string(old_size);
+    msg+="\n    Grammar size after:   "+std::to_string(new_size);
+    msg+="\n    Deleted nonterminals: "+std::to_string(rem_syms.second)+" ("+std::to_string(rm_per)+"%)";
+    msg+="\n    Compression ratio:    "+std::to_string(comp_rat);
+
+    logger<lvl_msg>::debug(msg);
     report_time(start, end, 2);
-#endif
 }
 
 std::tuple<bool, bool, bool> read_grammar_flags(std::string& file){
@@ -991,24 +1002,24 @@ void print_metadata(std::string& gram_file){
             lc_gram_t<true, true, true> gram;
             gram.load_metadata(ifs);
             std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
-            gram.stats(2);
+            std::cout<<gram.stats(2)<<std::endl;
         }else{
             lc_gram_t<true, false, true> gram;
             gram.load_metadata(ifs);
             std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
-            gram.stats(2);
+            std::cout<<gram.stats(2)<<std::endl;
         }
     }else{
         if(has_rl_rules){
             lc_gram_t<false, true, true> gram;
             gram.load_metadata(ifs);
             std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
-            gram.stats(2);
+            std::cout<<gram.stats(2)<<std::endl;
         }else{
             lc_gram_t<false, false, true> gram;
             gram.load_metadata(ifs);
             std::cout<<"Metadata of "<<std::filesystem::path(gram_file).filename()<<std::endl;
-            gram.stats(2);
+            std::cout<<gram.stats(2)<<std::endl;
         }
     }
 }
@@ -1021,13 +1032,15 @@ void get_par_seed(std::string& gram_file){
     std::cout<<"This grammar was built using the seed "<<gram.par_seed<<std::endl;
 }
 
-template<class gram_type>
+template<log_lvl msg_lvl=INFO, class gram_type>
 void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
 
     //TODO Reorder the elements in the stream so random access is more disk-friendly
     //This order is better: compressed string, and then the rules in decreasing level
     //Remember to pad some bits to byte-align each level, this will simplify random access
+    logger<msg_lvl>::info("Compacting the grammar");
 
+    auto start = std::chrono::steady_clock::now();
     new_gram.n = p_gram.txt_size();
     new_gram.r = p_gram.gram_alphabet();
     new_gram.g = p_gram.gram_size();
@@ -1153,34 +1166,31 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
     }
     assert(new_gram.str_boundaries[0]==offset);
     assert(new_gram.str_boundaries.back()==(bit_pos/r_bits));
+    auto end = std::chrono::steady_clock::now();
+    report_time(start, end, 2);
 }
 
-template<class gram_type, log_lvl msg_lvl=INFO>
+template<class gram_type, log_lvl lvl_msg=INFO>
 void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
                 float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
-    logger<msg_lvl>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
-    logger<msg_lvl>::info("Building a locally-consistent grammar");
+    logger<lvl_msg>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
+
     plain_gram p_gram(40, '\n', file_size(i_file));
 
-    auto start = std::chrono::steady_clock::now();
-    build_lc_gram<msg_lvl>(i_file, p_gram, n_threads, chunk_size, i_frac);
-    auto end = std::chrono::steady_clock::now();
-
-#ifdef DEBUG_MODE
-    report_time(start, end, 2);
-#endif
+    build_lc_gram<lvl_msg>(i_file, p_gram, n_threads, chunk_size, i_frac);
 
     if(par_gram){
         //TODO uncomment the line below
         //store_to_file(o_file, sink_gram);
-        logger<msg_lvl>::info("The resulting grammar was stored in "+o_file);
+        logger<lvl_msg>::info("The resulting grammar was stored in "+o_file);
         return;
     }
 
     // the grammar encoding with random access support works differently, so this hack
     using tmp_gram_type = lc_gram_t<gram_type::has_cg_rules, gram_type::has_rl_rules, false>;
     tmp_gram_type compact_gram;
+
     complete_and_pack_grammar(p_gram, compact_gram);
 
     //gram.print_parse_tree(0, true);
@@ -1195,23 +1205,15 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     }*/
 
     if(gram_type::has_rl_rules){
-        logger<msg_lvl>::info("Run-length compressing the grammar");
-        run_length_compress(compact_gram);
+        run_length_compress<lvl_msg>(compact_gram);
     }
 
     if(!skip_simp){
-        logger<msg_lvl>::info("Simplifying the grammar");
-        simplify_grammar(compact_gram);
+        simplify_grammar<lvl_msg>(compact_gram);
     }
 
     if(gram_type::has_rand_access){
-        logger<msg_lvl>::info("Adding random access support");
-        start = std::chrono::steady_clock::now();
-        add_random_access_support(compact_gram);
-        end = std::chrono::steady_clock::now();
-#ifdef DEBUG_MODE
-        report_time(start, end, 2);
-#endif
+        add_random_access_support<lvl_msg>(compact_gram);
     }
 
     // we need to do this final swap because the grammar
@@ -1225,12 +1227,9 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     }
     //
 
-#if DEBUG_MODE
-    std::cout<<"Stats for the final grammar:"<<std::endl;
-    final_gram.breakdown(2);
-#endif
+    logger<lvl_msg>::debug("Stats for the final grammar:\n"+final_gram.breakdown(2));
 
     size_t written_bytes = store_to_file(o_file, final_gram);
-    logger<msg_lvl>::info("The resulting grammar uses "+report_space((off_t)written_bytes)+" and was stored in "+o_file);
+    logger<lvl_msg>::info("The resulting grammar uses "+report_space((off_t)written_bytes)+" and was stored in "+o_file);
 }
 #endif //LCG_GRAMMAR_ALGORITHMS_H

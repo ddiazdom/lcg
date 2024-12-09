@@ -331,15 +331,19 @@ struct plain_gram {
         }
     }
 
-    void print_stats(){
-        std::cout<<"Level 1, number of phrases: "<<ter_dict.size()<<",  number of symbols: "<<ter_dict.tot_symbols()<<std::endl;
+    std::string get_stats(size_t pad=0){
+        std::string pad_str(pad, ' ');
+
+        std::string stats=pad_str+"Level 1, number of phrases: "+std::to_string(ter_dict.size())+",  number of symbols: "+std::to_string(ter_dict.tot_symbols());
         size_t round=2;
         for(auto const& lvl_set: nt_dicts){
             if(lvl_set.empty()) break;
-            std::cout<<"Level "<<round<<", number of phrases: "<<lvl_set.size()<<", number of symbols: "<<lvl_set.tot_symbols()<<std::endl;
+            stats+="\n"+pad_str+"Level "+std::to_string(round)+", number of phrases: "+std::to_string(lvl_set.size())+", number of symbols: "+std::to_string(lvl_set.tot_symbols());
             round++;
         }
-        std::cout<<"Tot. strings: "<<comp_string.size()<<std::endl;
+        stats+="\n"+pad_str+"Tot. strings: "+std::to_string(comp_string.size());
+        stats+="\n"+pad_str+"Space space: real:"+report_space((off_t)mem_usage())+" eff:"+report_space((off_t)eff_mem_usage());
+        return stats;
     }
 
     ~plain_gram() {

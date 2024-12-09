@@ -306,10 +306,11 @@ struct lc_gram_t {
         }
     }
 
-    void stats(size_t pad) const {
+    [[nodiscard]] std::string stats(size_t pad) const {
 
         size_t n_ter = n_terminals();
         size_t n_nter = n_nonterminals();
+        std::string stat_str;
 
         auto pt_bytes = INT_CEIL((r * sym_width(g)), 8);//space of the pointers for the nonterminals
         auto g_bytes = INT_CEIL((g * r_bits), 8); //space of the expansions
@@ -318,60 +319,62 @@ struct lc_gram_t {
         float comp_ratio = float(n) / float(pt_bytes + g_bytes + pt_str_bytes);
 
         std::string pad_string(pad, ' ');
-        std::cout << pad_string << "Number of compressed symbols:   " << n << " (" << report_space((off_t) n) << ")"
-                  << std::endl;
-        std::cout << pad_string << "Number of compressed strings:   " << s << " (" << report_space((off_t) pt_str_bytes)
-                  << " in pointers)" << std::endl;
-        std::cout << pad_string << "Separator symbol:               " << (int) sep_tsym << std::endl;
-        std::cout << pad_string << "Number of terminals:            " << n_ter << std::endl;
-        std::cout << pad_string << "Number of nonterminals:         " << n_nter << " ("
-                  << report_space((off_t) pt_bytes) << " in pointers)" << std::endl;
-        std::cout << pad_string << "Grammar size:                   " << g << " (" << report_space((off_t) g_bytes)
-                  << ")" << std::endl;
-        std::cout << pad_string << "Length of the comp. collection: " << c << std::endl;
-        std::cout << pad_string << "Approx. compression ratio:      " << comp_ratio << std::endl;
-        std::cout << pad_string << "Simplified:                     " << (is_simplified ? "yes" : "no") << std::endl;
-        std::cout << pad_string << "Run-length rules:               " << (has_rl_rules ? "yes" : "no") << std::endl;
-        std::cout << pad_string << "Collage system rules:           " << (has_cg_rules ? "yes" : "no") << std::endl;
-        std::cout << pad_string << "Random access support:          " << (has_rand_access ? "yes" : "no") << std::endl;
+
+        stat_str+=pad_string+"Number of compressed symbols:   "+std::to_string(n)+" ("+report_space((off_t) n)+")\n";
+        stat_str+=pad_string+"Number of compressed strings:   "+std::to_string(s)+" ("+report_space((off_t) pt_str_bytes)+" in pointers)\n";
+        stat_str+=pad_string+"Separator symbol:               "+std::to_string((int)sep_tsym)+"\n";
+        stat_str+=pad_string+"Number of terminals:            "+std::to_string(n_ter)+"\n";
+        stat_str+=pad_string+"Number of nonterminals:         "+std::to_string(n_nter)+" ("+report_space((off_t) pt_bytes)+" in pointers)\n";
+        stat_str+=pad_string+"Grammar size:                   "+std::to_string(g)+" ("+report_space((off_t) g_bytes)+")\n";
+        stat_str+=pad_string+"Length of the comp. collection: "+std::to_string(c)+"\n";
+        stat_str+=pad_string+"Approx. compression ratio:      "+std::to_string(comp_ratio)+"\n";
+        stat_str+=pad_string+"Simplified:                     "+(is_simplified ? "yes" : "no")+"\n";
+        stat_str+=pad_string+"Run-length rules:               "+(has_rl_rules ? "yes" : "no")+"\n";
+        stat_str+=pad_string+"Collage system rules:           "+(has_cg_rules ? "yes" : "no")+"\n";
+        stat_str+=pad_string+"Random access support:          "+(has_rand_access ? "yes" : "no");
+
         if (has_rand_access) {
             auto ras_bytes = rule_stream.bit_capacity() - (g * r_bits);//the cost of the expansion samples
             ras_bytes += rl_ptr.n_bits() - (r * sym_width(g));//the cost of expanding the rules' pointers
             ras_bytes = INT_CEIL(ras_bytes, 8);
-            std::cout << pad_string << "  Samp. rate for non.ter exps:  1/" << rl_samp_rate << std::endl;
-            std::cout << pad_string << "  Samp. rate for string exps:   1/" << str_samp_rate << std::endl;
+            stat_str+="\n"+pad_string+"  Samp. rate for non.ter exps:  1/"+std::to_string(rl_samp_rate)+"\n";
+            stat_str+=pad_string+"  Samp. rate for string exps:   1/"+std::to_string(str_samp_rate);
 
             if(rule_stream.bit_capacity()!=0){//for the cases when we are reading from a file, and we do not have the grammar loaded
-                std::cout << pad_string << "  Space overhead:               " << report_space((off_t) ras_bytes)<< std::endl;
+                stat_str+="\n"+pad_string+"  Space overhead:               "+report_space((off_t) ras_bytes);
             }
         }
+        return stat_str;
     }
 
-    void breakdown(size_t pad) {
-        //assert(g==rules.size());
-        //assert(r-(max_tsym+1)==(rl_ptr.size()-1));
+    std::string breakdown(size_t pad) {
+
         assert(s == str_boundaries.size() - 1);
-        stats(pad);
 
         std::string pad_string(pad, ' ');
+        std::string brk_down = stats(pad);
 
         size_t n_rules;
-        std::cout << pad_string << "Grammar rules per level" << std::endl;
+        brk_down+="\n"+pad_string+"Grammar rules per level";
+
         for (size_t i = 0; i < lvl_rules.size() - 1; i++) {
             n_rules = lvl_rules[i + 1] - lvl_rules[i];//number of rules in the level
             if (n_rules > 0) {
-                std::cout << pad_string << "  Level " << (i + 1) << ": number of rules: " << n_rules << std::endl;
+                brk_down+="\n"+pad_string+"  Level "+std::to_string(i + 1)+": number of rules: "+std::to_string(n_rules);
             }
         }
 
-        if (has_cg_rules) {
-            std::cout << pad_string << "Number of collage rules: " << n_cg_rules << std::endl;
+        if(has_cg_rules){
+            brk_down+="\n"+pad_string+"Number of collage rules: "+std::to_string(n_cg_rules);
         }
 
-        if (has_rl_rules) {
-            std::cout << pad_string << "Number of run-length rules: " << run_len_nt.second << std::endl;
+        if(has_rl_rules){
+            brk_down+="\n"+pad_string+"Number of run-length rules: "+std::to_string(run_len_nt.second);
         }
-        std::cout << pad_string << "Length of the compressed sequence (start symbol's rule): " << c << std::endl;
+
+        brk_down+="\n"+pad_string+"Length of the compressed sequence (start symbol's rule): "+std::to_string(c);
+
+        return brk_down;
     }
 
     /*
