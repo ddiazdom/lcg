@@ -10,6 +10,19 @@ set(SOURCE_FILES main.cpp
         lib/cdt_common.cpp
 )
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -msse4.2 -Wall")
+
+set(SSE42_CXX_CODE "
+        #include <x86intrin.h>
+        int main(){
+        #if __SSE4_2__
+        return 0;
+        #else
+        #error \"SSE4.2 is not supported\"
+        #endif
+        }
+")
+
 set(AVX2_CXX_CODE "
         #include <immintrin.h>
         int main(){
@@ -32,18 +45,8 @@ set(NEON_CXX_CODE "
         }
 ")
 
-set(SSE42_CXX_CODE "
-        #include <x86intrin.h>
-        int main(){
-        #if __SSE4_2__
-        return 0;
-        #else
-        #error \"SSE4.2 is not supported\"
-        #endif
-        }
-")
 
-check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT FAIL_REGEX "warning")
+check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT)
 if(AVX2_SUPPORT)
         message("AVX2 is supported")
 else()
@@ -57,7 +60,7 @@ else()
         message("NEON is not supported")
 endif()
 
-check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT FAIL_REGEX "warning")
+check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT)
 if(SSE42_SUPPORT)
         message("SSE42 is supported")
 else()
