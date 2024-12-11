@@ -348,9 +348,8 @@ void add_random_access_support(gram_t& gram) {
 
     new_rule_stream.swap(gram.rule_stream);
     new_rl_ptrs.swap(gram.rl_ptr);
-
     auto end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);
+    logger<lvl_msg>::info(report_time(start, end, 2));
 }
 
 template<class gram_t>
@@ -606,7 +605,7 @@ void run_length_compress(gram_t& gram) {
     msg+="\n    Compression ratio:          "+std::to_string(float(new_size)/float(old_size));
 
     logger<msg_lvl>::debug(msg);
-    report_time(start, end, 2);
+    logger<msg_lvl>::info(report_time(start, end, 2));
 }
 
 template<class gram_t>
@@ -979,7 +978,7 @@ void simplify_grammar(gram_t& gram) {
     msg+="\n    Compression ratio:    "+std::to_string(comp_rat);
 
     logger<lvl_msg>::debug(msg);
-    report_time(start, end, 2);
+    logger<lvl_msg>::info(report_time(start, end, 2));
 }
 
 std::tuple<bool, bool, bool> read_grammar_flags(std::string& file){
@@ -1167,7 +1166,7 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
     assert(new_gram.str_boundaries[0]==offset);
     assert(new_gram.str_boundaries.back()==(bit_pos/r_bits));
     auto end = std::chrono::steady_clock::now();
-    report_time(start, end, 2);
+    logger<msg_lvl>::info(report_time(start, end, 2));
 }
 
 template<class gram_type, log_lvl lvl_msg=INFO>
@@ -1191,17 +1190,13 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
     using tmp_gram_type = lc_gram_t<gram_type::has_cg_rules, gram_type::has_rl_rules, false>;
     tmp_gram_type compact_gram;
 
-    complete_and_pack_grammar(p_gram, compact_gram);
+    complete_and_pack_grammar<lvl_msg>(p_gram, compact_gram);
 
     //gram.print_parse_tree(0, true);
     /*if(gram_type::has_cg_rules){
-        std::cout<<"Transforming the grammar into a college system"<<std::endl;
-        start = std::chrono::steady_clock::now();
         compute_exp_len(gram);
         make_gram_fix_free(gram);
         //make_collage_system(gram);
-        end = std::chrono::steady_clock::now();
-        report_time(start, end, 2);
     }*/
 
     if(gram_type::has_rl_rules){

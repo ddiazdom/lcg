@@ -21,12 +21,12 @@
 
 #include "xxhash.h"
 #include "collapse_gram.h"
+#include "fastx_parser.h"
 
 #include "cds/ts_queue.h"
 #include "cds/ts_priority_queue.h"
 #include "cds/utils.h"
 #include "cds/vbyte_encoding.h"
-
 
 #define PARSING_INFO \
 do{\
@@ -42,9 +42,6 @@ oss<<"  Processed input: "<<report_space((off_t)p_state.proc_syms)\
 <<" ("<< std::fixed<< std::setprecision(2)<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)    ";  \
 logger<msg_lvl, true, true>::info(oss.str());\
 }while(0);
-
-//#define REPORT_GRAM_SIZE \
-//logger<msg_lvl>::debug("Sink grammar space: real:"+report_space((off_t)sink_gram.mem_usage())+" eff:"+report_space((off_t)sink_gram.eff_mem_usage()));
 
 struct parsing_state {
     size_t chunk_size;
@@ -647,7 +644,6 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
     logger<msg_lvl>::info("Building a locally consistent grammar");
 
     auto start = std::chrono::steady_clock::now();
-
     auto f_size = (off_t)sink_gram.txt_size();
 
     //for inputs up to 10GB, we collapse every 20 processed chunks
@@ -729,9 +725,6 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
     sink_gram.reorder_strings();
     sink_gram.clear_fps();
     auto end = std::chrono::steady_clock::now();
-
-    //logger<msg_lvl>::debug("The final sink gram\n"+sink_gram.get_stats(2));
-    report_time(start, end, 2);
+    logger<msg_lvl>::info(report_time(start, end, 2));
 }
-
 #endif //LCG_LC_PARSING_H

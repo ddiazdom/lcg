@@ -28,13 +28,13 @@ struct logger{
 
     inline static void debug(const std::string& msg) {
         if constexpr (lvl>=DEBUG){
-            std::cout<<"debug: "<<msg<<std::endl;
+            std::cout<<msg<<std::endl;
         }
     }
 
     inline static void warning(const std::string& msg) {
         if constexpr (lvl>=WARNING){
-            std::cout<<"debug: "<<msg<<std::endl;
+            std::cout<<msg<<std::endl;
         }
     }
 };

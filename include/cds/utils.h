@@ -114,23 +114,26 @@ std::string to_string_with_precision(const T a_value, const int n = 6) {
 }
 
 template<class time_t>
-void report_time(time_t start, time_t end, size_t padding){
+inline std::string report_time(time_t start, time_t end, size_t padding){
+
+    std::ostringstream oss;
     auto dur = end - start;
     auto h = std::chrono::duration_cast<std::chrono::hours>(dur);
     auto m = std::chrono::duration_cast<std::chrono::minutes>(dur -= h);
     auto s = std::chrono::duration_cast<std::chrono::seconds>(dur -= m);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(dur -= s);
 
-    for(size_t i=0;i<padding;i++) std::cout<<" ";
+    oss<<std::string(padding,' ');
     if(h.count()>0){
-        std::cout<<"Elapsed time (hh:mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<h.count()<<":"<<std::setfill('0')<<std::setw(2)<<m.count()<<":"<<std::setfill('0')<<std::setw(2)<<s.count()<<"."<<ms.count()<<std::endl;
-    }else if(m.count()>0){
-        std::cout<<"Elapsed time (mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(m.count())<<":"<<std::setfill('0')<<std::setw(2)<<s.count()<<"."<<ms.count()<<std::endl;
+        oss <<"Elapsed time (hh:mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<h.count()<<":"<<std::setfill('0')<<std::setw(2)<<m.count()<<":"<<std::setfill('0')<<std::setw(2)<<s.count()<<"."<<ms.count();
+    } else if(m.count()>0){
+        oss <<"Elapsed time (mm:ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(m.count())<<":"<<std::setfill('0')<<std::setw(2)<<s.count()<<"."<<ms.count();
     }else if(s.count()>0){
-        std::cout<<"Elapsed time (ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(s.count())<<"."<<ms.count()<<std::endl;
+        oss <<"Elapsed time (ss.ms): "<<std::setfill('0')<<std::setw(2)<<size_t(s.count())<<"."<<ms.count();
     }else{
-        std::cout<<"Elapsed time (ms): "<<ms.count()<<std::endl;
+        oss <<"Elapsed time (ms): "<<ms.count();
     }
+    return std::move(oss).str();
 }
 
 template<class time_t>
@@ -161,14 +164,12 @@ std::string report_speed(off_t bytes, time_t start, time_t end){
 
     std::ostringstream result;
     result <<std::fixed << std::setprecision(2) << speed<< " " << byte_units[byte_unit_index] << "/" << time_units[time_unit_index];
-    return result.str();
+    return std::move(result).str();
 }
 
 std::string report_space(off_t bytes);
 
 bool ends_with(std::string const & value, std::string const & ending);
 bool ends_with(std::string const & value, std::vector<std::string> const & ending, std::string& ext);
-
-void report_mem_peak();
 
 #endif //CDS_UTILS_H

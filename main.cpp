@@ -293,20 +293,63 @@ int main(int argc, char** argv) {
     }
 
     if(app.got_subcommand("cmp")) {
+
         if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
-        comp_int(args);
+
+
+        //TODO only for testing
+        size_t n_bytes = file_size(args.input_file);
+        auto *tmp = allocator::allocate<uint8_t>(n_bytes);
+        std::ifstream file(args.input_file, std::ios::binary); // `ate` opens at end for size calculation
+        file.read((char *)tmp, (std::streamsize)n_bytes);
+
+        auto *tmp2 = allocator::allocate<uint8_t>(n_bytes);
+        memcpy(tmp2, tmp, n_bytes);
+
+        auto *tmp3 = allocator::allocate<uint8_t>(n_bytes);
+        memcpy(tmp3, tmp, n_bytes);
+
+        auto start = std::chrono::steady_clock::now();
+        size_t parsed_bytes_scalar = fasta_parsing_scalar(tmp, n_bytes);
+        auto end = std::chrono::steady_clock::now();
+        std::cout <<"Time scalar = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+
+#ifdef __ARM_NEON__
+        start = std::chrono::steady_clock::now();
+        size_t parsed_bytes_neon = fasta_parsing_neon(tmp2, n_bytes);
+        end = std::chrono::steady_clock::now();
+        std::cout <<"Time neon = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+#endif
+
+#ifdef __AVX2__
+        start = std::chrono::steady_clock::now();
+        size_t parsed_bytes_avx = fasta_parsing_avx2(tmp3, n_bytes);
+        end = std::chrono::steady_clock::now();
+        std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+#endif
+        free(tmp);
+        free(tmp2);
+        free(tmp3);
+        //
+        //comp_int(args);
 
     } else if(app.got_subcommand("met")){
+
         print_metadata(args.input_file);
+
     } else if (app.got_subcommand("acc")){
+
         std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
         access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
+
     } else {
+
         std::cout<<" Unknown command "<<std::endl;
         return 1;
+
     }
     return 0;
 }
