@@ -171,6 +171,7 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 #ifdef __AVX2__
 #include <x86intrin.h>
 #include "simd_tables.h"
+#include <immintrin.h>
 
 __m256i cleanm256(__m256i x, unsigned int newlinemask, unsigned int *mask1, unsigned int *mask2) {
   unsigned int maskhigh = (newlinemask) >> 16;
@@ -179,6 +180,7 @@ __m256i cleanm256(__m256i x, unsigned int newlinemask, unsigned int *mask1, unsi
   assert(masklow < (1 << 16));
   *mask1 = masklow;
   *mask2 = maskhigh;
+  //TODO the load below does not work with g++ 9.4 (probably with older versions either)
   __m256i mask = _mm256_loadu2_m128i((const __m128i *)despace_mask16 + (maskhigh & 0x7fff),
                                      (const __m128i *)despace_mask16 + (masklow & 0x7fff));
   return _mm256_shuffle_epi8(x, mask);
@@ -224,12 +226,18 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 
         //remove new lines
         uint32_t newlinemask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(x, newline));
-        if(!new_line_mask) { // no white newline
+        if(!newlinemask) { // no white newline
             _mm256_storeu_si256((__m256i *)(stream + pos), x);
             pos += 32;
         } else {
-            unsigned int masklow, maskhigh;
-            x = cleanm256(x, newlinemask, &masklow, &maskhigh);
+            unsigned int maskhigh = (newlinemask) >> 16;
+            unsigned int masklow = (newlinemask)&0xFFFF;
+            assert(maskhigh < (1 << 16));
+            assert(masklow < (1 << 16));
+            //TODO the load below does not work with g++ 9.4 (probably with older versions either)
+            __m256i mask = _mm256_loadu2_m128i((const __m128i *)despace_mask16 + (maskhigh & 0x7fff),
+                                               (const __m128i *)despace_mask16 + (masklow & 0x7fff));
+            x = _mm256_shuffle_epi8(x, mask);
             int offset1 = 16 - _mm_popcnt_u32(masklow);
             int offset2 = 16 - _mm_popcnt_u32(maskhigh);
             _mm256_storeu2_m128i((__m128i *)(stream + pos + offset1),

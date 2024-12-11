@@ -313,20 +313,24 @@ int main(int argc, char** argv) {
         auto start = std::chrono::steady_clock::now();
         size_t parsed_bytes_scalar = fasta_parsing_scalar(tmp, n_bytes);
         auto end = std::chrono::steady_clock::now();
-        std::cout <<"Time scalar = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+        std::cout <<"Time scalar = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_scalar<<std::endl;
 
 #ifdef __ARM_NEON__
         start = std::chrono::steady_clock::now();
         size_t parsed_bytes_neon = fasta_parsing_neon(tmp2, n_bytes);
         end = std::chrono::steady_clock::now();
-        std::cout <<"Time neon = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+        std::cout <<"Time neon = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_neon<<std::endl;
+        assert(parsed_bytes_scalar==parsed_bytes_neon);
+        std::cout<<"Equals? "<<(memcmp(tmp,tmp2, parsed_bytes_neon)==0)<<std::endl;
 #endif
 
 #ifdef __AVX2__
         start = std::chrono::steady_clock::now();
         size_t parsed_bytes_avx = fasta_parsing_avx2(tmp3, n_bytes);
         end = std::chrono::steady_clock::now();
-        std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns]" << std::endl;
+        std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_avx<<std::endl;
+        assert(parsed_bytes_scalar==parsed_bytes_avx);
+        std::cout<<"Equals? "<<(memcmp(tmp,tmp3, parsed_bytes_neon)==0)<<std::endl;
 #endif
         free(tmp);
         free(tmp2);
