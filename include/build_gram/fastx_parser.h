@@ -97,6 +97,7 @@ static const uint8_t __attribute__((aligned(16))) mask_shuffle[256*8] = {
         3,4,5,6,7,0,0,0, 0,3,4,5,6,7,0,0, 1,3,4,5,6,7,0,0, 0,1,3,4,5,6,7,0,
         2,3,4,5,6,7,0,0, 0,2,3,4,5,6,7,0, 1,2,3,4,5,6,7,0, 0,1,2,3,4,5,6,7,
 };
+
 // credit: Martins Mozeiko
 static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 
@@ -177,11 +178,8 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
 
     assert(stream[0]=='>');
     size_t pos = 0, i=0;
-    __m128i targetchars =
-        _mm_set_epi8(' ', '\n', '\r', ' ', ' ', '\n', '\r', ' ', ' ', '\n', '\r',
-                     ' ', ' ', '\n', '\r', ' ');
-
     __m128i new_entry = _mm_set1_epi8('>');
+    __m128i new_line = _mm_set1_epi8('\n');
 
     int in_header = 0;
     int prev_header_area;
@@ -192,7 +190,7 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
         __m128i x = _mm_loadu_si128((const __m128i *)(stream + i));
 
         //create a mask with the position equal to a '>' symbol
-        int new_entry_mask = _mm_movemask_epi8(_mm_cmpeq_epi8(x, new_entry););
+        int new_entry_mask = _mm_movemask_epi8(_mm_cmpeq_epi8(x, new_entry));
 
         //handle the header area
         if(new_entry_mask){
@@ -215,11 +213,10 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
         }
 
         //remove new lines
-        int mask16 = _mm_cvtsi128_si32(
-        _mm_cmpestrm(targetchars, 3, x, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_BIT_MASK));
-        x = _mm_shuffle_epi8(x, _mm_loadu_si128((const __m128i *)despace_mask16 + (mask16 & 0x7fff)));
+        int newlinemask = _mm_movemask_epi8(_mm_cmpeq_epi8(x, new_line));
+        x = _mm_shuffle_epi8(x, _mm_loadu_si128((const __m128i *)despace_mask16 + (newlinemask & 0x7fff)));
         _mm_storeu_si128((__m128i *)(stream + pos), x);
-        pos += 16 - _mm_popcnt_u32(mask16);
+        pos += 16 - _mm_popcnt_u32(newlinemask);
         i+=16;
     }
 
@@ -285,14 +282,13 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 
         //remove new lines
         uint32_t newlinemask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(x, newline));
-        if(!newlinemask) { // no white newline
+        if(!newlinemask) { // no newline
             _mm256_storeu_si256((__m256i *)(stream + pos), x);
             pos += 32;
         } else {
             unsigned int maskhigh = (newlinemask) >> 16;
             unsigned int masklow = (newlinemask)&0xFFFF;
-            assert(maskhigh < (1 << 16));
-            assert(masklow < (1 << 16));
+
             //TODO the load below does not work with g++ 9.4 (probably with older versions either)
             __m256i mask = _mm256_loadu2_m128i((const __m128i *)despace_mask16 + (maskhigh & 0x7fff),
                                                (const __m128i *)despace_mask16 + (masklow & 0x7fff));

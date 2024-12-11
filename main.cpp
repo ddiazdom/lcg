@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
         memcpy(tmp3, tmp, n_bytes);
 
         auto *tmp4 = allocator::allocate<uint8_t>(n_bytes);
-        memcpy(tmp3, tmp, n_bytes);
+        memcpy(tmp4, tmp, n_bytes);
 
         auto start = std::chrono::steady_clock::now();
         size_t parsed_bytes_scalar = fasta_parsing_scalar(tmp, n_bytes);
