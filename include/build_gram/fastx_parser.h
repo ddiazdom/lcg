@@ -7,6 +7,7 @@
 
 #include <iostream>
 
+
 static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
 
     size_t i=0, pos=0;
@@ -116,7 +117,7 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 
         uint8x16_t has_new_entry = vceqq_u8(vec, new_entry);
         if(vmaxvq_u8(has_new_entry)){
-            size_t end = std::min(i+16, size);
+            size_t end = std::min(i+15, size);
             while(end<(size-1) && stream[end]!='\n') end++;
             while(i<=end){
                 uint8_t c = stream[i++];
@@ -318,4 +319,17 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
     return pos;
 }
 #endif
-#endif //LCG_FASTX_PARSER_H
+
+
+// Detect ARM NEON
+#if defined(USE_AVX2)
+#define PARSE_FASTA(param1, param2) fasta_parsing_avx2(param1, param2)
+#elif defined(USE_SSE4_2)
+#define PARSE_FASTA(param1, param2) fasta_parsing_sse42(param1, param2)
+#elif defined(USE_NEON)
+#define PARSE_FASTA(param1, param2) fasta_parsing_neon(param1, param2)
+#else
+#define PARSE_FASTA(param1, param2) fasta_parsing_scalar(param1, param2)
+#endif
+
+#endif

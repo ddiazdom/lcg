@@ -1,12 +1,68 @@
-cmake_minimum_required(VERSION 3.7)
+cmake_minimum_required(VERSION 3.10)
 project(lcg)
 set(CMAKE_CXX_STANDARD 17)
+
+include(CheckCXXSourceCompiles)
 
 set(SOURCE_FILES main.cpp
         external/xxHash-dev/xxhash.c
         lib/utils.cpp
         lib/cdt_common.cpp
 )
+
+set(AVX2_CXX_CODE "
+        #include <immintrin.h>
+        int main(){
+        #if __AVX2__
+        return 0;
+        #else
+        #error \"AVX2 is not supported\"
+        #endif
+        }
+")
+
+set(NEON_CXX_CODE "
+        #include <arm_neon.h>
+        int main(){
+        #if __ARM_NEON__
+        return 0;
+        #else
+        #error \"NEON is not supported\"
+        #endif
+        }
+")
+
+set(SSE42_CXX_CODE "
+        #include <x86intrin.h>
+        int main(){
+        #if __SSE4_2__
+        return 0;
+        #else
+        #error \"SSE4.2 is not supported\"
+        #endif
+        }
+")
+
+check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT)
+if(AVX2_SUPPORT)
+        message("AVX2 is supported")
+else()
+        message("AVX2 is not supported")
+endif()
+
+check_cxx_source_compiles("${NEON_CXX_CODE}" NEON_SUPPORT)
+if(NEON_SUPPORT)
+        message("NEON is supported")
+else()
+        message("NEON is not supported")
+endif()
+
+check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT)
+if(SSE42_SUPPORT)
+        message("SSE42 is supported")
+else()
+        message("SSE42 is not supported")
+endif()
 
 #using malloc_count for monitoring memory usage during debug mode
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -21,7 +77,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 target_compile_options(lcg PRIVATE -Wall -Wextra -Wpedantic
-        -O3 -mavx2 -msse4.2
+        -O3
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
