@@ -43,7 +43,7 @@ set(SSE42_CXX_CODE "
         }
 ")
 
-check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT)
+check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT FAIL_REGEX "warning")
 if(AVX2_SUPPORT)
         message("AVX2 is supported")
 else()
@@ -57,7 +57,7 @@ else()
         message("NEON is not supported")
 endif()
 
-check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT)
+check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT FAIL_REGEX "warning")
 if(SSE42_SUPPORT)
         message("SSE42 is supported")
 else()
