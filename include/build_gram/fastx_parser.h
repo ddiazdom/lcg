@@ -168,23 +168,82 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 }
 #endif
 
+#ifdef __SSE4_2__
+
+#include <x86intrin.h>
+#include "simd_tables.h"
+
+static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
+
+    assert(stream[0]=='>');
+    size_t pos = 0, i=0;
+    __m128i targetchars =
+        _mm_set_epi8(' ', '\n', '\r', ' ', ' ', '\n', '\r', ' ', ' ', '\n', '\r',
+                     ' ', ' ', '\n', '\r', ' ');
+
+    __m128i new_entry = _mm_set1_epi8('>');
+
+    int in_header = 0;
+    int prev_header_area;
+
+    while(i + 16 <= size) {
+
+        //load 16 symbols starting from string[i]
+        __m128i x = _mm_loadu_si128((const __m128i *)(stream + i));
+
+        //create a mask with the position equal to a '>' symbol
+        int new_entry_mask = _mm_movemask_epi8(_mm_cmpeq_epi8(x, new_entry););
+
+        //handle the header area
+        if(new_entry_mask){
+            size_t end = std::min(i+15, size);
+            while(end<(size-1) && stream[end]!='\n') end++;
+            while(i<=end){
+                uint8_t c = stream[i++];
+                stream[pos] = c;
+
+                prev_header_area = in_header;
+
+                //in_header=1 after the operations below means with are in a header area
+                in_header += c=='>';
+                in_header -= (in_header>0 && c=='\n');
+
+                pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
+                      (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+            }
+            continue;
+        }
+
+        //remove new lines
+        int mask16 = _mm_cvtsi128_si32(
+        _mm_cmpestrm(targetchars, 3, x, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_BIT_MASK));
+        x = _mm_shuffle_epi8(x, _mm_loadu_si128((const __m128i *)despace_mask16 + (mask16 & 0x7fff)));
+        _mm_storeu_si128((__m128i *)(stream + pos), x);
+        pos += 16 - _mm_popcnt_u32(mask16);
+        i+=16;
+    }
+
+    while(i<size){
+        uint8_t c = stream[i++];
+        stream[pos] = c;
+        prev_header_area = in_header;
+
+        //in_header=1 after the operations below means with are in a header area
+        in_header += c=='>';
+        in_header -= (in_header>0 && c=='\n');
+
+        pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
+              (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+    }
+    stream[pos++]='\n';
+    return pos;
+}
+#endif
+
 #ifdef __AVX2__
 #include <x86intrin.h>
 #include "simd_tables.h"
 #include <immintrin.h>
-
-__m256i cleanm256(__m256i x, unsigned int newlinemask, unsigned int *mask1, unsigned int *mask2) {
-  unsigned int maskhigh = (newlinemask) >> 16;
-  unsigned int masklow = (newlinemask)&0xFFFF;
-  assert(maskhigh < (1 << 16));
-  assert(masklow < (1 << 16));
-  *mask1 = masklow;
-  *mask2 = maskhigh;
-  //TODO the load below does not work with g++ 9.4 (probably with older versions either)
-  __m256i mask = _mm256_loadu2_m128i((const __m128i *)despace_mask16 + (maskhigh & 0x7fff),
-                                     (const __m128i *)despace_mask16 + (masklow & 0x7fff));
-  return _mm256_shuffle_epi8(x, mask);
-}
 
 static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 

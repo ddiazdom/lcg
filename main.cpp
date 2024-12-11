@@ -310,6 +310,9 @@ int main(int argc, char** argv) {
         auto *tmp3 = allocator::allocate<uint8_t>(n_bytes);
         memcpy(tmp3, tmp, n_bytes);
 
+        auto *tmp4 = allocator::allocate<uint8_t>(n_bytes);
+        memcpy(tmp3, tmp, n_bytes);
+
         auto start = std::chrono::steady_clock::now();
         size_t parsed_bytes_scalar = fasta_parsing_scalar(tmp, n_bytes);
         auto end = std::chrono::steady_clock::now();
@@ -330,11 +333,21 @@ int main(int argc, char** argv) {
         end = std::chrono::steady_clock::now();
         std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_avx<<std::endl;
         assert(parsed_bytes_scalar==parsed_bytes_avx);
-        std::cout<<"Equals? "<<(memcmp(tmp,tmp3, parsed_bytes_neon)==0)<<std::endl;
+        std::cout<<"Equals? "<<(memcmp(tmp,tmp3, parsed_bytes_avx)==0)<<std::endl;
+#endif
+
+#ifdef __SSE4_2__
+        start = std::chrono::steady_clock::now();
+        size_t parsed_bytes_sse42 = fasta_parsing_sse42(tmp4, n_bytes);
+        end = std::chrono::steady_clock::now();
+        std::cout <<"Time sse42 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_avx<<std::endl;
+        assert(parsed_bytes_scalar==parsed_bytes_sse42);
+        std::cout<<"Equals? "<<(memcmp(tmp,tmp4, parsed_bytes_sse42)==0)<<std::endl;
 #endif
         free(tmp);
         free(tmp2);
         free(tmp3);
+        free(tmp4);
         //
         //comp_int(args);
 
