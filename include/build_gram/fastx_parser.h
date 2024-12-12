@@ -243,6 +243,21 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
 #include "simd_tables.h"
 #include <immintrin.h>
 
+/* GCC <10.1 doesn't include the split store/load intrinsics so define them here. */
+#if defined(__GNUC__) &&  __GNUC__ < 10
+static inline void __attribute__((__always_inline__))
+_mm256_storeu2_m128i(__m128i* const hi, __m128i* const lo, const __m256i a) {
+    _mm_storeu_si128(lo, _mm256_castsi256_si128(a));
+    _mm_storeu_si128(hi, _mm256_extracti128_si256(a, 1));
+}
+
+static inline __m256i
+_mm256_loadu2_m128i(__m128i const* __addr_hi, __m128i const* __addr_lo) {
+    __m256i __v256 = _mm256_castsi128_si256(_mm_loadu_si128(__addr_lo));
+    return _mm256_insertf128_si256(__v256, _mm_loadu_si128(__addr_hi), 1);
+}
+#endif /* defined(__GNUC__) */
+
 static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 
     assert(stream[0]=='>');
@@ -290,9 +305,9 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
             unsigned int maskhigh = (newlinemask) >> 16;
             unsigned int masklow = (newlinemask)&0xFFFF;
 
-            //TODO the load below does not work with g++ 9.4 (probably with older versions either)
             __m256i mask = _mm256_loadu2_m128i((const __m128i *)despace_mask16 + (maskhigh & 0x7fff),
                                                (const __m128i *)despace_mask16 + (masklow & 0x7fff));
+
             x = _mm256_shuffle_epi8(x, mask);
             int offset1 = 16 - _mm_popcnt_u32(masklow);
             int offset2 = 16 - _mm_popcnt_u32(maskhigh);
