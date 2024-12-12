@@ -10,8 +10,8 @@ set(SOURCE_FILES main.cpp
         lib/cdt_common.cpp
 )
 
-list(APPEND CMAKE_CXX_FLAGS -mavx2)
-list(APPEND CMAKE_CXX_FLAGS -msse4.2)
+set(CMAKE_CXX_FLAGS_BCK "${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -mavx2 -msse4.2")
 
 set(SSE42_CXX_CODE "
         #include <x86intrin.h>
@@ -49,25 +49,19 @@ set(NEON_CXX_CODE "
 check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT)
 if(AVX2_SUPPORT)
         message("AVX2 is supported")
-else()
-        message("AVX2 is not supported")
-        list(POP_BACK CMAKE_CXX_FLAGS)
 endif()
 
 check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT)
 if(SSE42_SUPPORT)
         message("SSE42 is supported")
-else()
-        message("SSE42 is not supported")
-        list(POP_BACK CMAKE_CXX_FLAGS)
 endif()
 
 check_cxx_source_compiles("${NEON_CXX_CODE}" NEON_SUPPORT)
 if(NEON_SUPPORT)
         message("NEON is supported")
-else()
-        message("NEON is not supported")
 endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_BCK}")
 
 #using malloc_count for monitoring memory usage during debug mode
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
