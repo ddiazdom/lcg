@@ -46,14 +46,18 @@ set(NEON_CXX_CODE "
         }
 ")
 
+set(SIMD_FLAGS)
+
 check_cxx_source_compiles("${AVX2_CXX_CODE}" AVX2_SUPPORT)
 if(AVX2_SUPPORT)
         message("AVX2 is supported")
+        list(APPEND SIMD_FLAGS -mavx2)
 endif()
 
 check_cxx_source_compiles("${SSE42_CXX_CODE}" SSE42_SUPPORT)
 if(SSE42_SUPPORT)
         message("SSE42 is supported")
+        list(APPEND SIMD_FLAGS -msse4.2)
 endif()
 
 check_cxx_source_compiles("${NEON_CXX_CODE}" NEON_SUPPORT)
@@ -62,6 +66,7 @@ if(NEON_SUPPORT)
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_BCK}")
+message("Estas son las SIMD FLAGS: ${SIMD_FLAGS}")
 
 #using malloc_count for monitoring memory usage during debug mode
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
