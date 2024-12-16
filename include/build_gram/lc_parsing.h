@@ -143,7 +143,7 @@ struct parsing_state {
 
     void flush_page_cache(){
 #ifdef __linux__
-        std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
+        std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<f_read_bytes<<std::endl;
         posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
         r_page_cache_bytes=0;
 #endif

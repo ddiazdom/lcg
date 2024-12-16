@@ -242,7 +242,7 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
         _mm_storeu_si128((__m128i *)(stream + pos), x);
         valid_syms = 16 - _mm_popcnt_u32(newlinemask);
         pos += valid_syms;
-        seq_len+ = valid_syms;
+        seq_len += valid_syms;
         i+=16;
     }
 
@@ -297,6 +297,7 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
     __m256i newline = _mm256_set1_epi8('\n');
     __m256i new_entry = _mm256_set1_epi8('>');
     int in_header = 0, prev_in_header;
+    bool h2s_tran, emp_entry;
 
     while(i + 32 <= size) {
 
