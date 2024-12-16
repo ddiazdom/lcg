@@ -303,9 +303,9 @@ int main(int argc, char** argv) {
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
 
         //TODO only for testing
-        /*size_t n_bytes = file_size(args.input_file);
+        size_t n_bytes = file_size(args.input_files[0]);
         auto *tmp = allocator::allocate<uint8_t>(n_bytes);
-        std::ifstream file(args.input_file, std::ios::binary); // `ate` opens at end for size calculation
+        std::ifstream file(args.input_files[0], std::ios::binary); // `ate` opens at end for size calculation
         file.read((char *)tmp, (std::streamsize)n_bytes);
 
         auto *tmp2 = allocator::allocate<uint8_t>(n_bytes);
@@ -351,11 +351,10 @@ int main(int argc, char** argv) {
         free(tmp);
         free(tmp2);
         free(tmp3);
-        free(tmp4);*/
+        free(tmp4);
         //
 
-        comp_int(args);
-
+        //comp_int(args);
     } else if(app.got_subcommand("met")){
         print_metadata(args.i_file);
     } else if (app.got_subcommand("acc")){

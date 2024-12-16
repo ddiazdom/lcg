@@ -9,9 +9,9 @@
 
 static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
 
-    size_t i=0, pos=0;
-    int in_header = 0;
-    int prev_in_header;
+    size_t i=0, pos=0, seq_len=0, n_empty=0;
+    int in_header = 0, prev_in_header;
+    bool h2s_tran, emp_entry;
 
     while(i<size){
         uint8_t c = stream[i++];
@@ -22,10 +22,16 @@ static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
         in_header += c=='>';
         in_header -= (in_header>0 && c=='\n');
 
-        pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-              (prev_in_header>0 && in_header==0 && pos!=0);//transition from header to sequence
+        h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+        emp_entry = h2s_tran && seq_len==0;
+        n_empty+= emp_entry;
+        seq_len*= !h2s_tran;
+
+        pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+        seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
+    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
     return pos;
 }
 
@@ -103,12 +109,12 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 
     assert(stream[0]=='>');
 
-    size_t i = 0, pos = 0;
+    size_t i = 0, pos = 0, seq_len=0, n_empty=0, prev_pos;
     uint8x16_t bitmask = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128 };
     uint8x16_t new_line = vdupq_n_u8('\n');
     uint8x16_t new_entry = vdupq_n_u8('>');
-    int in_header = 0;
-    int prev_header_area;
+    int in_header = 0, prev_in_header;
+    bool h2s_tran, emp_entry;
 
     while(i + 16 <= size) {
 
@@ -118,18 +124,23 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
         if(vmaxvq_u8(has_new_entry)){
             size_t end = std::min(i+15, size);
             while(end<(size-1) && stream[end]!='\n') end++;
+
             while(i<=end){
                 uint8_t c = stream[i++];
                 stream[pos] = c;
 
-                prev_header_area = in_header;
-
+                prev_in_header = in_header;
                 //in_header=1 after the operations below means with are in a header area
                 in_header += c=='>';
                 in_header -= (in_header>0 && c=='\n');
 
-                pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-                      (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+                h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+                emp_entry = h2s_tran && seq_len==0;
+                n_empty+= emp_entry;
+                seq_len*= !h2s_tran;
+
+                pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+                seq_len += (c!='\n' && in_header==0);
             }
             continue;
         }
@@ -144,27 +155,35 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
         uint8x8_t low = vtbl1_u8(vget_low_u8(vec), vld1_u8(mask_shuffle + mlow*8));
         uint8x8_t high = vtbl1_u8(vget_high_u8(vec), vld1_u8(mask_shuffle + mhigh*8));
 
+        prev_pos = pos;
         vst1_u8(stream + pos, low);
         pos += __builtin_popcount(mlow);
 
         vst1_u8(stream + pos, high);
         pos += __builtin_popcount(mhigh);
+        seq_len +=pos-prev_pos;
         i+=16;
     }
 
     while(i<size){
         uint8_t c = stream[i++];
         stream[pos] = c;
-        prev_header_area = in_header;
 
+        prev_in_header = in_header;
         //in_header=1 after the operations below means with are in a header area
         in_header += c=='>';
         in_header -= (in_header>0 && c=='\n');
 
-        pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-              (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+        h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+        emp_entry = h2s_tran && seq_len==0;
+        n_empty+= emp_entry;
+        seq_len*= !h2s_tran;
+
+        pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+        seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
+    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
     return pos;
 }
 #endif
@@ -177,12 +196,13 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
 
     assert(stream[0]=='>');
-    size_t pos = 0, i=0;
+
+    size_t i = 0, pos = 0, seq_len=0, n_empty=0, valid_syms;
     __m128i new_entry = _mm_set1_epi8('>');
     __m128i new_line = _mm_set1_epi8('\n');
 
-    int in_header = 0;
-    int prev_header_area;
+    int in_header = 0, prev_in_header;
+    bool h2s_tran, emp_entry;
 
     while(i + 16 <= size) {
 
@@ -200,14 +220,18 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
                 uint8_t c = stream[i++];
                 stream[pos] = c;
 
-                prev_header_area = in_header;
-
+                prev_in_header = in_header;
                 //in_header=1 after the operations below means with are in a header area
                 in_header += c=='>';
                 in_header -= (in_header>0 && c=='\n');
 
-                pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-                      (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+                h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+                emp_entry = h2s_tran && seq_len==0;
+                n_empty+= emp_entry;
+                seq_len*= !h2s_tran;
+
+                pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+                seq_len += (c!='\n' && in_header==0);
             }
             continue;
         }
@@ -216,23 +240,31 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
         int newlinemask = _mm_movemask_epi8(_mm_cmpeq_epi8(x, new_line));
         x = _mm_shuffle_epi8(x, _mm_loadu_si128((const __m128i *)despace_mask16 + (newlinemask & 0x7fff)));
         _mm_storeu_si128((__m128i *)(stream + pos), x);
-        pos += 16 - _mm_popcnt_u32(newlinemask);
+        valid_syms = 16 - _mm_popcnt_u32(newlinemask);
+        pos += valid_syms;
+        seq_len+ = valid_syms;
         i+=16;
     }
 
     while(i<size){
         uint8_t c = stream[i++];
         stream[pos] = c;
-        prev_header_area = in_header;
 
+        prev_in_header = in_header;
         //in_header=1 after the operations below means with are in a header area
         in_header += c=='>';
         in_header -= (in_header>0 && c=='\n');
 
-        pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-              (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+        h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+        emp_entry = h2s_tran && seq_len==0;
+        n_empty+= emp_entry;
+        seq_len*= !h2s_tran;
+
+        pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+        seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
+    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
     return pos;
 }
 #endif
@@ -260,12 +292,11 @@ _mm256_loadu2_m128i(__m128i const* __addr_hi, __m128i const* __addr_lo) {
 static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 
     assert(stream[0]=='>');
-    size_t pos = 0, i=0;
 
+    size_t i = 0, pos = 0, seq_len=0, n_empty=0, n_valid;
     __m256i newline = _mm256_set1_epi8('\n');
     __m256i new_entry = _mm256_set1_epi8('>');
-    int in_header = 0;
-    int prev_header_area;
+    int in_header = 0, prev_in_header;
 
     while(i + 32 <= size) {
 
@@ -283,14 +314,18 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
                 uint8_t c = stream[i++];
                 stream[pos] = c;
 
-                prev_header_area = in_header;
-
+                prev_in_header = in_header;
                 //in_header=1 after the operations below means with are in a header area
                 in_header += c=='>';
                 in_header -= (in_header>0 && c=='\n');
 
-                pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-                      (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+                h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+                emp_entry = h2s_tran && seq_len==0;
+                n_empty+= emp_entry;
+                seq_len*= !h2s_tran;
+
+                pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+                seq_len += (c!='\n' && in_header==0);
             }
             continue;
         }
@@ -299,7 +334,7 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
         uint32_t newlinemask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(x, newline));
         if(!newlinemask) { // no newline
             _mm256_storeu_si256((__m256i *)(stream + pos), x);
-            pos += 32;
+            n_valid=32;
         } else {
             unsigned int maskhigh = (newlinemask) >> 16;
             unsigned int masklow = (newlinemask)&0xFFFF;
@@ -312,24 +347,33 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
             int offset2 = 16 - _mm_popcnt_u32(maskhigh);
             _mm256_storeu2_m128i((__m128i *)(stream + pos + offset1),
                                  (__m128i *)(stream + pos), x);
-            pos += offset1 + offset2;
+            n_valid=offset1+offset2;
         }
+
+        pos += n_valid;
+        seq_len += n_valid;
         i+=32;
     }
 
     while(i<size){
         uint8_t c = stream[i++];
         stream[pos] = c;
-        prev_header_area = in_header;
 
+        prev_in_header = in_header;
         //in_header=1 after the operations below means with are in a header area
         in_header += c=='>';
         in_header -= (in_header>0 && c=='\n');
 
-        pos+= (c!='\n' && in_header==0) || //new lines in the middle of the sequences
-              (prev_header_area>0 && in_header==0 && pos!=0);//transition from header to sequence
+        h2s_tran = (prev_in_header>0 && in_header==0);//transition from header to sequence
+        emp_entry = h2s_tran && seq_len==0;
+        n_empty+= emp_entry;
+        seq_len*= !h2s_tran;
+
+        pos+= (c!='\n' && in_header==0) || (h2s_tran && !emp_entry);
+        seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
+    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
     return pos;
 }
 #endif
