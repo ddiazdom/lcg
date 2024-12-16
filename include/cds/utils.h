@@ -18,6 +18,8 @@
 
 #ifdef __APPLE__
 #include <unistd.h>
+#include <sys/fcntl.h>
+
 #endif
 
 struct str_collection {
@@ -39,6 +41,8 @@ bool file_exists(const std::filesystem::path& p, std::filesystem::file_status co
 
 //produce a random string
 std::string random_string(size_t length);
+
+int fd_is_valid(int fd);
 
 #ifdef __linux__
 void empty_page_cache(const char *filename);

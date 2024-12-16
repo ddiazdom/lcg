@@ -30,47 +30,108 @@
 
 #define PARSING_INFO \
 do{\
-std::string msg1 ="Parsed_input "+report_space((off_t)p_state.proc_syms)+\
-", malloc_peak "+report_space((off_t)malloc_count_peak())+\
+std::string msg1 ="Parsed_input "+report_space((off_t)p_state.f_proc_syms)+\
+", malloc_peak "+report_space((off_t)malloc_count_peak())+                 \
 ", byte_usage "+report_space((off_t)text_chunks[buff_id].gram.mem_usage())+\
-", input_fraction "+std::to_string(input_frac)+                          \
-", fraction_limit "+std::to_string(p_state.max_frac);                    \
+", input_fraction "+std::to_string(input_frac)+                            \
+", fraction_limit "+std::to_string(p_state.max_frac);                      \
 logger<msg_lvl>::debug(msg1);                                              \
-                     \
+                                                                           \
 std::ostringstream oss;                                                    \
-oss<<"  Processed input: "<<report_space((off_t)p_state.proc_syms)\
-<<" ("<< std::fixed<< std::setprecision(2)<<((float(p_state.proc_syms)/float(p_state.f_size))*100)<<"%)    ";  \
+oss<<"  Processed input: "<<report_space((off_t)p_state.f_proc_syms)\
+<<" ("<< std::fixed<< std::setprecision(2)<<((float(p_state.f_proc_syms)/float(p_state.f_size))*100)<<"%)    ";  \
 logger<msg_lvl, true, true>::info(oss.str());\
 }while(0);
 
+
 struct parsing_state {
-    size_t chunk_size;
+
     uint8_t sep_sym;
-    int fd_r;
-    size_t f_size=0;
     size_t n_threads=1;
-    off_t rem_bytes=0;
-    off_t read_bytes=0;
-    off_t r_page_cache_bytes=0;
     off_t page_cache_limit=0;
+    size_t chunk_size=0;//the chunk size computed for the
+    size_t n_chunks=0;
+    int fd_r=-1;
+    size_t f_size=0;
+    off_t f_rem_bytes=0;
+    off_t f_read_bytes=0;
+    size_t f_proc_syms=0; //number of symbols processed in the file (it includes extra format symbols)
+    size_t f_eff_proc_syms=0;//number of effective symbols processed in the file
+    off_t r_page_cache_bytes=0;
     size_t chunk_id=0;
-    size_t proc_syms=0;
     size_t sink_gram_mem_usage=0;
     size_t factor_inc = 1;
-    float max_frac;
+    float max_frac=0;
+    text_format txt_fmt=PLAIN;
 
-    parsing_state(std::string& i_file, uint8_t s_sym, size_t c_size,
-                  size_t _n_threads, off_t p_cache_lim, float _max_frac): chunk_size(c_size),
-                                                                          sep_sym(s_sym),
-                                                                          n_threads(_n_threads),
-                                                                          page_cache_limit(p_cache_lim),
-                                                                          max_frac(_max_frac){
+    //for inputs up to 10GB, we collapse every 20 processed chunks
+    //for inputs over 10GB, each thread grammar uses up to 2.5% of the input
+    //for inputs over 100GB, each thread grammar uses up to 1.5% of the input
+    //for inputs over 1000GB, each thread grammar uses up to 0.6% of the input
+    const float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
+
+    parsing_state(uint8_t s_sym, size_t _n_threads, off_t p_cache_lim): sep_sym(s_sym),
+                                                                        n_threads(_n_threads),
+                                                                        page_cache_limit(p_cache_lim) {}
+
+    void new_file(std::string& i_file, text_format _txt_fmt, size_t ck_size, float i_frac){
+
+        if(fd_is_valid(fd_r)){
+
+#ifdef __linux__
+            posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
+#endif
+            close(fd_r);
+            fd_r = -1;
+        }
+
+        txt_fmt = _txt_fmt;
         fd_r = open(i_file.c_str(), O_RDONLY);
         f_size = file_size(i_file);
+
 #ifdef __linux__
         posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
 #endif
-        rem_bytes = (off_t)f_size;
+        f_eff_proc_syms = 0;
+        f_proc_syms = 0;
+        f_read_bytes = 0;
+        f_rem_bytes = (off_t)f_size;
+
+        //if the chunk size is undefined, we set it to 0.5% of the input file
+        chunk_size = ck_size==0 ? size_t(ceil(0.005 * double(f_size))) : ck_size;
+        // we put a cap on the chunk size of 200 MiB by design
+        // (bigger chunks only use more RAM and do not speed up the compression process)
+        chunk_size = std::min<size_t>(chunk_size, 1024*1024*200);
+
+        //the cap for the number of threads is the number of chunks
+        size_t tot_chunks = INT_CEIL(f_size, chunk_size);
+        n_threads = std::min(n_threads, tot_chunks);
+
+        n_chunks = n_threads+1;
+
+        //we cannot set more chunks thant the total number of chunks in the input file
+        n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
+
+        //compute the approx. memory usage for the local grammar
+        if(i_frac==0){
+            //compute the rule to collapse local grammars into the sink grammar
+            if(f_size<=COL_THRESHOLD_1){
+                max_frac = i_fracs[0];
+            } else if(f_size<=COL_THRESHOLD_2){
+                max_frac = i_fracs[1];
+            } else if(f_size<=COL_THRESHOLD_3){
+                max_frac = i_fracs[2];
+            } else{
+                max_frac = i_fracs[3];
+            }
+            //The algorithm collapses the local grammars when:
+            //the sum of the space usage of the local grammars exceed f_size*i_frac
+            max_frac *=float(n_chunks);
+        }
+    }
+
+    [[nodiscard]] inline size_t chunks_approx_mem_usage() const {
+        return size_t(((chunk_size*115)/100)*n_chunks);
     }
 
     ~parsing_state(){
@@ -102,7 +163,7 @@ struct phrase_overflow{
 void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
 
     uint32_t mt_sym=1;
-    off_t txt_size = chunk.text_bytes;
+    off_t txt_size = chunk.e_bytes;
 
     off_t ovf_idx=0, next_ovf=-1;
     if(!phr_with_ovf.empty()){
@@ -148,7 +209,7 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     uint64_t * fps = chunk.gram.fps[chunk.round];
     uint8_t * text = chunk.text;
     uint64_t hash;
-    off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, byte_offset, parse_size;
+    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset, parse_size;
     uint8_t v_len;
     assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
@@ -239,7 +300,8 @@ void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 
     uint64_t * fps = chunk.gram.fps[chunk.round];
     uint8_t * text = chunk.text;
-    off_t lb, rb = chunk.text_bytes-1, i=chunk.text_bytes-2, byte_offset, parse_size;
+    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset, parse_size;
+
     uint8_t v_len;
     assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
@@ -477,24 +539,20 @@ void compress_text_chunk(text_chunk& chunk){
     size_t sep_sym = chunk.sep_sym;
     chunk.round = 0;
 
-    //auto start = std::chrono::steady_clock::now();
+    if(chunk.format==FASTA){
+        chunk.e_bytes = PARSE_FASTA(chunk.text, chunk.e_bytes);
+    }
+
     byte_par_r2l<query_sink>(chunk, n_strings, sep_sym);
-    //auto end = std::chrono::steady_clock::now();
-    //report_time(start, end , 2);
 
     off_t size_limit = n_strings*2;
     chunk.round++;
 
     while(chunk.parse_size!=size_limit){
         assert(chunk.parse_size>=size_limit);
-        //start = std::chrono::steady_clock::now();
         int_par_l2r<query_sink>(chunk);
-        //end = std::chrono::steady_clock::now();
-        //report_time(start, end , 2);
         chunk.round++;
     }
-
-    //start = std::chrono::steady_clock::now();
 
     //the chunks are small, so they do not can hold many strings
     assert((chunk.parse_size>>1)<=0xFFFFFFF);
@@ -506,10 +564,6 @@ void compress_text_chunk(text_chunk& chunk){
         assert(i==0 || chunk.parse[i-1]==0);
         chunk.gram.comp_string[pos++] = chunk.parse[i];
     }
-
-    //chunk.p_gram.add_compressed_string(chunk.parse, chunk.parse_size);
-    //end = std::chrono::steady_clock::now();
-    //report_time(start, end , 2);
 }
 
 template<bool query_sink, log_lvl msg_lvl=INFO>
@@ -534,7 +588,12 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
             text_chunks[buff_id].t_start = std::chrono::steady_clock::now();
             compress_text_chunk<query_sink>(text_chunks[buff_id]);
             memset(text_chunks[buff_id].text, 0, text_chunks[buff_id].buffer_bytes);
+
+            //note: e_bytes change when the format is fastx
+            p_state.f_eff_proc_syms += text_chunks[buff_id].e_bytes;
+
             text_chunks[buff_id].t_end = std::chrono::steady_clock::now();
+
             buffers_to_reuse.push(buff_id);
         }
     };
@@ -548,18 +607,18 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
     auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
     size_t buff_id = 0;
 
-    while(buff_id < text_chunks.size() && p_state.rem_bytes > 0) {
-        tmp_ck_size = std::min(tmp_ck_size, p_state.rem_bytes);
+    while(buff_id < text_chunks.size() && p_state.f_rem_bytes > 0) {
+        tmp_ck_size = std::min(tmp_ck_size, p_state.f_rem_bytes);
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
 
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_file(p_state.fd_r, p_state.f_rem_bytes, p_state.f_read_bytes, text_chunks[buff_id]);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__
-        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].text_bytes;
         if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
             p_state.flush_page_cache();
         }
@@ -579,10 +638,10 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         p_state.factor_inc++;
     }
 
-    while (p_state.rem_bytes > 0 && input_frac<p_state.max_frac) {
+    while (p_state.f_rem_bytes > 0 && input_frac<p_state.max_frac) {
 
         buffers_to_reuse.pop(buff_id);
-        p_state.proc_syms+=text_chunks[buff_id].text_bytes;
+        p_state.f_proc_syms+=text_chunks[buff_id].text_bytes;
 
         size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
         acc_bytes -= byte_counts[buff_id];
@@ -594,11 +653,11 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].id = p_state.chunk_id++;
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_file(p_state.fd_r, p_state.f_rem_bytes, p_state.f_read_bytes, text_chunks[buff_id]);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__
-        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].text_bytes;
         if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
             p_state.flush_page_cache();
         }
@@ -614,7 +673,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
     while(!buffers_to_reuse.empty()){
         buffers_to_reuse.pop(buff_id);
-        p_state.proc_syms+=text_chunks[buff_id].text_bytes;
+        p_state.f_proc_syms+=text_chunks[buff_id].text_bytes;
 
         size_t new_byte_count = text_chunks[buff_id].gram.mem_usage();
         acc_bytes -= byte_counts[buff_id];
@@ -625,7 +684,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         PARSING_INFO
 
 #ifdef __linux__
-        p_state.r_page_cache_bytes+=text_chunks[buff_id].e_bytes;
+        p_state.r_page_cache_bytes+=text_chunks[buff_id].text_bytes;
         if(p_state.r_page_cache_bytes>p_state.page_cache_limit){
             p_state.flush_page_cache();
         }
@@ -639,92 +698,65 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 }
 
 template<log_lvl msg_lvl>
-void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
+void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
 
-    logger<msg_lvl>::info("Building a locally consistent grammar");
-
-    auto start = std::chrono::steady_clock::now();
-    auto f_size = (off_t)sink_gram.txt_size();
-
-    //for inputs up to 10GB, we collapse every 20 processed chunks
-    //for inputs over 10GB, each thread grammar uses up to 2.5% of the input
-    //for inputs over 100GB, each thread grammar uses up to 1.5% of the input
-    //for inputs over 1000GB, each thread grammar uses up to 0.6% of the input
-    float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
-
-    //if the chunk size is undefined, we set it to 0.5% of the input file
-    chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
-    // we put a cap on the chunk size of 200MB by design
-    // (bigger chunks only use more RAM and do not speed up the compression process)
-    chunk_size = std::min<off_t>(chunk_size, 1024*1024*200);
-
-    //the cap for the number of threads is the number of chunks
-    size_t tot_chunks = INT_CEIL(f_size, chunk_size);
-    n_threads = std::min(n_threads, tot_chunks);
-
-    size_t n_chunks = n_threads+1;
-    //we cannot set more chunks thant the total number of chunks in the input file
-    n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
-
-    if(i_frac==0){
-        //compute the rule to collapse local grammars into the sink grammar
-        if(f_size<=COL_THRESHOLD_1){
-            i_frac = i_fracs[0];
-        } else if(f_size<=COL_THRESHOLD_2){
-            i_frac = i_fracs[1];
-        } else if(f_size<=COL_THRESHOLD_3){
-            i_frac = i_fracs[2];
-        } else{
-            i_frac = i_fracs[3];
-        }
-        //The algorithm collapse the local grammars when:
-        //the sum of the space usage of the local grammars exceed f_size*i_frac
-        i_frac *=float(n_chunks);
-    }
-
-    // maximum number of bytes we accept in the page cache when reading the input file.
-    // Once we exceed this threshold. we ask the kernel to remove the last file pages
-    // from the cache. This option only applies on linux
-    off_t page_cache_limit = 1024*1024*1024;
-
-    std::string msg = "  Settings\n";
-    msg+="    Parsing threads           : "+std::to_string(n_threads)+"\n";
-    msg+="    Active text chunks in RAM : "+std::to_string(n_chunks)+"\n";
-    msg+="    Size of each chunk        : "+report_space(chunk_size)+"\n";
-    msg+="    Chunks' approx. mem usage : "+report_space(off_t(((chunk_size*115)/100)*n_chunks));
-
-    logger<msg_lvl>::info(msg);
-
-    // We set the number of grammar level to 40.
-    // This limit is enough to process strings of up to 4TB in length.
-    // In any case, the combined length of the strings in the collection can be arbitrarily large.
-    parsing_state par_state(i_file, sink_gram.sep_sym(), chunk_size, n_threads, page_cache_limit, i_frac);
-
-    std::vector<plain_gram> ck_grams(n_chunks,
-                                     plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym(), sink_gram.txt_size()));
+    std::vector<plain_gram> ck_grams(par_state.n_chunks,
+                                     plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym()));
 
     std::vector<text_chunk> txt_chunks;
-    txt_chunks.reserve(n_chunks);
-    for(size_t i=0;i<n_chunks;i++){
-        txt_chunks.emplace_back(sink_gram, ck_grams[i]);
+    txt_chunks.reserve(par_state.n_chunks);
+    for(size_t i=0;i<par_state.n_chunks;i++){
+        txt_chunks.emplace_back(sink_gram, ck_grams[i], par_state.txt_fmt);
     }
 
-    fill_chunk_grammars<false, msg_lvl>(txt_chunks, par_state);
+    if(sink_gram.empty()){
+        fill_chunk_grammars<false, msg_lvl>(txt_chunks, par_state);
+    }else{
+        fill_chunk_grammars<true, msg_lvl>(txt_chunks, par_state);
+    }
+
     collapse_grams<msg_lvl>(sink_gram, ck_grams);
     sink_gram.update_fps();
     par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
 
-    while(par_state.rem_bytes>0){
+    while(par_state.f_rem_bytes>0){
         fill_chunk_grammars<true, msg_lvl>(txt_chunks, par_state);
         collapse_grams<msg_lvl>(sink_gram, ck_grams);
         sink_gram.update_fps();
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
     }
     logger<msg_lvl, false, true>::info(" ");
+    sink_gram.text_size += par_state.f_eff_proc_syms;
+}
+
+template<log_lvl msg_lvl>
+void build_lc_gram(std::vector<std::string>& i_files, text_format& txt_fmt, plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
+
+    logger<msg_lvl>::info("Building a locally consistent grammar");
+
+    // maximum number of bytes we accept in the page cache when reading the input file.
+    // Once we exceed this threshold. we ask the kernel to remove the last file pages
+    // from the cache. This option only applies on linux
+    off_t page_cache_limit = 1024*1024*1024;
+    parsing_state par_state(sink_gram.sep_sym(), n_threads, page_cache_limit);
+
+    for(auto & i_file : i_files){
+        auto start = std::chrono::steady_clock::now();
+        par_state.new_file(i_file, txt_fmt, chunk_size, i_frac);
+        std::string format = (txt_fmt==PLAIN? "Plain" : (txt_fmt==FASTA? "Fasta" : "Fastq"));
+        std::string msg ="  File                      : "+i_file+"\n";
+        msg+="  Format                    : "+format+"\n";
+        msg+="  Parsing threads           : "+std::to_string(par_state.n_threads)+"\n";
+        msg+="  Active text chunks in RAM : "+std::to_string(par_state.n_chunks)+"\n";
+        msg+="  Size of each chunk        : "+report_space((off_t)par_state.chunk_size)+"\n";
+        msg+="  Chunks' approx. mem usage : "+report_space((off_t)par_state.chunks_approx_mem_usage());
+        logger<msg_lvl>::info(msg);
+        process_one_file<msg_lvl>(par_state, sink_gram);
+        auto end = std::chrono::steady_clock::now();
+        logger<msg_lvl>::info(report_time(start, end, 2));
+    }
 
     sink_gram.reorder_strings();
     sink_gram.clear_fps();
-    auto end = std::chrono::steady_clock::now();
-    logger<msg_lvl>::info(report_time(start, end, 2));
 }
 #endif //LCG_LC_PARSING_H

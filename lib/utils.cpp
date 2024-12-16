@@ -34,6 +34,10 @@ bool file_exists(const std::filesystem::path& p, std::filesystem::file_status co
     }
 }
 
+int fd_is_valid(int fd) {
+    return fcntl(fd, F_GETFD) != -1 || errno != EBADF;
+}
+
 std::string random_string(size_t length){
     const std::string characters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     std::random_device random_device;

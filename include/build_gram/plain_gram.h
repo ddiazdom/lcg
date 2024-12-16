@@ -35,9 +35,8 @@ struct plain_gram {
     size_t n_levels=0;
     uint8_t s_sym='\n';
 
-    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, uint64_t _text_size, float load_factor=0.85){
+    explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, float load_factor=0.85){
         assert(lvl_cap>2);
-        text_size = _text_size;
         ter_dict.set_load_factor(load_factor);
         fps.resize(lvl_cap);
         fps_len.resize(lvl_cap);

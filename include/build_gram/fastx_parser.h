@@ -7,7 +7,6 @@
 
 #include <iostream>
 
-
 static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
 
     size_t i=0, pos=0;
@@ -335,13 +334,11 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
 }
 #endif
 
-
-// Detect ARM NEON
-#if defined(USE_AVX2)
+#if defined(__AVX2__)
 #define PARSE_FASTA(param1, param2) fasta_parsing_avx2(param1, param2)
-#elif defined(USE_SSE4_2)
+#elif defined(__SSE4_2__)
 #define PARSE_FASTA(param1, param2) fasta_parsing_sse42(param1, param2)
-#elif defined(USE_NEON)
+#elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 #define PARSE_FASTA(param1, param2) fasta_parsing_neon(param1, param2)
 #else
 #define PARSE_FASTA(param1, param2) fasta_parsing_scalar(param1, param2)

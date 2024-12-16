@@ -3,7 +3,9 @@
 #include "grammar_algorithms.h"
 
 struct arguments{
-    std::string input_file;
+    std::string file_list;
+    std::vector<std::string> input_files;
+    std::string i_file;
     std::string output_file;
 
     std::string tmp_dir;
@@ -19,6 +21,7 @@ struct arguments{
     bool check_gram=false;
     size_t seed=0;
     log_lvl verbose_lvl=INFO;
+    text_format txt_fmt=PLAIN;
 
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
@@ -92,9 +95,11 @@ static void parse_app(CLI::App& app, struct arguments& args){
     CLI::App* comp = app.add_subcommand("cmp", "Compress text");
 
     //compression
-    comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
+    comp->add_option("TEXT", args.input_files, "Input files");
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
+    comp->add_option("-F,--text-format", args.txt_fmt, "Input format (0=plain, 1=fasta, 2=fastq)")->default_val(PLAIN);
+    comp->add_option("-l,--list", args.file_list, "List of input files")->check(CLI::ExistingFile);
 
     //comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
     comp->add_flag("-q,--skip-simp", args.skip_simp, "Do not simplify the grammar");
@@ -110,7 +115,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
 
     //metadata
     CLI::App* meta = app.add_subcommand("met", "Get the metadata of a grammar");
-    meta->add_option("GRAM", args.input_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
+    meta->add_option("GRAM", args.i_file, "Input grammar in LCG format")->check(CLI::ExistingFile)->required();
 
     //merge
     //CLI::App* merge = app.add_subcommand("mrg", "Merge grammars");
@@ -120,7 +125,7 @@ static void parse_app(CLI::App& app, struct arguments& args){
 
     //access
     CLI::App* access = app.add_subcommand("acc", "Random access");
-    access->add_option("GRAM", args.input_file, "Input grammar")->check(CLI::ExistingFile)->required();
+    access->add_option("GRAM", args.i_file, "Input grammar")->check(CLI::ExistingFile)->required();
     access->add_option("STR:START-END", args.ra_positions, "Coordinates to be accessed");
 
     //edit
@@ -135,22 +140,22 @@ template<class gram_type>
 void comp_int2(arguments& args){
     switch (args.verbose_lvl) {
         case ERROR:
-            build_gram<gram_type, ERROR>(args.input_file, args.output_file, args.n_threads,
+            build_gram<gram_type, ERROR>(args.input_files, args.txt_fmt, args.output_file, args.n_threads,
                                          args.chunk_size, args.i_frac, args.skip_simp,
                                          args.part, args.check_gram);
             break;
         case WARNING:
-            build_gram<gram_type, WARNING>(args.input_file, args.output_file, args.n_threads,
+            build_gram<gram_type, WARNING>(args.input_files, args.txt_fmt, args.output_file, args.n_threads,
                                            args.chunk_size, args.i_frac, args.skip_simp,
                                            args.part, args.check_gram);
             break;
         case INFO:
-            build_gram<gram_type, INFO>(args.input_file, args.output_file, args.n_threads,
+            build_gram<gram_type, INFO>(args.input_files, args.txt_fmt, args.output_file, args.n_threads,
                                         args.chunk_size, args.i_frac, args.skip_simp,
                                         args.part, args.check_gram);
             break;
         case DEBUG:
-            build_gram<gram_type, DEBUG>(args.input_file, args.output_file, args.n_threads,
+            build_gram<gram_type, DEBUG>(args.input_files, args.txt_fmt, args.output_file, args.n_threads,
                                          args.chunk_size, args.i_frac, args.skip_simp,
                                          args.part, args.check_gram);
             break;
@@ -294,12 +299,11 @@ int main(int argc, char** argv) {
 
     if(app.got_subcommand("cmp")) {
 
-        if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
+        if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_files[0]).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
 
-
         //TODO only for testing
-        size_t n_bytes = file_size(args.input_file);
+        /*size_t n_bytes = file_size(args.input_file);
         auto *tmp = allocator::allocate<uint8_t>(n_bytes);
         std::ifstream file(args.input_file, std::ios::binary); // `ate` opens at end for size calculation
         file.read((char *)tmp, (std::streamsize)n_bytes);
@@ -347,26 +351,21 @@ int main(int argc, char** argv) {
         free(tmp);
         free(tmp2);
         free(tmp3);
-        free(tmp4);
+        free(tmp4);*/
         //
-        //comp_int(args);
+
+        comp_int(args);
 
     } else if(app.got_subcommand("met")){
-
-        print_metadata(args.input_file);
-
+        print_metadata(args.i_file);
     } else if (app.got_subcommand("acc")){
-
         std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
-        std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
-        access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
-
+        std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.i_file);
+        access_int(args.i_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
     } else {
-
         std::cout<<" Unknown command "<<std::endl;
         return 1;
-
     }
     return 0;
 }

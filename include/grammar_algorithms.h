@@ -605,11 +605,13 @@ void run_length_compress(gram_t& gram) {
     msg+="\n    Compression ratio:          "+std::to_string(float(new_size)/float(old_size));
 
     logger<msg_lvl>::debug(msg);
-    logger<msg_lvl>::info(report_time(start, end, 2));
+    logger<msg_lvl>::info(report_time(start, end, 0));
 }
 
 template<class gram_t>
-void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
+void check_plain_grammar(gram_t& gram, std::vector<std::string>& uncomp_files) {
+
+    //TODO fix this function
 
     std::cout<<"Checking the grammar produces the exact input string"<<std::endl;
     std::cout<<"  This step is optional and for debugging purposes"<<std::endl;
@@ -617,64 +619,67 @@ void check_plain_grammar(gram_t& gram, std::string& uncomp_file) {
     std::cout<<"  Number of nonterminals: "<<gram.n_nonterminals()<<std::endl;
     std::cout<<"  Tot. strings:           "<<gram.n_strings()<<std::endl;
 
-    i_file_stream<uint8_t> if_stream(uncomp_file, BUFFER_SIZE);
-    std::stack<size_t> stack;
-    size_t idx=0;
-    std::string decompression;
+    for(auto const& uncomp_file: uncomp_files){
 
-    for(size_t str=0; str <gram.n_strings(); str++) {
+        i_file_stream<uint8_t> if_stream(uncomp_file, BUFFER_SIZE);
+        std::stack<size_t> stack;
+        size_t idx=0;
+        std::string decompression;
 
-        auto res = gram.str2bitrange(str);
-        for(off_t i=res.first;i<=res.second;i+=gram.r_bits){
-            stack.push(gram.bitpos2symbol(i));
+        for(size_t str=0; str <gram.n_strings(); str++) {
 
-            while(!stack.empty()) {
-                auto curr_sym = stack.top() ;
-                stack.pop();
-                //std::cout<<curr_sym<<" "<<gram.r-gram.n_terminals()<<" "<<gram.rl_ptr.size()<<std::endl;
-                if(gram.is_terminal(curr_sym)){
-                    decompression.push_back((char)gram.get_byte_ter(curr_sym));
-                }else{
-                    auto res2 = gram.nt2bitrange(curr_sym);
+            auto res = gram.str2bitrange(str);
+            for(off_t i=res.first;i<=res.second;i+=gram.r_bits){
+                stack.push(gram.bitpos2symbol(i));
 
-                    if(gram.is_rl_sym(curr_sym)){
-                        //std::cout<<curr_sym<<" "<<res2.first<<" "<<res2.second<<std::endl;
-                        assert((res2.second-res2.first)==gram.r_bits);
-                        size_t sym = gram.bitpos2symbol(res2.first);
-                        size_t len = gram.bitpos2symbol(res2.second);
-                        for(size_t j=0;j<len;j++) stack.emplace(sym);
+                while(!stack.empty()) {
+                    auto curr_sym = stack.top() ;
+                    stack.pop();
+                    //std::cout<<curr_sym<<" "<<gram.r-gram.n_terminals()<<" "<<gram.rl_ptr.size()<<std::endl;
+                    if(gram.is_terminal(curr_sym)){
+                        decompression.push_back((char)gram.get_byte_ter(curr_sym));
                     }else{
-                        for(off_t j=res2.second; j>=res2.first;j-=gram.r_bits){
-                            stack.emplace(gram.bitpos2symbol(j));
+                        auto res2 = gram.nt2bitrange(curr_sym);
+
+                        if(gram.is_rl_sym(curr_sym)){
+                            //std::cout<<curr_sym<<" "<<res2.first<<" "<<res2.second<<std::endl;
+                            assert((res2.second-res2.first)==gram.r_bits);
+                            size_t sym = gram.bitpos2symbol(res2.first);
+                            size_t len = gram.bitpos2symbol(res2.second);
+                            for(size_t j=0;j<len;j++) stack.emplace(sym);
+                        }else{
+                            for(off_t j=res2.second; j>=res2.first;j-=gram.r_bits){
+                                stack.emplace(gram.bitpos2symbol(j));
+                            }
                         }
                     }
                 }
             }
-        }
 
-        size_t k=0;
-        for(char sym : decompression){
-            if (gram_t::has_rand_access){
-                size_t sym2 = gram.im_sym_rand_access(str, k);
-                if(sym2!=size_t(sym)){
-                    std::cout<<"Error: decomp sym: "<<(int)sym<<", accessed sym: "<<sym2<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", position: "<<k<<std::endl;
-                    gram.print_parse_tree(str, true);
-                    assert(size_t(sym)==sym2);
+            size_t k=0;
+            for(char sym : decompression){
+                if (gram_t::has_rand_access){
+                    size_t sym2 = gram.im_sym_rand_access(str, k);
+                    if(sym2!=size_t(sym)){
+                        std::cout<<"Error: decomp sym: "<<(int)sym<<", accessed sym: "<<sym2<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", position: "<<k<<std::endl;
+                        gram.print_parse_tree(str, true);
+                        assert(size_t(sym)==sym2);
+                    }
                 }
+                if(sym!=(char)if_stream.read(idx)){
+                    std::cerr<<"Error: decomp sym: "<<(int)sym<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", file position: "<<idx<<" string position: "<<k<<std::endl;
+                    gram.print_parse_tree(str, true);
+                    exit(1);
+                    //assert(sym==(char)if_stream.read(idx));
+                }
+                idx++;
+                k++;
             }
-            if(sym!=(char)if_stream.read(idx)){
-                std::cerr<<"Error: decomp sym: "<<(int)sym<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", file position: "<<idx<<" string position: "<<k<<std::endl;
-                gram.print_parse_tree(str, true);
-                exit(1);
-                //assert(sym==(char)if_stream.read(idx));
-            }
+            assert(if_stream.read(idx)==gram.sep_tsym);
             idx++;
-            k++;
+            decompression.clear();
+            std::cout<<"\rCorrect strings: "<<(str+1)<<"/"<<gram.n_strings()<<std::flush;
         }
-        assert(if_stream.read(idx)==gram.sep_tsym);
-        idx++;
-        decompression.clear();
-        std::cout<<"\rCorrect strings: "<<(str+1)<<"/"<<gram.n_strings()<<std::flush;
     }
     std::cout<<"\nGrammar is correct!!"<<std::endl;
 }
@@ -978,7 +983,7 @@ void simplify_grammar(gram_t& gram) {
     msg+="\n    Compression ratio:    "+std::to_string(comp_rat);
 
     logger<lvl_msg>::debug(msg);
-    logger<lvl_msg>::info(report_time(start, end, 2));
+    logger<lvl_msg>::info(report_time(start, end, 0));
 }
 
 std::tuple<bool, bool, bool> read_grammar_flags(std::string& file){
@@ -1166,18 +1171,22 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
     assert(new_gram.str_boundaries[0]==offset);
     assert(new_gram.str_boundaries.back()==(bit_pos/r_bits));
     auto end = std::chrono::steady_clock::now();
-    logger<msg_lvl>::info(report_time(start, end, 2));
+    logger<msg_lvl>::info(report_time(start, end, 0));
 }
 
 template<class gram_type, log_lvl lvl_msg=INFO>
-void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
+void build_gram(std::vector<std::string> i_files, text_format& txt_fmt, std::string& o_file, size_t n_threads, off_t chunk_size,
                 float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
-    logger<lvl_msg>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
+    //logger<lvl_msg>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
+    logger<lvl_msg>::info("\nCompressing "+std::to_string(i_files.size())+" files");
 
-    plain_gram p_gram(40, '\n', file_size(i_file));
+    // We set the number of grammar level to 40.
+    // This limit is enough to process strings of up to 4TB in length.
+    // In any case, the combined length of the strings in the collection can be arbitrarily large.
+    plain_gram p_gram(40, '\n');
 
-    build_lc_gram<lvl_msg>(i_file, p_gram, n_threads, chunk_size, i_frac);
+    build_lc_gram<lvl_msg>(i_files, txt_fmt, p_gram, n_threads, chunk_size, i_frac);
 
     if(par_gram){
         //TODO uncomment the line below
@@ -1218,7 +1227,8 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
 
     //optional check
     if(check_gram) {
-        check_plain_grammar(final_gram, i_file);
+        assert(txt_fmt==PLAIN);
+        check_plain_grammar(final_gram, i_files);
     }
     //
 
