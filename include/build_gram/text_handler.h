@@ -45,6 +45,8 @@ struct text_chunk {
     //area of the buffer free for satellite data
     off_t used_bytes=0;
 
+    size_t empty_entries = 0;
+
     explicit text_chunk(const plain_gram& _sink_gram, plain_gram& ck_gram,
                         text_format& fmt): sink_gram(_sink_gram),
                                            gram(ck_gram),
@@ -163,10 +165,12 @@ void read_chunk_from_file(int fd, off_t& rem_text_bytes, off_t& read_text_bytes,
     off_t eff_bytes = i+1;
     chunk.text_bytes = eff_bytes;
     chunk.e_bytes = eff_bytes;
+    chunk.empty_entries = 0;
 
     off_t offset = acc_bytes-eff_bytes;
     rem_text_bytes-= eff_bytes;
 
     read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
+
 }
 #endif //LCG_TEXT_HANDLER_H

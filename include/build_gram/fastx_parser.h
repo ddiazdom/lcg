@@ -7,11 +7,12 @@
 
 #include <iostream>
 
-static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
+static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size, size_t& n_empty) {
 
-    size_t i=0, pos=0, seq_len=0, n_empty=0;
+    size_t i=0, pos=0, seq_len=0;
     int in_header = 0, prev_in_header;
     bool h2s_tran, emp_entry;
+    n_empty=0;
 
     while(i<size){
         uint8_t c = stream[i++];
@@ -31,7 +32,7 @@ static inline size_t fasta_parsing_scalar(uint8_t *stream, size_t size) {
         seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
-    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
+    n_empty--;//subtract the first header
     return pos;
 }
 
@@ -105,16 +106,17 @@ static const uint8_t __attribute__((aligned(16))) mask_shuffle[256*8] = {
 };
 
 // credit: Martins Mozeiko
-static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
+static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size, size_t& n_empty) {
 
     assert(stream[0]=='>');
 
-    size_t i = 0, pos = 0, seq_len=0, n_empty=0, prev_pos;
+    size_t i = 0, pos = 0, seq_len=0, prev_pos;
     uint8x16_t bitmask = {1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128 };
     uint8x16_t new_line = vdupq_n_u8('\n');
     uint8x16_t new_entry = vdupq_n_u8('>');
     int in_header = 0, prev_in_header;
     bool h2s_tran, emp_entry;
+    n_empty = 0;
 
     while(i + 16 <= size) {
 
@@ -183,7 +185,7 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
         seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
-    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
+    n_empty--;//subtract the first header
     return pos;
 }
 #endif
@@ -193,16 +195,17 @@ static inline size_t fasta_parsing_neon(uint8_t *stream, size_t size) {
 #include <x86intrin.h>
 #include "simd_tables.h"
 
-static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
+static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size, size_t& n_empty) {
 
     assert(stream[0]=='>');
 
-    size_t i = 0, pos = 0, seq_len=0, n_empty=0, valid_syms;
+    size_t i = 0, pos = 0, seq_len=0, valid_syms;
     __m128i new_entry = _mm_set1_epi8('>');
     __m128i new_line = _mm_set1_epi8('\n');
 
     int in_header = 0, prev_in_header;
     bool h2s_tran, emp_entry;
+    n_empty = 0;
 
     while(i + 16 <= size) {
 
@@ -264,7 +267,7 @@ static inline size_t fasta_parsing_sse42(uint8_t *stream, size_t size) {
         seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
-    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
+    n_empty--;
     return pos;
 }
 #endif
@@ -289,15 +292,16 @@ _mm256_loadu2_m128i(__m128i const* __addr_hi, __m128i const* __addr_lo) {
 }
 #endif /* defined(__GNUC__) */
 
-static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
+static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size, size_t& n_empty) {
 
     assert(stream[0]=='>');
 
-    size_t i = 0, pos = 0, seq_len=0, n_empty=0, n_valid;
+    size_t i = 0, pos = 0, seq_len=0, n_valid;
     __m256i newline = _mm256_set1_epi8('\n');
     __m256i new_entry = _mm256_set1_epi8('>');
     int in_header = 0, prev_in_header;
     bool h2s_tran, emp_entry;
+    n_empty = 0;
 
     while(i + 32 <= size) {
 
@@ -374,19 +378,19 @@ static inline size_t fasta_parsing_avx2(uint8_t *stream, size_t size) {
         seq_len += (c!='\n' && in_header==0);
     }
     stream[pos++]='\n';
-    std::cout<<"There are "<<n_empty-1<<" entries "<<std::endl;
+    n_empty--;
     return pos;
 }
 #endif
 
 #if defined(__AVX2__)
-#define PARSE_FASTA(param1, param2) fasta_parsing_avx2(param1, param2)
+#define PARSE_FASTA(param1, param2, param3) fasta_parsing_avx2(param1, param2, param3)
 #elif defined(__SSE4_2__)
-#define PARSE_FASTA(param1, param2) fasta_parsing_sse42(param1, param2)
+#define PARSE_FASTA(param1, param2, param3) fasta_parsing_sse42(param1, param2, param3)
 #elif defined(__ARM_NEON__) || defined(__ARM_NEON)
-#define PARSE_FASTA(param1, param2) fasta_parsing_neon(param1, param2)
+#define PARSE_FASTA(param1, param2, param3) fasta_parsing_neon(param1, param2, param3)
 #else
-#define PARSE_FASTA(param1, param2) fasta_parsing_scalar(param1, param2)
+#define PARSE_FASTA(param1, param2, param3) fasta_parsing_scalar(param1, param2, param3)
 #endif
 
 #endif

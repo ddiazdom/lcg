@@ -61,6 +61,7 @@ struct parsing_state {
     size_t chunk_id=0;
     size_t sink_gram_mem_usage=0;
     size_t factor_inc = 1;
+    size_t empty_entries = 0; //number of emtpy entries in the file (only valid for FASTX files)
     float max_frac=0;
     text_format txt_fmt=PLAIN;
 
@@ -96,6 +97,7 @@ struct parsing_state {
         f_proc_syms = 0;
         f_read_bytes = 0;
         f_rem_bytes = (off_t)f_size;
+        empty_entries = 0;
 
         //if the chunk size is undefined, we set it to 0.5% of the input file
         chunk_size = ck_size==0 ? size_t(ceil(0.005 * double(f_size))) : ck_size;
@@ -144,7 +146,7 @@ struct parsing_state {
     void flush_page_cache(){
 #ifdef __linux__
         std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<f_read_bytes<<std::endl;
-        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+        posix_fadvise(fd_r, f_read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
         r_page_cache_bytes=0;
 #endif
     }
@@ -540,7 +542,7 @@ void compress_text_chunk(text_chunk& chunk){
     chunk.round = 0;
 
     if(chunk.format==FASTA){
-        chunk.e_bytes = PARSE_FASTA(chunk.text, chunk.e_bytes);
+        chunk.e_bytes = PARSE_FASTA(chunk.text, chunk.e_bytes, chunk.empty_entries);
     }
 
     byte_par_r2l<query_sink>(chunk, n_strings, sep_sym);
@@ -591,6 +593,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
             //note: e_bytes change when the format is fastx
             p_state.f_eff_proc_syms += text_chunks[buff_id].e_bytes;
+            p_state.empty_entries += text_chunks[buff_id].empty_entries;
 
             text_chunks[buff_id].t_end = std::chrono::steady_clock::now();
 
@@ -727,6 +730,10 @@ void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
     }
     logger<msg_lvl, false, true>::info(" ");
     sink_gram.text_size += par_state.f_eff_proc_syms;
+
+    if(par_state.empty_entries){
+        logger<msg_lvl>::warning("file contains empty entries");
+    }
 }
 
 template<log_lvl msg_lvl>
