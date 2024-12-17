@@ -21,7 +21,7 @@ struct arguments{
     bool check_gram=false;
     size_t seed=0;
     log_lvl verbose_lvl=INFO;
-    text_format txt_fmt=PLAIN;
+    text_format txt_fmt=UNKNOWN;
 
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
@@ -92,13 +92,13 @@ static void parse_app(CLI::App& app, struct arguments& args){
     app.formatter(fmt);
     app.add_flag("-v,--version", args.ver, "Print the software version and exit");
 
-    CLI::App* comp = app.add_subcommand("cmp", "Compress text");
+    CLI::App* comp = app.add_subcommand("cmp", "Compress one or more text collections");
 
     //compression
-    comp->add_option("TEXT", args.input_files, "Input files");
+    comp->add_option("TEXTS", args.input_files, "Input files");
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
-    comp->add_option("-F,--text-format", args.txt_fmt, "Input format (0=plain, 1=fasta, 2=fastq)")->default_val(PLAIN);
+    comp->add_option("-F,--text-format", args.txt_fmt, "Input format (1=plain, 2=fasta, 3=fastq)")->default_val(UNKNOWN)->check(CLI::Range(1,3));
     comp->add_option("-l,--list", args.file_list, "List of input files")->check(CLI::ExistingFile);
 
     //comp->add_option("-s,--seed", args.seed, "Seed to generate the grammar (def. 0)");
@@ -109,9 +109,9 @@ static void parse_app(CLI::App& app, struct arguments& args){
     //comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
 
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
-    comp->add_option("-f,--fraction", args.i_frac, "The parsing threads will try to use at most this input fraction");
+    comp->add_option("-f,--fraction", args.i_frac, "The combined threads will try to use TEXT_SIZE*f bytes of RAM to compress TEXT");
     comp->add_option("-c,--chunk-size", args.chunk_size, "Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))")->default_val(0);
-    comp->add_option("-v,--verbose-level", args.verbose_lvl, "Verbose level (0=error, 1=warning, 0=info, 1=debug)")->default_val(INFO);
+    comp->add_option("-v,--verbose-level", args.verbose_lvl, "Verbose level (0=error, 1=warning, 2=info, 3=debug)")->default_val(INFO)->check(CLI::Range(0,3));
 
     //metadata
     CLI::App* meta = app.add_subcommand("met", "Get the metadata of a grammar");
@@ -230,6 +230,24 @@ void access_int(std::string& input_file, std::vector<str_coord_type>& query_coor
     }
 }
 
+void read_file_list(std::vector<std::string>& input_files, const std::string& list){
+
+    std::ifstream file(list);
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open " << list<<std::endl;
+        exit(1);
+    }
+
+    std::string line;
+    // Iterate over the file line by line
+    while (std::getline(file, line)) {
+        input_files.push_back(line);
+    }
+
+    // Close the file when done
+    file.close();
+}
 
 std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_queries){
 
@@ -299,11 +317,28 @@ int main(int argc, char** argv) {
 
     if(app.got_subcommand("cmp")) {
 
-        if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_files[0]).filename();
+        //Note: this is an ugly hack to catch situations where no inputs are given.
+        // Oddly, supporting "at least one of these" options in CL11 without affecting
+        // the help format is not simple.
+        auto * txt_positional = app.get_subcommand(0)->get_option("TEXTS");
+        auto * txt_file = app.get_subcommand(0)->get_option("--list");
+        if(!txt_positional->count() && !txt_file->count()){
+            std::cerr<<"TEXTS/--list: at least one of these parameters is needed"<<std::endl;
+            std::cerr<<"Run with --help for more information"<<std::endl;
+            exit(1);
+        }
+        //
+
+        if(!args.file_list.empty()){
+            read_file_list(args.input_files, args.file_list);
+        }
+        assert(!args.input_files.empty());
+
+        if(args.output_file.empty()) args.output_file = std::filesystem::path(args.input_files[0]).filename();
         args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
 
         //TODO only for testing
-        size_t n_bytes = file_size(args.input_files[0]);
+        /*size_t n_bytes = file_size(args.input_files[0]);
         auto *tmp = allocator::allocate<uint8_t>(n_bytes);
         std::ifstream file(args.input_files[0], std::ios::binary); // `ate` opens at end for size calculation
         file.read((char *)tmp, (std::streamsize)n_bytes);
@@ -336,7 +371,7 @@ int main(int argc, char** argv) {
         start = std::chrono::steady_clock::now();
         size_t parsed_bytes_avx = fasta_parsing_avx2(tmp3, n_bytes, n_empty);
         end = std::chrono::steady_clock::now();
-        std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_avx<<" empty entries "<n_empty<<<std::endl;
+        std::cout <<"Time avx2 = " << std::chrono::duration_cast<std::chrono::nanoseconds> (end - start).count() << "[ns] output_size: "<<parsed_bytes_avx<<" empty entries "<<n_empty<<std::endl;
         assert(parsed_bytes_scalar==parsed_bytes_avx);
         std::cout<<"Equals? "<<(memcmp(tmp,tmp3, parsed_bytes_avx)==0)<<std::endl;
 #endif
@@ -352,10 +387,9 @@ int main(int argc, char** argv) {
         free(tmp);
         free(tmp2);
         free(tmp3);
-        free(tmp4);
+        free(tmp4);*/
         //
-
-        //comp_int(args);
+        comp_int(args);
     } else if(app.got_subcommand("met")){
         print_metadata(args.i_file);
     } else if (app.got_subcommand("acc")){

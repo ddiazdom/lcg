@@ -732,7 +732,7 @@ void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
     sink_gram.text_size += par_state.f_eff_proc_syms;
 
     if(par_state.empty_entries){
-        logger<msg_lvl>::warning("file contains empty entries");
+        logger<msg_lvl>::warning("  WARNING: file contains "+std::to_string(par_state.empty_entries)+" empty entries");
     }
 }
 
@@ -748,9 +748,37 @@ void build_lc_gram(std::vector<std::string>& i_files, text_format& txt_fmt, plai
     parsing_state par_state(sink_gram.sep_sym(), n_threads, page_cache_limit);
 
     for(auto & i_file : i_files){
+
+        if(!file_exists(i_file)){
+            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not exist, skipping it ..");
+            continue;
+        }
+
+        text_format file_format = txt_fmt;
+        bool fasta_ext = has_fasta_extension(i_file);
+        bool fastq_ext = has_fastq_extension(i_file);
+
+        if(file_format==UNKNOWN){//infer the format
+            if(fasta_ext){
+                file_format = FASTA;
+            }else if(fastq_ext){
+                file_format = FASTQ;
+            }else{
+                file_format = PLAIN;
+            }
+        }
+
+        if(file_format==FASTA && !fasta_ext){
+            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not have Fasta extension");
+        } else if(file_format==FASTQ && !fastq_ext){
+            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not have Fastq extension");
+        } else if(file_format==PLAIN && (fastq_ext || fasta_ext)){
+            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" is in Plain format, but has Fastx extension");
+        }
+
         auto start = std::chrono::steady_clock::now();
-        par_state.new_file(i_file, txt_fmt, chunk_size, i_frac);
-        std::string format = (txt_fmt==PLAIN? "Plain" : (txt_fmt==FASTA? "Fasta" : "Fastq"));
+        par_state.new_file(i_file, file_format, chunk_size, i_frac);
+        std::string format = (file_format==PLAIN? "Plain" : (file_format==FASTA? "Fasta" : "Fastq"));
         std::string msg ="  File                      : "+i_file+"\n";
         msg+="  Format                    : "+format+"\n";
         msg+="  Parsing threads           : "+std::to_string(par_state.n_threads)+"\n";

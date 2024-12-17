@@ -9,9 +9,10 @@
 #include <unistd.h>
 
 enum text_format{
-    PLAIN=0,
-    FASTA=1,
-    FASTQ=2
+    UNKNOWN=0,
+    PLAIN=1,
+    FASTA=2,
+    FASTQ=3
 };
 
 struct text_chunk {
@@ -20,7 +21,7 @@ struct text_chunk {
     const plain_gram& sink_gram;
     plain_gram& gram;
 
-    static constexpr uint8_t fmt_sep_symbols[3]={'\n', '>', '@'};
+    static constexpr uint8_t fmt_sep_symbols[4]={'\0', '\n', '>', '@'};
     text_format format;//format of the input text
 
     size_t id{};//chunk id

@@ -232,3 +232,16 @@ bool ends_with(std::string const & value, std::vector<std::string> const & pats,
     }
     return false;
 }
+
+bool has_fasta_extension(std::string const& value){
+    std::vector<std::string> fasta_ext ={"fasta", "fa", "faa", "fna"};
+    return std::any_of(fasta_ext.begin(), fasta_ext.end(),
+                       [&](std::string const& ext){ return ends_with(value, ext); });
+}
+
+bool has_fastq_extension(std::string const& value){
+    std::vector<std::string> fasta_ext ={"fastq", "fq"};
+    return std::any_of(fasta_ext.begin(), fasta_ext.end(),
+                       [&](std::string const& ext){ return ends_with(value, ext); });
+}
+
