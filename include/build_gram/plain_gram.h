@@ -5,6 +5,7 @@
 #ifndef LCG_PLAIN_GRAM_H
 #define LCG_PLAIN_GRAM_H
 #include "phrase_set.h"
+#include "phrase_set_vbyte.h"
 
 //a string subset is a subset of consecutive strings compressed in a text chunk.
 // Text chunks are small (a couple of hundreds MBs), so they should not contain

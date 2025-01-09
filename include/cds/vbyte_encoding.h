@@ -331,7 +331,7 @@ struct vbyte_decoder{
         return tmp-ptr;
     }
 
-    inline static size_t write_forward(uint8_t * stream, sym_type& x){
+    inline static size_t write_forward(uint8_t * stream, sym_type x){
         size_t len;
         size_t comp_x;
         size_t c=0, b=0;
