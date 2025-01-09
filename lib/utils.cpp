@@ -10,6 +10,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <algorithm>
 
 #ifdef __linux__
 void empty_page_cache(const char *filename) {
@@ -25,6 +26,25 @@ void empty_page_cache(const char *filename) {
 }
 #endif
 
+void remove_dir(const std::string& p) {
+    try {
+        if(std::filesystem::exists(p) && std::filesystem::is_directory(p)) {
+            std::filesystem::remove_all(p);
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error removing directory: " << e.what() << std::endl;
+    }
+}
+
+void create_dir(const std::string& p) {
+    try {
+        if(!std::filesystem::exists(p)) {
+            std::filesystem::create_directory(p);
+        }
+    } catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Error removing directory: " << e.what() << std::endl;
+    }
+}
 
 bool file_exists(const std::filesystem::path& p, std::filesystem::file_status const& s){
     if(std::filesystem::status_known(s) ? std::filesystem::exists(s) : std::filesystem::exists(p)){
@@ -49,6 +69,16 @@ std::string random_string(size_t length){
         random_string[i] = characters[distribution(generator)];
     }
     return random_string;
+}
+
+std::string random_folder(const std::string& parent_path, std::string const& prefix, size_t rd_len){
+    while(true){
+        std::string folder_name = prefix +"_"+random_string(rd_len);
+        auto path = std::filesystem::path(parent_path) / folder_name;
+        if(!std::filesystem::exists(path)){
+            return path.string();
+        }
+    }
 }
 
 std::vector<std::string> split (const std::string &s, char delim) {

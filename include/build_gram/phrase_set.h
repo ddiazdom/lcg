@@ -820,6 +820,36 @@ public:
             last_fp_pos=stream_size;
         }
     }
+
+    size_t serialize(std::ofstream &ofs){
+        size_t written_bytes = 0;
+        written_bytes+=serialize_elm(ofs, stream_size);
+        written_bytes+=serialize_elm(ofs, stream_cap);
+        written_bytes+=serialize_elm(ofs, m_max_load_factor);
+        written_bytes+=serialize_elm(ofs, elm_threshold);
+        written_bytes+=serialize_elm(ofs, frac_lf);
+        written_bytes+=serialize_elm(ofs, n_phrases);
+        written_bytes+=serialize_elm(ofs, last_mt);
+        written_bytes+=serialize_elm(ofs, last_fp_pos);
+        written_bytes+= serialize_raw_vector(ofs, phrase_stream, stream_size);
+        written_bytes+= serialize_plain_vector(ofs, m_table);
+        return written_bytes;
+    }
+
+    void load(std::ifstream & ifs){
+        load_elm(ifs, stream_size);
+        load_elm(ifs, stream_cap);
+        load_elm(ifs, m_max_load_factor);
+        load_elm(ifs, elm_threshold);
+        load_elm(ifs, frac_lf);
+        load_elm(ifs, n_phrases);
+        load_elm(ifs, last_mt);
+        load_elm(ifs, last_fp_pos);
+
+        load_raw_vector(ifs, phrase_stream, stream_size);
+        load_plain_vector(ifs, m_table);
+        stream_cap = stream_size;
+    }
 };
 
 #endif //LCG_LZL_MAP_H

@@ -701,7 +701,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 }
 
 template<log_lvl msg_lvl>
-void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
+void process_one_file(parsing_state& par_state, plain_gram& sink_gram, bool semi_ext, std::string& gram_ifs){
 
     std::vector<plain_gram> ck_grams(par_state.n_chunks,
                                      plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym()));
@@ -728,6 +728,7 @@ void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
         sink_gram.update_fps();
         par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
     }
+
     logger<msg_lvl, false, true>::info(" ");
     sink_gram.text_size += par_state.f_eff_proc_syms;
 
@@ -737,7 +738,11 @@ void process_one_file(parsing_state& par_state, plain_gram& sink_gram){
 }
 
 template<log_lvl msg_lvl>
-void build_lc_gram(std::vector<std::string>& i_files, text_format& txt_fmt, plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
+void build_lc_gram(std::vector<std::string>& i_files, std::vector<text_format>& i_fmts, plain_gram& sink_gram,
+                   size_t n_threads, off_t chunk_size, float i_frac, bool semi_ext, std::string& tmp_folder) {
+
+    std::string gram_file = std::filesystem::path(tmp_folder) / "gram_file";
+    assert(!std::filesystem::exists(gram_file));
 
     logger<msg_lvl>::info("Building a locally consistent grammar");
 
@@ -747,50 +752,49 @@ void build_lc_gram(std::vector<std::string>& i_files, text_format& txt_fmt, plai
     off_t page_cache_limit = 1024*1024*1024;
     parsing_state par_state(sink_gram.sep_sym(), n_threads, page_cache_limit);
 
-    for(auto & i_file : i_files){
 
-        if(!file_exists(i_file)){
-            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not exist, skipping it ..");
+    for(size_t i=0;i<i_files.size();i++){
+
+        if(!file_exists(i_files[i])){
+            logger<msg_lvl>::warning("WARNING: file \""+i_files[i]+"\" does not exist, skipping it ..");
             continue;
         }
 
-        text_format file_format = txt_fmt;
-        bool fasta_ext = has_fasta_extension(i_file);
-        bool fastq_ext = has_fastq_extension(i_file);
+        bool fasta_ext = has_fasta_extension(i_files[i]);
+        bool fastq_ext = has_fastq_extension(i_files[i]);
 
-        if(file_format==UNKNOWN){//infer the format
+        if(i_fmts[i]==UNKNOWN){//infer the format
             if(fasta_ext){
-                file_format = FASTA;
+                i_fmts[i] = FASTA;
             }else if(fastq_ext){
-                file_format = FASTQ;
+                i_fmts[i] = FASTQ;
             }else{
-                file_format = PLAIN;
+                i_fmts[i] = PLAIN;
             }
         }
 
-        if(file_format==FASTA && !fasta_ext){
-            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not have Fasta extension");
-        } else if(file_format==FASTQ && !fastq_ext){
-            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" does not have Fastq extension");
-        } else if(file_format==PLAIN && (fastq_ext || fasta_ext)){
-            logger<msg_lvl>::warning("WARNING: file \""+i_file+"\" is in Plain format, but has Fastx extension");
+        if(i_fmts[i]==FASTA && !fasta_ext){
+            logger<msg_lvl>::warning("WARNING: file \""+i_files[i]+"\" does not have Fasta extension");
+        } else if(i_fmts[i]==FASTQ && !fastq_ext){
+            logger<msg_lvl>::warning("WARNING: file \""+i_files[i]+"\" does not have Fastq extension");
+        } else if(i_fmts[i]==PLAIN && (fastq_ext || fasta_ext)){
+            logger<msg_lvl>::warning("WARNING: file \""+i_files[i]+"\" is in Plain format, but has Fastx extension");
         }
 
         auto start = std::chrono::steady_clock::now();
-        par_state.new_file(i_file, file_format, chunk_size, i_frac);
-        std::string format = (file_format==PLAIN? "Plain" : (file_format==FASTA? "Fasta" : "Fastq"));
-        std::string msg ="  File                      : "+i_file+"\n";
+        par_state.new_file(i_files[i], i_fmts[i], chunk_size, i_frac);
+        std::string format = (i_fmts[i]==PLAIN? "Plain" : (i_fmts[i]==FASTA? "Fasta" : "Fastq"));
+        std::string msg ="  File                      : "+i_files[i]+"\n";
         msg+="  Format                    : "+format+"\n";
         msg+="  Parsing threads           : "+std::to_string(par_state.n_threads)+"\n";
         msg+="  Active text chunks in RAM : "+std::to_string(par_state.n_chunks)+"\n";
         msg+="  Size of each chunk        : "+report_space((off_t)par_state.chunk_size)+"\n";
         msg+="  Chunks' approx. mem usage : "+report_space((off_t)par_state.chunks_approx_mem_usage());
         logger<msg_lvl>::info(msg);
-        process_one_file<msg_lvl>(par_state, sink_gram);
+        process_one_file<msg_lvl>(par_state, sink_gram, semi_ext, gram_file);
         auto end = std::chrono::steady_clock::now();
         logger<msg_lvl>::info(report_time(start, end, 2));
     }
-
     sink_gram.reorder_strings();
     sink_gram.clear_fps();
 }

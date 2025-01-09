@@ -35,12 +35,17 @@ struct str_collection {
 
 std::ifstream::pos_type file_size(std::string & filename);
 
+void remove_dir(const std::string& p);
+
+void create_dir(const std::string& p);
 
 //check if file exists
 bool file_exists(const std::filesystem::path& p, std::filesystem::file_status const& s = std::filesystem::file_status{});
 
 //produce a random string
 std::string random_string(size_t length);
+
+std::string random_folder(const std::string& parent_path, std::string const& prefix, size_t rd_len);
 
 int fd_is_valid(int fd);
 
@@ -56,9 +61,9 @@ struct tmp_workspace{
 
     explicit tmp_workspace(std::string const& base_folder=std::filesystem::temp_directory_path(),
                            bool rem_all=true,
-                           std::string const& prefix="tmp") : remove_all(rem_all) {
+                           std::string const& prefix="tmp", bool create=true) : remove_all(rem_all) {
 
-        std::string tmp_path = std::filesystem::canonical(std::filesystem::path(base_folder)) / std::string(prefix+".XXXXXX");
+        /*std::string tmp_path = std::filesystem::canonical(std::filesystem::path(base_folder)) / std::string(prefix+".XXXXXX");
         char temp[200] = {0};
         tmp_path.copy(temp, tmp_path.size() + 1);
         temp[tmp_path.size() + 1] = '\0';
@@ -66,7 +71,11 @@ struct tmp_workspace{
         if (res == nullptr) {
             std::cout << "Error trying to create a temporal folder" << std::endl;
         }
-        tmp_folder = std::string(temp);
+        tmp_folder = std::string(temp);*/
+        tmp_folder = random_folder(base_folder, prefix, 6);
+        if(create){
+            create_dir(tmp_folder);
+        }
         ext = random_string(3);
     }
 
@@ -93,7 +102,7 @@ struct tmp_workspace{
 
     ~tmp_workspace(){
         if(remove_all){
-            std::filesystem::remove_all(tmp_folder);
+            remove_dir(tmp_folder);
         }
     }
 

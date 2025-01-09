@@ -20,20 +20,26 @@ struct string_subset{
                                                                                         lvl(_lvl),
                                                                                         offset(_offset),
                                                                                         n_strings(_n_strings){}
+    string_subset(): txt_id(0),
+                     lvl(0),
+                     offset(0),
+                     n_strings(0){}
 };
 
 struct plain_gram {
 
-    std::vector<uint64_t *> fps;
-    std::vector<size_t> fps_len;
-    phrase_set<uint8_t> ter_dict;
-    std::vector<phrase_set<uint32_t>> nt_dicts;
-    std::vector<uint32_t> comp_string;
-    std::vector<string_subset> str_orders;
-
     uint64_t text_size=0;
     size_t n_levels=0;
     uint8_t s_sym='\n';
+
+    std::vector<uint32_t> comp_string;
+    std::vector<string_subset> str_orders;
+
+    std::vector<size_t> fps_len;
+    std::vector<uint64_t *> fps;
+
+    phrase_set<uint8_t> ter_dict;
+    std::vector<phrase_set<uint32_t>> nt_dicts;
 
     explicit plain_gram(size_t lvl_cap, uint8_t sep_sym, float load_factor=0.85){
         assert(lvl_cap>2);
@@ -365,6 +371,112 @@ struct plain_gram {
                 mem<uint64_t>::deallocate(fps_set);
             }
         }
+    }
+
+    size_t serialize(std::ofstream &ofs){
+        size_t written_bytes = 0;
+        written_bytes+= serialize_elm(ofs, text_size);
+        written_bytes+= serialize_elm(ofs, n_levels);
+        written_bytes+= serialize_elm(ofs, s_sym);
+        //assert(fps.size()==fps_len.size());
+        //written_bytes+= serialize_plain_vector(ofs, fps_len);
+        //for(size_t i=0;i<fps_len.size();i++){
+        //    written_bytes+= serialize_raw_vector(ofs, fps[i], fps_len[i]);
+        //}
+        written_bytes+= ter_dict.serialize(ofs);
+        size_t n_dicts = nt_dicts.size();
+        written_bytes+= serialize_elm(ofs, n_dicts);
+        for(auto & nt_dict : nt_dicts){
+            written_bytes+= nt_dict.serialize(ofs);
+        }
+        written_bytes+= serialize_plain_vector(ofs, comp_string);
+        written_bytes+= serialize_plain_vector(ofs, str_orders);
+
+        return written_bytes;
+    }
+
+    void load(std::ifstream &ifs){
+        load_elm(ifs, text_size);
+        load_elm(ifs, n_levels);
+        load_elm(ifs, s_sym);
+        //load_plain_vector(ifs, fps_len);
+        //for(size_t i=0;i<fps_len.size();i++){
+        //    load_raw_vector(ifs, fps[i], fps_len[i]);
+        //}
+        ter_dict.load(ifs);
+        size_t n_dicts;
+        load_elm(ifs, n_dicts);
+        nt_dicts.resize(n_dicts);
+        for(auto & nt_dict : nt_dicts){
+            nt_dict.load(ifs);
+        }
+        load_plain_vector(ifs, comp_string);
+        load_plain_vector(ifs, str_orders);
+    }
+};
+
+struct plain_gram_buffer{
+
+    uint64_t text_size=0;
+    size_t n_levels=0;
+    size_t active_level = 0;
+    uint8_t s_sym='\n';
+
+    std::ofstream ofs;
+    std::ifstream ifs;
+
+    std::vector<uint32_t> comp_string;
+    std::vector<string_subset> str_orders;
+
+    phrase_set<uint8_t> ter_dict;
+    phrase_set<uint32_t> nt_dict;
+
+    plain_gram_buffer(std::string& i_file, std::string& o_file){
+
+        ifs = std::ifstream(i_file, std::ios::binary);
+        load_elm(ifs, text_size);
+        load_elm(ifs, n_levels);
+        load_elm(ifs, s_sym);
+        assert(n_levels>0);
+
+        ter_dict.load(ifs);
+        //TODO check o_file does not exist
+        ofs = std::ofstream(o_file, std::ios::binary);
+
+        std::streamoff header_bytes = sizeof(text_size)+sizeof(n_levels)+sizeof(s_sym);
+        ofs.seekp(header_bytes);
+    }
+
+    void next_level(){
+        if(active_level==0){
+            ter_dict.serialize(ofs);
+            ter_dict.destroy();
+        }else{
+            nt_dict.serialize(ofs);
+            nt_dict.destroy();
+        }
+
+        active_level++;
+        if(active_level<n_levels){
+            nt_dict.load(ifs);
+        }
+    }
+
+    void load_comp_string(){
+        load_plain_vector(ifs, comp_string);
+        load_plain_vector(ifs, str_orders);
+    }
+
+    void close(){
+        serialize_plain_vector(ofs, comp_string);
+        serialize_plain_vector(ofs, str_orders);
+
+        //store the header information at the beginning of the file.
+        //we are assuming the grammar was modified
+        ofs.seekp(0);
+        serialize_elm(ofs, text_size);
+        serialize_elm(ofs, n_levels);
+        serialize_elm(ofs, s_sym);
     }
 };
 #endif //LCG_PLAIN_GRAM_H

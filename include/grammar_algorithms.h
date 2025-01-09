@@ -609,9 +609,7 @@ void run_length_compress(gram_t& gram) {
 }
 
 template<class gram_t>
-void check_plain_grammar(gram_t& gram, std::vector<std::string>& uncomp_files) {
-
-    //TODO fix this function
+void check_plain_grammar(gram_t& gram, std::vector<std::string>& uncomp_files, std::vector<text_format>& i_fmts) {
 
     std::cout<<"Checking the grammar produces the exact input string"<<std::endl;
     std::cout<<"  This step is optional and for debugging purposes"<<std::endl;
@@ -619,30 +617,31 @@ void check_plain_grammar(gram_t& gram, std::vector<std::string>& uncomp_files) {
     std::cout<<"  Number of nonterminals: "<<gram.n_nonterminals()<<std::endl;
     std::cout<<"  Tot. strings:           "<<gram.n_strings()<<std::endl;
 
-    for(auto const& uncomp_file: uncomp_files){
+    size_t str=0, file_pos, cmp_pos=0;
+    std::stack<size_t> stack;
+    std::string decompression;
 
-        i_file_stream<uint8_t> if_stream(uncomp_file, BUFFER_SIZE);
-        std::stack<size_t> stack;
-        size_t idx=0;
-        std::string decompression;
+    for(size_t i=0;i<uncomp_files.size();i++){
 
-        for(size_t str=0; str <gram.n_strings(); str++) {
+        assert(i_fmts[i]==PLAIN);
+        i_file_stream<uint8_t> file_buffer(uncomp_files[i], BUFFER_SIZE);
+        file_pos=0;
 
-            auto res = gram.str2bitrange(str);
+        while(file_pos<file_buffer.size()){
+
+            auto res = gram.str2bitrange(cmp_pos++);
+
             for(off_t i=res.first;i<=res.second;i+=gram.r_bits){
                 stack.push(gram.bitpos2symbol(i));
-
                 while(!stack.empty()) {
                     auto curr_sym = stack.top() ;
                     stack.pop();
-                    //std::cout<<curr_sym<<" "<<gram.r-gram.n_terminals()<<" "<<gram.rl_ptr.size()<<std::endl;
                     if(gram.is_terminal(curr_sym)){
                         decompression.push_back((char)gram.get_byte_ter(curr_sym));
                     }else{
                         auto res2 = gram.nt2bitrange(curr_sym);
 
                         if(gram.is_rl_sym(curr_sym)){
-                            //std::cout<<curr_sym<<" "<<res2.first<<" "<<res2.second<<std::endl;
                             assert((res2.second-res2.first)==gram.r_bits);
                             size_t sym = gram.bitpos2symbol(res2.first);
                             size_t len = gram.bitpos2symbol(res2.second);
@@ -656,31 +655,36 @@ void check_plain_grammar(gram_t& gram, std::vector<std::string>& uncomp_files) {
                 }
             }
 
+            assert(file_pos+decompression.size()<=file_buffer.size());
+
             size_t k=0;
             for(char sym : decompression){
-                if (gram_t::has_rand_access){
+                if(gram_t::has_rand_access){
                     size_t sym2 = gram.im_sym_rand_access(str, k);
                     if(sym2!=size_t(sym)){
-                        std::cout<<"Error: decomp sym: "<<(int)sym<<", accessed sym: "<<sym2<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", position: "<<k<<std::endl;
+                        std::cout<<"Error: decomp sym: "<<(int)sym<<", accessed sym: "<<sym2<<", real sym: "<<file_buffer.read(file_pos)<<", str: "<<str<<", file"<<uncomp_files[i]<<", file position"<<file_pos<<", string position: "<<k<<std::endl;
                         gram.print_parse_tree(str, true);
                         assert(size_t(sym)==sym2);
                     }
                 }
-                if(sym!=(char)if_stream.read(idx)){
-                    std::cerr<<"Error: decomp sym: "<<(int)sym<<", real sym: "<<if_stream.read(idx)<<", str: "<<str<<", file position: "<<idx<<" string position: "<<k<<std::endl;
+
+                if(sym!=(char)file_buffer.read(file_pos)){
+                    std::cerr<<"Error: decomp sym: "<<(int)sym<<", real sym: "<<file_buffer.read(file_pos)<<", str: "<<str<<", file: "<<uncomp_files[i]<<", file position: "<<file_pos<<" string position: "<<k<<std::endl;
                     gram.print_parse_tree(str, true);
                     exit(1);
-                    //assert(sym==(char)if_stream.read(idx));
                 }
-                idx++;
+                file_pos++;
                 k++;
             }
-            assert(if_stream.read(idx)==gram.sep_tsym);
-            idx++;
+
+            if(file_buffer.read(file_pos)==gram.sep_tsym){
+                file_pos++;
+                std::cout<<"\rCorrect strings: "<<(++str)<<"/"<<gram.n_strings()<<std::flush;
+            }
             decompression.clear();
-            std::cout<<"\rCorrect strings: "<<(str+1)<<"/"<<gram.n_strings()<<std::flush;
         }
     }
+    assert(cmp_pos==gram.n_strings());
     std::cout<<"\nGrammar is correct!!"<<std::endl;
 }
 
@@ -1175,18 +1179,26 @@ void complete_and_pack_grammar(plain_gram& p_gram, gram_type& new_gram){
 }
 
 template<class gram_type, log_lvl lvl_msg=INFO>
-void build_gram(std::vector<std::string> i_files, text_format& txt_fmt, std::string& o_file, size_t n_threads, off_t chunk_size,
-                float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
+void build_gram(std::vector<std::string> i_files, std::vector<text_format>& i_fmts, std::string& o_file,
+                size_t n_threads, off_t chunk_size, float i_frac, bool skip_simp, bool par_gram, bool check_gram,
+                bool semi_ext, std::string& parent_tmp_folder) {
 
-    //logger<lvl_msg>::info("\nInput file: "+i_file+" ("+report_space(file_size(i_file))+")");
+    // create a temporary folder inside parent_tmp_folder
+    // the folder will be created only if semi_ext is true, otherwise
+    // it will be just ignored
+    tmp_workspace wrk_space(parent_tmp_folder, true, "lcg", semi_ext);
+
+    if(semi_ext){
+        logger<lvl_msg>::info("\nRunning in semi external mode. Temporary folder is \""+wrk_space.tmp_folder+"\"");
+    }
+
     logger<lvl_msg>::info("\nCompressing "+std::to_string(i_files.size())+" files");
-
     // We set the number of grammar level to 40.
     // This limit is enough to process strings of up to 4TB in length.
     // In any case, the combined length of the strings in the collection can be arbitrarily large.
     plain_gram p_gram(40, '\n');
 
-    build_lc_gram<lvl_msg>(i_files, txt_fmt, p_gram, n_threads, chunk_size, i_frac);
+    build_lc_gram<lvl_msg>(i_files, i_fmts, p_gram, n_threads, chunk_size, i_frac, semi_ext, wrk_space.tmp_folder);
 
     if(par_gram){
         //TODO uncomment the line below
@@ -1227,8 +1239,7 @@ void build_gram(std::vector<std::string> i_files, text_format& txt_fmt, std::str
 
     //optional check
     if(check_gram) {
-        assert(txt_fmt==PLAIN);
-        check_plain_grammar(final_gram, i_files);
+        check_plain_grammar(final_gram, i_files, i_fmts);
     }
     //
 
