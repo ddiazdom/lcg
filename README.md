@@ -67,7 +67,8 @@ Usage: ./lcg cmp [OPTIONS] TEXT
   -q,--skip-simp           Do not simplify the grammar
   -e,--skip-rl             Do not perform run-length compression
   -r,--random-support      Add random access support for the grammar
-  -g,--check-gram          Check that the grammar was compressed correctly   -f,--fraction            The parsing threads will try to use at most this input fraction
+  -g,--check-gram          Check that the grammar was compressed correctly
+  -f,--fraction            The parsing threads will try to use at most this input fraction
   -c,--chunk-size          Size in bytes of each text chunk (def. min(TEXT_SIZE*0.005, 200MB))
 ```
 
