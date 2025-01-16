@@ -81,6 +81,7 @@ Usage: ./lcg cmp [OPTIONS] TEXT
 `--fraction` indicates that the combined space of the text chunks plus the satellite data should not exceed this  fraction of the input. This parameter is only **a request**, and it could use more space if, for instance, the compressed  representation of the input exceeds this limit.
 
 `--chunk-size` tells the program the approximate size of the text chunks processed in parallel by the threads.
+
 # Random access support
 
 For the moment, we offer inefficient random access support to the compressed text. It is inefficient because it needs  to load the full compressed text on RAM to access the query area. We can do much better in practice, but we must  implement it. However, the cost of random access is still logarithmic on the text size once the grammar is loaded.
@@ -120,8 +121,7 @@ We considered four massive string collections for the experiments.
 - **ECOLI**: a subset of **ATB** with 8,000 assemblies of the E. coli genome, totalling 40.57 GB.
 - **COVID**: all the assemblies available in NCBI for SARS-CoV-2 up to **November 5, 2024**. This collection has 8,989,016 genomes and a size of 267.39 GB.
 
-The datasets were in FASTA format, and we preprocessed them as follows: we set all the characters to uppercase, removed  new lines inside the strings, and stored the sequences in one-string-per-line format. The tool **agc** requires the input  to be in FASTA format, so we created copies of the preprocessed datasets containing small FASTA headers. We only used  
-these copies with **agc**. The table shows more information about the datasets.
+The datasets were in FASTA format, and we preprocessed them as follows: we set all the characters to uppercase, removed  new lines inside the strings, and stored the sequences in one-string-per-line format. The tool **agc** requires the input  to be in FASTA format, so we created copies of the preprocessed datasets containing small FASTA headers. We only used  these copies with **agc**. The table shows more information about the datasets.
 
 | Dataset | Alphabet | Number of strings | Shortest string | Longest string | Size      |     |
 | ------- | -------- | ----------------- | --------------- | -------------- | --------- | --- |
