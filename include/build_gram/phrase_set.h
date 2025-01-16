@@ -6,7 +6,7 @@
 #define LCG_LZL_MAP_H
 #include "xxhash.h"
 #include "cds/cdt_common.hpp"
-#include "cds/vbyte_encoding.h"
+#include "cds/vbyte.h"
 #include <vector>
 #include <cstring>
 #include <cstdlib>

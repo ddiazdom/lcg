@@ -26,7 +26,7 @@
 #include "cds/ts_queue.h"
 #include "cds/ts_priority_queue.h"
 #include "cds/utils.h"
-#include "cds/vbyte_encoding.h"
+#include "cds/vbyte.h"
 
 #define PARSING_INFO \
 do{\
@@ -185,7 +185,7 @@ void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phr
                 next_ovf = phr_with_ovf[++ovf_idx].right_end();
             }
         }  else {
-            pos-=vbyte_decoder<uint32_t>::read_right2left(&chunk.text[pos], mt_sym);
+            pos-=inv_vbyte<uint32_t>::read(&chunk.text[pos], mt_sym);
             *chunk.parse = mt_sym;
         }
         chunk.parse--;
@@ -249,7 +249,7 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
                 //metasymbol does not fit its phrase
                 phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
             } else {
-                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
                 memset(&text[lb+v_len], 0, phrase_len-v_len);
             }
 
@@ -283,7 +283,7 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     if(__builtin_expect(v_len>phrase_len, 0)){
         phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
     }else {
-        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+        inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
         memset(&text[lb+v_len], 0, phrase_len-v_len);
     }
     parse_size+=4;
@@ -335,7 +335,7 @@ void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
                 //metasymbol does not fit its phrase
                 phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
             } else {
-                vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+                inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
                 memset(&text[lb+v_len], 0, phrase_len-v_len);
             }
 
@@ -363,7 +363,7 @@ void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
     if(__builtin_expect(v_len>phrase_len, 0)){
         phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
     }else {
-        vbyte_decoder<uint32_t>::write_right2left(&text[lb], mt_sym, v_len);
+        inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
         memset(&text[lb+v_len], 0, phrase_len-v_len);
     }
     parse_size+=4;
