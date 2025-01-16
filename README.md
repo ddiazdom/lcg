@@ -136,8 +136,7 @@ The tools **LCG**, **agc**, **zstd**, and **BigRePair** support multithreading, 
 
 We did not test **HUM** and **ATB** with **RePair** the resource consumption would have exceeded the capacities of  our machine. Further, **BigRePair** crashed with **HUM** and **ATB** due to a hash collision error. Finally, we did not run  **agc** with **ATB** due to time constraints.
 
-We conducted the experiments on a machine with AlmaLinux 8.4, 3 TiB of RAM,  
-and processor Intel(R) Xeon(R) CPU E7-8890 v4 @ 2.20GHz, with 192 cores.
+We conducted the experiments on a machine with AlmaLinux 8.4, 3 TiB of RAM, and processor Intel(R) Xeon(R) CPU E7-8890 v4 @ 2.20GHz, with 192 cores.
 
 ## Results
 ### Compression ratio (plain/compressed)
