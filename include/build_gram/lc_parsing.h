@@ -15,10 +15,6 @@
 //1000GB = 1TB
 #define COL_THRESHOLD_3 1099511627776
 
-#ifdef DEBUG_MODE
-#include "malloc_count.h"
-#endif
-
 #include "xxhash.h"
 #include "collapse_gram.h"
 #include "fastx_parser.h"
@@ -30,8 +26,8 @@
 
 #define PARSING_INFO \
 do{\
-std::string msg1 ="Parsed_input "+report_space((off_t)p_state.f_proc_syms)+\
-", malloc_peak "+report_space((off_t)malloc_count_peak())+                 \
+std::string msg1 ="Parsed_input "+report_space((off_t)p_state.f_proc_syms)+ \
+", malloc_peak "+report_space((off_t)malloc_peak())+                 \
 ", byte_usage "+report_space((off_t)text_chunks[buff_id].gram.mem_usage())+\
 ", input_fraction "+std::to_string(input_frac)+                            \
 ", fraction_limit "+std::to_string(p_state.max_frac);                      \

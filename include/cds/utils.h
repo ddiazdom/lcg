@@ -16,6 +16,10 @@
 #include <sstream>
 #include <iomanip>
 
+#ifdef DEBUG_MODE
+#include "malloc_count.h"
+#endif
+
 #ifdef __APPLE__
 #include <unistd.h>
 #include <sys/fcntl.h>
@@ -181,6 +185,7 @@ std::string report_speed(off_t bytes, time_t start, time_t end){
 }
 
 std::string report_space(off_t bytes);
+size_t malloc_peak();
 
 bool ends_with(std::string const & value, std::string const & ending);
 bool ends_with(std::string const & value, std::vector<std::string> const & ending, std::string& ext);

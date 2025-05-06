@@ -110,6 +110,14 @@ std::string report_space(off_t bytes){
     }
 }
 
+size_t malloc_peak(){
+#ifdef DEBUG_MODE
+    return malloc_count_peak();
+#else
+    return 0;
+#endif
+}
+
 std::ifstream::pos_type file_size(std::string & filename) {
     std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
     return in.tellg();
