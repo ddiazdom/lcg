@@ -96,7 +96,8 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_option("TEXTS", args.input_files, "Input files");
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
 
-    auto * opt_fmt1 = comp->add_option("-x,--format", args.txt_fmt, "Format of the input files (1=Plain, 2=Fasta, 3=Fastq)")->default_val(UNKNOWN)->check(CLI::Range(1,3));
+    //auto * opt_fmt1 = comp->add_option("-x,--format", args.txt_fmt, "Format of the input files (1=Plain, 2=Fasta, 3=Fastq)")->default_val(UNKNOWN)->check(CLI::Range(1,3));
+    auto * opt_fmt1 = comp->add_option("-x,--format", args.txt_fmt, "Format of the input files (1=Plain, 2=Fasta)")->default_val(UNKNOWN)->check(CLI::Range(1,3));
     auto * opt_fmt2 = comp->add_option("-X,--format-seq", args.input_fmts, "Sequence of input formats (in case they differ)");
     opt_fmt1->excludes(opt_fmt2);
 
@@ -106,10 +107,10 @@ static void parse_app(CLI::App& app, struct arguments& args){
     comp->add_flag("-e,--skip-rl", args.skip_rl, "Do not perform run-length compression");
     comp->add_flag("-r,--random-support", args.rand_acc, "Augment the grammar with random access support");
     comp->add_flag("-g,--check-gram", args.check_gram, "Check that the grammar was compressed correctly");
-    auto * se_flag = comp->add_flag("-s,--semi-external", args.semi_external, "Keep some satellite data on disk to reduce RAM usage");
-    auto * tmp_fd_opt = comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory);
+    //auto * se_flag = comp->add_flag("-s,--semi-external", args.semi_external, "Keep some satellite data on disk to reduce RAM usage");
+    //auto * tmp_fd_opt = comp->add_option("-T,--tmp", args.tmp_dir, "Temporary folder (def. /tmp/lcg.xxxx)")->check(CLI::ExistingDirectory);
+    //tmp_fd_opt->needs(se_flag);
     //comp->add_flag("-p,--partial", args.part, "Build a partial grammar representation");
-    tmp_fd_opt->needs(se_flag);
 
     //comp->add_option("-c,--text-chunks", args.n_chunks, "Number of text chunks in memory during the parsing (def. n_threads+1)")->default_val(0);
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);

@@ -138,14 +138,14 @@ void read_chunk_from_file(int fd, off_t& rem_text_bytes, off_t& read_text_bytes,
         assert(chunk.text_bytes==acc_bytes);
 
         //we consumed all the file
-        if(rem_text_bytes-chunk.text_bytes==0){
+        if(rem_text_bytes==chunk.text_bytes){
             chunk.e_bytes = chunk.text_bytes;
             rem_text_bytes = 0;
             read_text_bytes+=chunk.text_bytes;
             return;
         }
 
-        //go to the rightmost separator symbol
+        //go to the leftmost separator symbol
         i = chunk.text_bytes-1;
         while(i>0 && chunk.text[i]!=chunk.fmt_sep_sym) i--;
         if(i>0) break;
@@ -171,7 +171,7 @@ void read_chunk_from_file(int fd, off_t& rem_text_bytes, off_t& read_text_bytes,
     off_t offset = acc_bytes-eff_bytes;
     rem_text_bytes-= eff_bytes;
 
-    read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
+    read_text_bytes = lseek(fd, -offset, SEEK_CUR);
 
 }
 #endif //LCG_TEXT_HANDLER_H

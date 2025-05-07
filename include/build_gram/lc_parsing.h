@@ -35,12 +35,13 @@ logger<msg_lvl>::debug(msg1);                                              \
                                                                            \
 std::ostringstream oss;                                                    \
 oss<<"  Processed input: "<<report_space((off_t)p_state.f_proc_syms)\
-<<" ("<< std::fixed<< std::setprecision(2)<<((float(p_state.f_proc_syms)/float(p_state.f_size))*100)<<"%)    ";  \
+<<" ("<< std::fixed<< std::setprecision(2)<<((float(p_state.f_proc_syms)/float(p_state.f_size))*100)<<"%)    "<<report_speed(p_state.f_proc_syms, p_state.par_start, p_state.par_curr);  \
 logger<msg_lvl, true, true>::info(oss.str());\
 }while(0);
 
 
 struct parsing_state {
+    typedef std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> time_t;
 
     uint8_t sep_sym;
     size_t n_threads=1;
@@ -61,6 +62,9 @@ struct parsing_state {
     float max_frac=0;
     text_format txt_fmt=PLAIN;
 
+    time_t par_start;
+    time_t par_curr;
+
     //for inputs up to 10GB, we collapse every 20 processed chunks
     //for inputs over 10GB, each thread grammar uses up to 2.5% of the input
     //for inputs over 100GB, each thread grammar uses up to 1.5% of the input
@@ -69,7 +73,9 @@ struct parsing_state {
 
     parsing_state(uint8_t s_sym, size_t _n_threads, off_t p_cache_lim): sep_sym(s_sym),
                                                                         n_threads(_n_threads),
-                                                                        page_cache_limit(p_cache_lim) {}
+                                                                        page_cache_limit(p_cache_lim),
+                                                                        par_start(std::chrono::steady_clock::now()),
+                                                                        par_curr(par_start){}
 
     void new_file(std::string& i_file, text_format _txt_fmt, size_t ck_size, float i_frac){
 
@@ -126,10 +132,17 @@ struct parsing_state {
             //the sum of the space usage of the local grammars exceed f_size*i_frac
             max_frac *=float(n_chunks);
         }
+
+        par_start = std::chrono::steady_clock::now();
+        par_curr = par_start;
     }
 
     [[nodiscard]] inline size_t chunks_approx_mem_usage() const {
         return size_t(((chunk_size*115)/100)*n_chunks);
+    }
+
+    inline void record_time(){
+        par_curr = std::chrono::steady_clock::now();
     }
 
     ~parsing_state(){
@@ -650,6 +663,8 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         byte_counts[buff_id] = new_byte_count;
         input_frac = float(acc_bytes)/float(p_state.f_size);
 
+        p_state.record_time();
+
         PARSING_INFO
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
@@ -749,7 +764,6 @@ void build_lc_gram(std::vector<std::string>& i_files, std::vector<text_format>& 
     // from the cache. This option only applies on linux
     off_t page_cache_limit = 1024*1024*1024;
     parsing_state par_state(sink_gram.sep_sym(), n_threads, page_cache_limit);
-
 
     for(size_t i=0;i<i_files.size();i++){
 
