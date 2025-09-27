@@ -20,7 +20,6 @@
 #include "fastx_parser.h"
 
 #include "cds/ts_queue.h"
-#include "cds/ts_priority_queue.h"
 #include "cds/utils.h"
 #include "cds/vbyte.h"
 
@@ -173,10 +172,10 @@ struct phrase_overflow{
     }
 };
 
-void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phrase_overflow>& phr_with_ovf){
+inline void finish_byte_parse(text_chunk& chunk, const off_t &parse_distance, const std::vector<phrase_overflow>& phr_with_ovf){
 
     uint32_t mt_sym=1;
-    off_t txt_size = chunk.e_bytes;
+    const off_t txt_size = chunk.e_bytes;
 
     off_t ovf_idx=0, next_ovf=-1;
     if(!phr_with_ovf.empty()){
@@ -184,7 +183,7 @@ void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phr
     }
 
     off_t pos = txt_size-1;
-    chunk.parse = (uint32_t *)(chunk.text+parse_distance);
+    chunk.parse = reinterpret_cast<uint32_t *>(chunk.text + parse_distance);
     chunk.parse--;
 
     while(pos>=0){
@@ -192,7 +191,7 @@ void finish_byte_parse(text_chunk& chunk, off_t &parse_distance, std::vector<phr
             pos -= phr_with_ovf[ovf_idx].length;
             *chunk.parse = phr_with_ovf[ovf_idx].metasymbol;
             next_ovf=-1;
-            if(ovf_idx<off_t(phr_with_ovf.size()-1)){
+            if(ovf_idx<static_cast<off_t>(phr_with_ovf.size() - 1)){
                 next_ovf = phr_with_ovf[++ovf_idx].right_end();
             }
         }  else {
@@ -216,32 +215,32 @@ template<bool query_sink>
 void byte_par_r2l(text_chunk& chunk, off_t& n_strings, size_t sep_sym);
 
 template<>
-void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
+inline void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, const size_t sep_sym) {
 
-    size_t next_av_in_sink = chunk.sink_gram.ter_dict.size();
-    uint64_t * fps = chunk.gram.fps[chunk.round];
+    const size_t next_av_in_sink = chunk.sink_gram.ter_dict.size();
+    const uint64_t * fps = chunk.gram.fps[chunk.round];
     uint8_t * text = chunk.text;
     uint64_t hash;
-    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset, parse_size;
+    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset;
     uint8_t v_len;
     assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
     text[rb] = 128;//the vbyte code of the metasymbol mt=0 representing a separator in the next round of parsing
     n_strings=1;
-    parse_size=4;//we will count in bytes of sizeof(uint32_t)
+    off_t parse_size = 4;//we will count in bytes of sizeof(uint32_t)
     off_t mbo[2]={4};
 
     std::vector<phrase_overflow> phr_with_ovf;
-    bool r_cmp = true, l_cmp, new_str;
+    bool r_cmp = true;
     uint32_t mt_sym, phrase_len;
     uint8_t mid_sym = text[i];
     while(--i>0 && text[i]==mid_sym);
 
     while(i>=0){
-        l_cmp = fps[text[i]]>fps[mid_sym];
+        const bool l_cmp = fps[text[i]] > fps[mid_sym];
         if(l_cmp && !r_cmp){
             lb = i+1;
-            new_str = mid_sym==sep_sym;
+            bool new_str = mid_sym == sep_sym;
             lb += new_str;
             phrase_len=rb-lb;
 
@@ -258,7 +257,7 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
             v_len = vbyte_len(mt_sym);
             if(__builtin_expect(v_len>phrase_len, 0)){
                 //metasymbol does not fit its phrase
-                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                phr_with_ovf.push_back({static_cast<uint32_t>(lb), phrase_len, mt_sym});
             } else {
                 inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
                 memset(&text[lb+v_len], 0, phrase_len-v_len);
@@ -309,31 +308,31 @@ void byte_par_r2l<true>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 }
 
 template<>
-void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
+inline void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
 
-    uint64_t * fps = chunk.gram.fps[chunk.round];
+    const uint64_t * fps = chunk.gram.fps[chunk.round];
     uint8_t * text = chunk.text;
-    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset, parse_size;
+    off_t lb, rb = chunk.e_bytes-1, i=chunk.e_bytes-2, byte_offset;
 
     uint8_t v_len;
     assert(text[i+1]==sep_sym && text[i]>text[i+1]);
 
     text[rb] = 128;//the vbyte code of the metasymbol mt=0 representing a separator in the next round of parsing
     n_strings=1;
-    parse_size=4;//we will count in bytes of sizeof(uint32_t)
+    off_t parse_size = 4;//we will count in bytes of sizeof(uint32_t)
     off_t mbo[2]={4};
 
     std::vector<phrase_overflow> phr_with_ovf;
-    bool r_cmp = true, l_cmp, new_str;
+    bool r_cmp = true;
     uint32_t mt_sym, phrase_len;
     uint8_t mid_sym = text[i];
     while(--i>0 && text[i]==mid_sym);
 
     while(i>=0){
-        l_cmp = fps[text[i]]>fps[mid_sym];
+        const bool l_cmp = fps[text[i]] > fps[mid_sym];
         if(l_cmp && !r_cmp){
             lb = i+1;
-            new_str = mid_sym==sep_sym;
+            const bool new_str = mid_sym == sep_sym;
             lb += new_str;
             phrase_len=rb-lb;
 
@@ -344,7 +343,7 @@ void byte_par_r2l<false>(text_chunk& chunk, off_t& n_strings, size_t sep_sym) {
             v_len = vbyte_len(mt_sym);
             if(__builtin_expect(v_len>phrase_len, 0)){
                 //metasymbol does not fit its phrase
-                phr_with_ovf.push_back({uint32_t(lb), phrase_len, mt_sym});
+                phr_with_ovf.push_back({static_cast<uint32_t>(lb), phrase_len, mt_sym});
             } else {
                 inv_vbyte<uint32_t>::write(&text[lb], mt_sym, v_len);
                 memset(&text[lb+v_len], 0, phrase_len-v_len);
@@ -392,53 +391,45 @@ template<bool query_sink>
 void int_par_l2r(text_chunk& chunk);
 
 template<>
-void int_par_l2r<true>(text_chunk& chunk){
+inline void int_par_l2r<true>(text_chunk& chunk){
 
     assert(chunk.round>0);
     const uint64_t* fps[2] = {chunk.sink_gram.fps[chunk.round], chunk.gram.fps[chunk.round]};
 
     uint64_t hash;
-    uint32_t next_av_mt_in_sink = chunk.sink_gram.nt_dicts[chunk.round-1].size();
-    uint32_t alpha_sink = chunk.sink_gram.alphabet(chunk.round);
-    uint64_t sym_offset[2] = {0, alpha_sink};
+    const uint32_t next_av_mt_in_sink = chunk.sink_gram.nt_dicts[chunk.round-1].size();
+    const uint32_t alpha_sink = chunk.sink_gram.alphabet(chunk.round);
+    const uint64_t sym_offset[2] = {0, alpha_sink};
 
     uint32_t *text = chunk.parse;
-    uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
-    uint32_t left_sym, middle_sym;
-    uint64_t left_fp, middle_fp, right_fp;
-    off_t i=0, parse_size = 0, phrase_len, lb, rb;
-    bool new_str=false, left_is_new, middle_is_new, right_is_new, phrase_is_new;
+    uint32_t mt_sym;
+    constexpr uint32_t sep_sym=0;
+    const uint32_t txt_size = chunk.parse_size;
+    off_t i=0, parse_size = 0, phrase_len;
+    bool new_str=false;
 
-    lb = 0;
-    left_sym = text[i];
-    left_is_new = left_sym>alpha_sink;
-    phrase_is_new = left_is_new;
+    off_t lb = 0;
+    const uint32_t left_sym = text[i];
+    const bool left_is_new = left_sym > alpha_sink;
+    bool phrase_is_new = left_is_new;
 
-    left_fp = fps[left_is_new][left_sym-sym_offset[left_is_new]];
+    uint64_t left_fp = fps[left_is_new][left_sym - sym_offset[left_is_new]];
 
     while(++i<txt_size && text[i]==left_sym);
     assert(i<txt_size);
 
-    middle_sym = text[i];
-    middle_is_new = middle_sym>alpha_sink;
-    middle_fp = fps[middle_is_new][middle_sym-sym_offset[middle_is_new]];
-    rb=i;
+    uint32_t middle_sym = text[i];
+    bool middle_is_new = middle_sym > alpha_sink;
+    uint64_t middle_fp = fps[middle_is_new][middle_sym - sym_offset[middle_is_new]];
+    off_t rb = i;
     while(++i<txt_size && text[i]==middle_sym);
 
     while(i<txt_size) {
-        right_is_new = text[i]>alpha_sink;
-        right_fp = fps[right_is_new][text[i]-sym_offset[right_is_new]];
+        const bool right_is_new = text[i] > alpha_sink;
+        const uint64_t right_fp = fps[right_is_new][text[i] - sym_offset[right_is_new]];
 
         if(left_fp>middle_fp && middle_fp<right_fp){//local minimum
             phrase_len = rb-lb;
-
-            //TODO remove this block later
-            /*bool tmp=false;
-            for(off_t k=lb;k<lb+phrase_len;k++){
-                tmp+=text[k]>alpha_sink;
-            }
-            assert(tmp==phrase_is_new);*/
-            //
 
             hash = XXH3_64bits(&text[lb], phrase_len*sizeof(uint32_t));
             if(phrase_is_new || !chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash)){
@@ -467,14 +458,6 @@ void int_par_l2r<true>(text_chunk& chunk){
     phrase_is_new |= middle_is_new;
     phrase_len = rb-lb;
 
-    //TODO remove this block later
-    /*bool tmp=false;
-    for(off_t k=lb;k<lb+phrase_len;k++){
-        tmp+=text[k]>alpha_sink;
-    }
-    assert(tmp==phrase_is_new);*/
-    //
-
     hash = XXH3_64bits(&text[lb], phrase_len*sizeof(uint32_t));
     if(phrase_is_new || !chunk.sink_gram.nt_dicts[chunk.round-1].find(&text[lb], phrase_len, mt_sym, hash)){
         mt_sym = next_av_mt_in_sink+chunk.gram.nt_dicts[chunk.round-1].insert(&text[lb], phrase_len, hash);
@@ -490,30 +473,30 @@ void int_par_l2r<true>(text_chunk& chunk){
 }
 
 template<>
-void int_par_l2r<false>(text_chunk& chunk) {
+inline void int_par_l2r<false>(text_chunk& chunk) {
 
     uint64_t *fps = chunk.gram.fps[chunk.round];
     uint32_t *text = chunk.parse;
 
-    uint32_t mt_sym, sep_sym=0, txt_size = chunk.parse_size;
-    uint32_t left_sym, middle_sym;
-    uint64_t left_fp, middle_fp, right_fp;
-    off_t i=0, parse_size = 0, phrase_len, lb, rb;
+    uint32_t mt_sym;
+    constexpr uint32_t sep_sym=0;
+    const uint32_t txt_size = chunk.parse_size;
+    off_t i=0, parse_size = 0, phrase_len;
     bool new_str=false;
 
-    lb = 0;
-    left_sym = text[i];
-    left_fp = fps[left_sym];
+    off_t lb = 0;
+    const uint32_t left_sym = text[i];
+    uint64_t left_fp = fps[left_sym];
     while(++i<txt_size && text[i]==left_sym);
     assert(i<txt_size);
 
-    middle_sym = text[i];
-    middle_fp = fps[middle_sym];
-    rb=i;
+    uint32_t middle_sym = text[i];
+    uint64_t middle_fp = fps[middle_sym];
+    off_t rb = i;
     while(++i<txt_size && text[i]==middle_sym);
 
     while(i<txt_size) {
-        right_fp = fps[text[i]];
+        const uint64_t right_fp = fps[text[i]];
 
         if(left_fp>middle_fp && middle_fp<right_fp){//local minimum
             phrase_len = rb-lb;
@@ -549,7 +532,7 @@ template<bool query_sink>
 void compress_text_chunk(text_chunk& chunk){
 
     off_t n_strings=0;
-    size_t sep_sym = chunk.sep_sym;
+    const size_t sep_sym = chunk.sep_sym;
     chunk.round = 0;
 
     if(chunk.format==FASTA){
@@ -558,7 +541,7 @@ void compress_text_chunk(text_chunk& chunk){
 
     byte_par_r2l<query_sink>(chunk, n_strings, sep_sym);
 
-    off_t size_limit = n_strings*2;
+    const off_t size_limit = n_strings*2;
     chunk.round++;
 
     while(chunk.parse_size!=size_limit){
@@ -567,9 +550,9 @@ void compress_text_chunk(text_chunk& chunk){
         chunk.round++;
     }
 
-    //the chunks are small, so they do not can hold many strings
+    //the chunks are small, so they can hold few strings
     assert((chunk.parse_size>>1)<=0xFFFFFFF);
-    chunk.gram.str_orders.emplace_back(chunk.id, (uint8_t)chunk.round,
+    chunk.gram.str_orders.emplace_back(chunk.id, static_cast<uint8_t>(chunk.round),
                                        chunk.gram.comp_string.size(), (uint32_t)(chunk.parse_size/2));
     size_t pos = chunk.gram.comp_string.size();
     chunk.gram.comp_string.resize(pos+(chunk.parse_size/2));
@@ -588,10 +571,9 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
     auto compressor_worker = [&]() {
         size_t buff_id;
-        bool res;
 
         while (true) {
-            res = buffers_to_process.pop(buff_id);
+            bool res = buffers_to_process.pop(buff_id);
             if (!res){
                 parser_finished.fetch_add(1, std::memory_order_acq_rel);
                 break;
@@ -618,13 +600,13 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         threads.emplace_back(compressor_worker);
     }
 
-    auto tmp_ck_size = off_t(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type))*sizeof(text_chunk::size_type));
+    auto tmp_ck_size = static_cast<off_t>(INT_CEIL(p_state.chunk_size, sizeof(text_chunk::size_type)) * sizeof(text_chunk::size_type));
     size_t buff_id = 0;
 
     while(buff_id < text_chunks.size() && p_state.f_rem_bytes > 0) {
         tmp_ck_size = std::min(tmp_ck_size, p_state.f_rem_bytes);
         text_chunks[buff_id].text_bytes = tmp_ck_size;
-        text_chunks[buff_id].sep_sym = (text_chunk::size_type) p_state.sep_sym;
+        text_chunks[buff_id].sep_sym = static_cast<text_chunk::size_type>(p_state.sep_sym);
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
 
@@ -661,7 +643,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         acc_bytes -= byte_counts[buff_id];
         acc_bytes += new_byte_count;
         byte_counts[buff_id] = new_byte_count;
-        input_frac = float(acc_bytes)/float(p_state.f_size);
+        input_frac = static_cast<float>(acc_bytes)/static_cast<float>(p_state.f_size);
 
         p_state.record_time();
 
@@ -716,8 +698,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 template<log_lvl msg_lvl>
 void process_one_file(parsing_state& par_state, plain_gram& sink_gram, bool semi_ext, std::string& gram_ifs){
 
-    std::vector<plain_gram> ck_grams(par_state.n_chunks,
-                                     plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym()));
+    std::vector ck_grams(par_state.n_chunks, plain_gram(sink_gram.lvl_cap(), sink_gram.sep_sym()));
 
     std::vector<text_chunk> txt_chunks;
     txt_chunks.reserve(par_state.n_chunks);
