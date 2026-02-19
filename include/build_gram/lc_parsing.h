@@ -52,7 +52,8 @@
 struct parsing_state {
     size_t chunk_size;
     uint8_t sep_sym;
-    int fd_r;
+    std::unique_ptr<input_reader> reader;
+    std::vector<uint8_t> overflow;
     size_t f_size=0;
     size_t n_threads=1;
     off_t rem_bytes=0;
@@ -71,25 +72,24 @@ struct parsing_state {
                                                                           n_threads(_n_threads),
                                                                           page_cache_limit(p_cache_lim),
                                                                           max_frac(_max_frac){
-        fd_r = open(i_file.c_str(), O_RDONLY);
-        f_size = file_size(i_file);
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
-#endif
+        reader = make_input_reader(i_file);
+        f_size = reader->uncompressed_size();
+        reader->advise_sequential();
         rem_bytes = (off_t)f_size;
     }
 
     ~parsing_state(){
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
-#endif
-        close(fd_r);
+        if (reader) {
+            reader->advise_dontneed_all();
+        }
     }
 
     void flush_page_cache(){
 #ifdef __linux__
         std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
-        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+        if (reader) {
+            reader->advise_dontneed(read_bytes-r_page_cache_bytes, r_page_cache_bytes);
+        }
         r_page_cache_bytes=0;
 #endif
     }
@@ -561,7 +561,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
 
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_reader(*p_state.reader, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id], p_state.overflow);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__
@@ -600,7 +600,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].id = p_state.chunk_id++;
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_reader(*p_state.reader, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id], p_state.overflow);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__

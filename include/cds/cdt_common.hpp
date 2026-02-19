@@ -5,6 +5,7 @@
 #ifndef CDT_COMMON_H
 #define CDT_COMMON_H
 
+#include <cstdint>
 #include <iostream>
 #include <fstream>
 #include "memory_handler.hpp"

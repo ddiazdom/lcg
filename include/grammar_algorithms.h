@@ -7,6 +7,7 @@
 
 #include "grammar.h"
 #include "build_gram/lc_parsing.h"
+#include "build_gram/input_reader.h"
 #include "cds/file_streams.hpp"
 #include "cds/ts_string_map.h"
 
@@ -1194,7 +1195,7 @@ template<class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
                 float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
-    plain_gram p_gram(40, '\n', file_size(i_file));
+    plain_gram p_gram(40, '\n', input_file_size(i_file));
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
