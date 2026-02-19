@@ -262,12 +262,16 @@ std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_que
     query_coords.reserve(str_queries.size());
 
     for(auto const &coord: str_queries){
-        std::vector<std::string> tmp = split(coord, ':');
-        if(tmp.size()!=2){
+        // Split on the LAST ':' so sequence names containing ':' work
+        auto last_colon = coord.rfind(':');
+        if(last_colon == std::string::npos || last_colon == 0 || last_colon == coord.size()-1){
             std::cout<<"Coordinate error: query \""<<coord<<"\" is ill-formed"<<std::endl;
             exit(1);
         }
-        std::vector<std::string> tmp2 = split(tmp[1], '-');
+        std::string str_part = coord.substr(0, last_colon);
+        std::string range_part = coord.substr(last_colon + 1);
+
+        std::vector<std::string> tmp2 = split(range_part, '-');
         if(tmp2.size()!=2){
             std::cout<<"Coordinate error: query \""<<coord<<"\" is ill-formed"<<std::endl;
             exit(1);
@@ -275,14 +279,14 @@ std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_que
 
         // Try numeric parse first; if it fails, look up as sequence name
         try{
-            str = stoi(tmp[0]);
+            str = stoi(str_part);
         } catch (const std::invalid_argument &) {
             // Not a number — try name lookup
-            auto it = name_map.find(tmp[0]);
+            auto it = name_map.find(str_part);
             if (it != name_map.end()) {
                 str = it->second;
             } else {
-                std::cout << "Coordinate error: sequence name \"" << tmp[0]
+                std::cout << "Coordinate error: sequence name \"" << str_part
                           << "\" not found in grammar" << std::endl;
                 if (!seq_names.empty()) {
                     std::cout << "  Available sequences:";
@@ -295,7 +299,7 @@ std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_que
                 exit(1);
             }
         } catch (const std::out_of_range &) {
-            std::cout << "Coordinate error: \""<<tmp[0] <<"\" in \""<<coord<<"\" is not a valid string ID\n";
+            std::cout << "Coordinate error: \""<<str_part <<"\" in \""<<coord<<"\" is not a valid string ID\n";
             exit(1);
         }
 
