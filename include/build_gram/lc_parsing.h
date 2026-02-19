@@ -78,6 +78,20 @@ struct parsing_state {
         rem_bytes = (off_t)f_size;
     }
 
+    // Constructor accepting an externally-constructed reader (e.g. fasta_reader)
+    parsing_state(std::unique_ptr<input_reader> ext_reader, size_t data_size, uint8_t s_sym,
+                  size_t c_size, size_t _n_threads, off_t p_cache_lim, float _max_frac):
+                                                                          chunk_size(c_size),
+                                                                          sep_sym(s_sym),
+                                                                          reader(std::move(ext_reader)),
+                                                                          n_threads(_n_threads),
+                                                                          page_cache_limit(p_cache_lim),
+                                                                          max_frac(_max_frac){
+        f_size = data_size;
+        reader->advise_sequential();
+        rem_bytes = (off_t)f_size;
+    }
+
     ~parsing_state(){
         if (reader) {
             reader->advise_dontneed_all();
@@ -730,6 +744,74 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
 #endif
 
 }
+void build_lc_gram_from_reader(std::unique_ptr<input_reader> ext_reader, size_t data_size,
+                               plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
+
+    auto f_size = (off_t)data_size;
+
+    float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
+
+    chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
+    chunk_size = std::min<off_t>(chunk_size, 1024*1024*200);
+
+    size_t tot_chunks = INT_CEIL(f_size, chunk_size);
+    n_threads = std::min(n_threads, tot_chunks);
+
+    size_t n_chunks = n_threads+1;
+    n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
+
+    if(i_frac==0){
+        if(f_size<=COL_THRESHOLD_1){
+            i_frac = i_fracs[0];
+        } else if(f_size<=COL_THRESHOLD_2){
+            i_frac = i_fracs[1];
+        } else if(f_size<=COL_THRESHOLD_3){
+            i_frac = i_fracs[2];
+        } else{
+            i_frac = i_fracs[3];
+        }
+        i_frac *=float(n_chunks);
+    }
+
+    off_t page_cache_limit = 1024*1024*1024;
+
+    std::cout<<"  Settings"<<std::endl;
+    std::cout<<"    Parsing threads           : "<<n_threads<<std::endl;
+    std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
+    std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<"\n"<<std::endl;
+
+    parsing_state par_state(std::move(ext_reader), data_size, sink_gram.sep_sym(), chunk_size, n_threads, page_cache_limit, i_frac);
+
+    std::vector<text_chunk> chunks;
+    chunks.reserve(n_chunks);
+    for(size_t i=0;i<n_chunks;i++){
+        chunks.emplace_back(sink_gram);
+    }
+
+    fill_chunk_grammars<false>(chunks, par_state);
+    collapse_grams(sink_gram, chunks);
+    sink_gram.update_fps();
+    par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
+    REPORT_GRAM_SIZE
+
+    while(par_state.rem_bytes>0){
+        fill_chunk_grammars<true>(chunks, par_state);
+        collapse_grams(sink_gram, chunks);
+        sink_gram.update_fps();
+        par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
+        REPORT_GRAM_SIZE
+    }
+    std::cout<<" "<<std::endl;
+    sink_gram.reorder_strings();
+
+    sink_gram.clear_fps();
+
+#ifdef DEBUG_MODE
+    sink_gram.print_stats();
+#endif
+}
+
 /*struct inv_perm_elm{
     uint32_t orig_mt;
     uint64_t fp;

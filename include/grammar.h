@@ -65,6 +65,7 @@ struct lc_gram_t {
     std::vector<uint8_t> terminals; //set of terminals
     std::vector<size_t> str_boundaries; // start position of every string in the compressed string
     std::vector<size_t> lvl_rules; //number of rules generated in every round of locally-consistent parsing
+    std::vector<std::string> seq_names; // FASTA sequence names (empty for plain text input)
 
     bitstream<size_t> rule_stream;
     int_array<size_t> rl_ptr; //pointer in "rules" to the leftmost symbol of each rule
@@ -104,6 +105,18 @@ struct lc_gram_t {
         written_bytes += serialize_plain_vector(ofs, str_boundaries);
         written_bytes += rl_ptr.serialize(ofs);
         written_bytes += rule_stream.serialize(ofs);
+
+        // seq_names section (backwards compatible: old readers stop at rule_stream)
+        if (!seq_names.empty()) {
+            size_t n_names = seq_names.size();
+            written_bytes += serialize_elm(ofs, n_names);
+            for (const auto& name : seq_names) {
+                size_t name_len = name.size();
+                written_bytes += serialize_elm(ofs, name_len);
+                ofs.write(name.data(), (std::streamsize)name_len);
+                written_bytes += name_len;
+            }
+        }
 
         return written_bytes;
     }
@@ -164,6 +177,7 @@ struct lc_gram_t {
         str_boundaries.swap(other.str_boundaries);
         rl_ptr.swap(other.rl_ptr);
         rule_stream.swap(other.rule_stream);
+        seq_names.swap(other.seq_names);
     }
 
     void load_pointers(std::ifstream &ifs) {
@@ -176,6 +190,19 @@ struct lc_gram_t {
         load_metadata(ifs);
         load_pointers(ifs);
         rule_stream.load(ifs);
+
+        // read seq_names if present (backwards compat: old files have EOF here)
+        if (ifs.peek() != EOF) {
+            size_t n_names = 0;
+            load_elm(ifs, n_names);
+            seq_names.resize(n_names);
+            for (size_t i = 0; i < n_names; i++) {
+                size_t name_len = 0;
+                load_elm(ifs, name_len);
+                seq_names[i].resize(name_len);
+                ifs.read(seq_names[i].data(), (std::streamsize)name_len);
+            }
+        }
     }
 
     [[nodiscard]] inline std::pair<off_t, off_t> nt2bitrange(size_t sym) const {

@@ -7,6 +7,7 @@ set(SOURCE_FILES main.cpp
         lib/utils.cpp
         lib/cdt_common.cpp
         lib/input_reader.cpp
+        lib/fasta_reader.cpp
 )
 
 #using malloc_count for monitoring memory usage during debug mode
