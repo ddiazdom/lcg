@@ -52,7 +52,8 @@
 struct parsing_state {
     size_t chunk_size;
     uint8_t sep_sym;
-    int fd_r;
+    std::unique_ptr<input_reader> reader;
+    std::vector<uint8_t> overflow;
     size_t f_size=0;
     size_t n_threads=1;
     off_t rem_bytes=0;
@@ -71,25 +72,38 @@ struct parsing_state {
                                                                           n_threads(_n_threads),
                                                                           page_cache_limit(p_cache_lim),
                                                                           max_frac(_max_frac){
-        fd_r = open(i_file.c_str(), O_RDONLY);
-        f_size = file_size(i_file);
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_SEQUENTIAL);
-#endif
+        reader = make_input_reader(i_file);
+        f_size = reader->uncompressed_size();
+        reader->advise_sequential();
+        rem_bytes = (off_t)f_size;
+    }
+
+    // Constructor accepting an externally-constructed reader (e.g. fasta_reader)
+    parsing_state(std::unique_ptr<input_reader> ext_reader, size_t data_size, uint8_t s_sym,
+                  size_t c_size, size_t _n_threads, off_t p_cache_lim, float _max_frac):
+                                                                          chunk_size(c_size),
+                                                                          sep_sym(s_sym),
+                                                                          reader(std::move(ext_reader)),
+                                                                          n_threads(_n_threads),
+                                                                          page_cache_limit(p_cache_lim),
+                                                                          max_frac(_max_frac){
+        f_size = data_size;
+        reader->advise_sequential();
         rem_bytes = (off_t)f_size;
     }
 
     ~parsing_state(){
-#ifdef __linux__
-        posix_fadvise(fd_r, 0, f_size, POSIX_FADV_DONTNEED);
-#endif
-        close(fd_r);
+        if (reader) {
+            reader->advise_dontneed_all();
+        }
     }
 
     void flush_page_cache(){
 #ifdef __linux__
         std::cout<<"removing from page cache "<<r_page_cache_bytes<<" "<<read_bytes<<std::endl;
-        posix_fadvise(fd_r, read_bytes-r_page_cache_bytes, r_page_cache_bytes, POSIX_FADV_DONTNEED);
+        if (reader) {
+            reader->advise_dontneed(read_bytes-r_page_cache_bytes, r_page_cache_bytes);
+        }
         r_page_cache_bytes=0;
 #endif
     }
@@ -561,7 +575,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
         text_chunks[buff_id].increase_capacity((tmp_ck_size*115)/100);
         text_chunks[buff_id].id = p_state.chunk_id++;
 
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_reader(*p_state.reader, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id], p_state.overflow);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__
@@ -600,7 +614,7 @@ void fill_chunk_grammars(std::vector<text_chunk>& text_chunks, parsing_state& p_
 
         text_chunks[buff_id].text_bytes = tmp_ck_size;
         text_chunks[buff_id].id = p_state.chunk_id++;
-        read_chunk_from_file(p_state.fd_r, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id]);
+        read_chunk_from_reader(*p_state.reader, p_state.rem_bytes, p_state.read_bytes, text_chunks[buff_id], p_state.overflow);
         buffers_to_process.push(buff_id);
 
 #ifdef __linux__
@@ -730,6 +744,74 @@ void build_lc_gram(std::string& i_file, plain_gram& sink_gram, size_t n_threads,
 #endif
 
 }
+void build_lc_gram_from_reader(std::unique_ptr<input_reader> ext_reader, size_t data_size,
+                               plain_gram& sink_gram, size_t n_threads, off_t chunk_size, float i_frac) {
+
+    auto f_size = (off_t)data_size;
+
+    float i_fracs[4] = {0.1, 0.025, 0.015, 0.006};
+
+    chunk_size = chunk_size==0 ? off_t(ceil(0.005 * double(f_size))) : (off_t)chunk_size;
+    chunk_size = std::min<off_t>(chunk_size, 1024*1024*200);
+
+    size_t tot_chunks = INT_CEIL(f_size, chunk_size);
+    n_threads = std::min(n_threads, tot_chunks);
+
+    size_t n_chunks = n_threads+1;
+    n_chunks = std::min<unsigned long>(n_chunks, tot_chunks);
+
+    if(i_frac==0){
+        if(f_size<=COL_THRESHOLD_1){
+            i_frac = i_fracs[0];
+        } else if(f_size<=COL_THRESHOLD_2){
+            i_frac = i_fracs[1];
+        } else if(f_size<=COL_THRESHOLD_3){
+            i_frac = i_fracs[2];
+        } else{
+            i_frac = i_fracs[3];
+        }
+        i_frac *=float(n_chunks);
+    }
+
+    off_t page_cache_limit = 1024*1024*1024;
+
+    std::cout<<"  Settings"<<std::endl;
+    std::cout<<"    Parsing threads           : "<<n_threads<<std::endl;
+    std::cout<<"    Active text chunks in RAM : "<<n_chunks<<std::endl;
+    std::cout<<"    Size of each chunk        : "<<report_space(chunk_size)<<std::endl;
+    std::cout<<"    Chunks' approx. mem usage : "<<report_space(off_t(((chunk_size*115)/100)*n_chunks))<<"\n"<<std::endl;
+
+    parsing_state par_state(std::move(ext_reader), data_size, sink_gram.sep_sym(), chunk_size, n_threads, page_cache_limit, i_frac);
+
+    std::vector<text_chunk> chunks;
+    chunks.reserve(n_chunks);
+    for(size_t i=0;i<n_chunks;i++){
+        chunks.emplace_back(sink_gram);
+    }
+
+    fill_chunk_grammars<false>(chunks, par_state);
+    collapse_grams(sink_gram, chunks);
+    sink_gram.update_fps();
+    par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
+    REPORT_GRAM_SIZE
+
+    while(par_state.rem_bytes>0){
+        fill_chunk_grammars<true>(chunks, par_state);
+        collapse_grams(sink_gram, chunks);
+        sink_gram.update_fps();
+        par_state.sink_gram_mem_usage=sink_gram.eff_mem_usage();
+        REPORT_GRAM_SIZE
+    }
+    std::cout<<" "<<std::endl;
+    sink_gram.reorder_strings();
+
+    sink_gram.clear_fps();
+
+#ifdef DEBUG_MODE
+    sink_gram.print_stats();
+#endif
+}
+
 /*struct inv_perm_elm{
     uint32_t orig_mt;
     uint64_t fp;

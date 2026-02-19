@@ -6,7 +6,9 @@
 #define LCG_TEXT_HANDLER_H
 
 #include "plain_gram.h"
+#include "input_reader.h"
 #include <unistd.h>
+#include <vector>
 
 struct text_chunk {
 
@@ -152,4 +154,83 @@ void read_chunk_from_file(int fd, off_t& rem_text_bytes, off_t& read_text_bytes,
 
     read_text_bytes = lseek(fd, offset*-1, SEEK_CUR);
 }
+
+// Overflow-buffered variant that works with both plain and BGZF readers.
+// Instead of seeking backward, excess bytes after the last separator are
+// stored in `overflow` and prepended to the next chunk.
+void read_chunk_from_reader(input_reader& reader, off_t& rem_text_bytes,
+                            off_t& read_text_bytes, text_chunk& chunk,
+                            std::vector<uint8_t>& overflow) {
+
+    off_t chunk_bytes = chunk.text_bytes < rem_text_bytes ? chunk.text_bytes : rem_text_bytes;
+    chunk.text_bytes = chunk_bytes;
+
+    off_t acc_bytes = 0;
+    off_t fd_buff_bytes = 8388608; // 8MB buffer
+
+    uint8_t* data = chunk.text;
+    chunk.n_bytes_before = read_text_bytes;
+    off_t limit = 0;
+    off_t i = 0;
+
+    // Prepend overflow from previous chunk
+    off_t ovf_bytes = (off_t)overflow.size();
+    if (ovf_bytes > 0) {
+        // Ensure capacity for overflow + requested chunk_bytes
+        chunk.increase_capacity(ovf_bytes + chunk_bytes);
+        memcpy(chunk.text, overflow.data(), ovf_bytes);
+        data = chunk.text + ovf_bytes;
+        acc_bytes = ovf_bytes;
+        chunk_bytes -= std::min(chunk_bytes, ovf_bytes);
+        chunk.text_bytes = ovf_bytes + chunk_bytes;
+        overflow.clear();
+    }
+
+    while (true) {
+        // Read the requested chunk_bytes from the reader
+        off_t remaining = chunk_bytes;
+        while (remaining > 0) {
+            off_t to_read = fd_buff_bytes < remaining ? fd_buff_bytes : remaining;
+            ssize_t read_bytes = reader.read_data(data, to_read);
+            if (read_bytes <= 0) break;
+            data += read_bytes;
+            remaining -= read_bytes;
+            acc_bytes += read_bytes;
+        }
+
+        // Adjust text_bytes to actual bytes read (in case EOF cut short)
+        chunk.text_bytes = acc_bytes;
+        if (acc_bytes == 0) break;
+
+        // Find rightmost separator
+        i = chunk.text_bytes - 1;
+        while (i > limit && chunk.text[i] != chunk.sep_sym) {
+            i--;
+        }
+        if (i > limit) break;
+
+        // No separator found -- grow the chunk by 25% and read more
+        off_t tmp_ck_size = INT_CEIL(((chunk.text_bytes * 125) / 100), sizeof(text_chunk::size_type)) * sizeof(text_chunk::size_type);
+        tmp_ck_size = std::min(tmp_ck_size, ovf_bytes + rem_text_bytes);
+        chunk_bytes = tmp_ck_size - chunk.text_bytes;
+        chunk.text_bytes = tmp_ck_size;
+
+        chunk.increase_capacity(chunk.text_bytes);
+        data = &chunk.text[chunk.text_bytes - chunk_bytes];
+    }
+
+    off_t eff_bytes = i + 1;
+    chunk.text_bytes = eff_bytes;
+    chunk.e_bytes = eff_bytes;
+
+    // Store excess bytes in overflow buffer instead of seeking backward
+    off_t excess = acc_bytes - eff_bytes;
+    if (excess > 0) {
+        overflow.assign(chunk.text + eff_bytes, chunk.text + eff_bytes + excess);
+    }
+
+    rem_text_bytes -= eff_bytes;
+    read_text_bytes += eff_bytes;
+}
+
 #endif //LCG_TEXT_HANDLER_H
