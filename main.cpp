@@ -1,6 +1,9 @@
 #include "external/CLI11.hpp"
 #include "merge_grams.h"
 #include "grammar_algorithms.h"
+#include "build_gram/input_reader.h"
+#include "build_gram/fasta_reader.h"
+#include <unordered_map>
 
 struct arguments{
     std::string input_file;
@@ -19,6 +22,7 @@ struct arguments{
     bool check_gram=false;
     size_t seed=0;
 
+    std::string fasta_list;
     std::string p_file;
     std::vector<std::string> grammars_to_merge;
     std::vector<std::string> position_list;
@@ -91,7 +95,8 @@ static void parse_app(CLI::App& app, struct arguments& args){
     CLI::App* comp = app.add_subcommand("cmp", "Compress text");
 
     //compression
-    comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile)->required();
+    comp->add_option("TEXT", args.input_file, "Input file in one-string-per-line format")->check(CLI::ExistingFile);
+    comp->add_option("-l,--fasta-list", args.fasta_list, "File containing list of FASTA file paths (one per line)")->check(CLI::ExistingFile);
     comp->add_option("-o,--output-file", args.output_file, "Output file")->type_name("");
     comp->add_option("-t,--threads", args.n_threads, "Maximum number of parsing threads")->default_val(1);
 
@@ -154,53 +159,102 @@ void comp_int(std::string& input_file, arguments& args) {
     }
 }
 
-void access_int(std::string& input_file, std::vector<str_coord_type>& query_coords, bool has_rl_rules, bool has_cg_rules, bool has_rand_access) {
+// Forward declaration
+std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_queries,
+                                               const std::vector<std::string>& seq_names);
+
+void comp_fasta_int(arguments& args) {
+    auto file_paths = parse_fasta_file_list(args.fasta_list);
+    if (file_paths.empty()) {
+        std::cerr << "Error: no files found in " << args.fasta_list << std::endl;
+        exit(1);
+    }
+
+    std::cout << "\nFASTA file list: " << args.fasta_list << " (" << file_paths.size() << " files)" << std::endl;
+
+    auto reader = std::make_unique<fasta_reader>(file_paths);
+    auto seq_names = reader->sequence_names();
+    size_t data_size = reader->uncompressed_size();
+
+    std::cout << "Total sequences: " << seq_names.size() << std::endl;
+    std::cout << "Total data size: " << report_space((off_t)data_size) << std::endl;
+
+    if (args.output_file.empty()) {
+        args.output_file = std::filesystem::path(args.fasta_list).filename();
+    }
+    args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
+
+    // Copy seq_names before moving the reader
+    std::vector<std::string> names_copy = seq_names;
+
+    if (args.skip_rl) {
+        if (args.rand_acc) {
+            build_gram<lc_gram_t<false, false, true>>(std::move(reader), data_size, std::move(names_copy),
+                                                       args.output_file, args.n_threads,
+                                                       args.chunk_size, args.i_frac,
+                                                       args.skip_simp, args.part);
+        } else {
+            build_gram<lc_gram_t<false, false, false>>(std::move(reader), data_size, std::move(names_copy),
+                                                        args.output_file, args.n_threads,
+                                                        args.chunk_size, args.i_frac,
+                                                        args.skip_simp, args.part);
+        }
+    } else {
+        if (args.rand_acc) {
+            build_gram<lc_gram_t<false, true, true>>(std::move(reader), data_size, std::move(names_copy),
+                                                      args.output_file, args.n_threads,
+                                                      args.chunk_size, args.i_frac,
+                                                      args.skip_simp, args.part);
+        } else {
+            build_gram<lc_gram_t<false, true, false>>(std::move(reader), data_size, std::move(names_copy),
+                                                       args.output_file, args.n_threads,
+                                                       args.chunk_size, args.i_frac,
+                                                       args.skip_simp, args.part);
+        }
+    }
+}
+
+template<class gram_t>
+void access_with_gram(std::string& input_file, std::vector<std::string>& str_queries) {
+    gram_t gram;
+    load_from_file(input_file, gram);
+
+    std::vector<str_coord_type> query_coords = parse_query_coords(str_queries, gram.seq_names);
+
+    for(auto const& query : query_coords){
+        std::string dc_output;
+        gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
+        std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
+        std::cout<<dc_output<<std::endl;
+    }
+}
+
+void access_int(std::string& input_file, std::vector<std::string>& str_queries, bool has_rl_rules, bool has_cg_rules, bool has_rand_access) {
     assert(has_rand_access);
     if(has_cg_rules){
         if(has_rl_rules){
-            lc_gram_t<true, true, true> gram;
-            load_from_file(input_file, gram);
-            for(auto const& query : query_coords){
-                std::string dc_output;
-                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
-                std::cout<<query.start<<":"<<query.start<<"-"<<query.end<<std::endl;
-                std::cout<<dc_output<<std::endl;
-            }
+            access_with_gram<lc_gram_t<true, true, true>>(input_file, str_queries);
         }else{
-            lc_gram_t<true, false, true> gram;
-            load_from_file(input_file, gram);
-            for(auto const& query : query_coords){
-                std::string dc_output;
-                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
-                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
-                std::cout<<dc_output<<std::endl;
-            }
+            access_with_gram<lc_gram_t<true, false, true>>(input_file, str_queries);
         }
     }else{
         if(has_rl_rules){
-            lc_gram_t<false, true, true> gram;
-            load_from_file(input_file, gram);
-            for(auto const& query : query_coords){
-                std::string dc_output;
-                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
-                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
-                std::cout<<dc_output<<std::endl;
-            }
+            access_with_gram<lc_gram_t<false, true, true>>(input_file, str_queries);
         }else{
-            lc_gram_t<false, false, true> gram;
-            load_from_file(input_file, gram);
-            for(auto const& query : query_coords){
-                std::string dc_output;
-                gram.im_str_rand_access(query.str, query.start, query.end, dc_output);
-                std::cout<<query.str<<":"<<query.start<<"-"<<query.end<<std::endl;
-                std::cout<<dc_output<<std::endl;
-            }
+            access_with_gram<lc_gram_t<false, false, true>>(input_file, str_queries);
         }
     }
 }
 
 
-std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_queries){
+std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_queries,
+                                               const std::vector<std::string>& seq_names){
+
+    // Build name-to-index map if we have sequence names
+    std::unordered_map<std::string, size_t> name_map;
+    for (size_t i = 0; i < seq_names.size(); i++) {
+        name_map[seq_names[i]] = i;
+    }
 
     size_t str;
     off_t start, end;
@@ -208,43 +262,63 @@ std::vector<str_coord_type> parse_query_coords(std::vector<std::string>& str_que
     query_coords.reserve(str_queries.size());
 
     for(auto const &coord: str_queries){
-        std::vector<std::string> tmp = split(coord, ':');
-        if(tmp.size()!=2){
-            std::cout<<"Coordinate error: query \""<<coord<<"\" is il-formed"<<std::endl;
+        // Split on the LAST ':' so sequence names containing ':' work
+        auto last_colon = coord.rfind(':');
+        if(last_colon == std::string::npos || last_colon == 0 || last_colon == coord.size()-1){
+            std::cout<<"Coordinate error: query \""<<coord<<"\" is ill-formed"<<std::endl;
             exit(1);
         }
-        std::vector<std::string> tmp2 = split(tmp[1], '-');
+        std::string str_part = coord.substr(0, last_colon);
+        std::string range_part = coord.substr(last_colon + 1);
+
+        std::vector<std::string> tmp2 = split(range_part, '-');
         if(tmp2.size()!=2){
-            std::cout<<"Coordinate error: query \""<<coord<<"\" is il-formed"<<std::endl;
+            std::cout<<"Coordinate error: query \""<<coord<<"\" is ill-formed"<<std::endl;
             exit(1);
         }
 
+        // Try numeric parse first; if it fails, look up as sequence name
         try{
-            str = stoi(tmp[0]);
-        } catch (const std::invalid_argument & e) {
-            std::cout << "Coordinate error: \""<<tmp[0] <<"\" in \""<<coord<<"\" is not a valid string ID\n";
-            exit(1);
-        } catch (const std::out_of_range & e) {
-            std::cout << "Coordinate error: \""<<tmp[0] <<"\" in \""<<coord<<"\" is not a valid string ID\n";
+            str = stoi(str_part);
+        } catch (const std::invalid_argument &) {
+            // Not a number — try name lookup
+            auto it = name_map.find(str_part);
+            if (it != name_map.end()) {
+                str = it->second;
+            } else {
+                std::cout << "Coordinate error: sequence name \"" << str_part
+                          << "\" not found in grammar" << std::endl;
+                if (!seq_names.empty()) {
+                    std::cout << "  Available sequences:";
+                    for (size_t i = 0; i < std::min(seq_names.size(), (size_t)10); i++) {
+                        std::cout << " " << seq_names[i];
+                    }
+                    if (seq_names.size() > 10) std::cout << " ... (" << seq_names.size() << " total)";
+                    std::cout << std::endl;
+                }
+                exit(1);
+            }
+        } catch (const std::out_of_range &) {
+            std::cout << "Coordinate error: \""<<str_part <<"\" in \""<<coord<<"\" is not a valid string ID\n";
             exit(1);
         }
 
         try{
             start = stoi(tmp2[0]);
-        } catch (const std::invalid_argument & e) {
+        } catch (const std::invalid_argument &) {
             std::cout << "Coordinate error: \""<<tmp2[0] <<"\" in \""<<coord<<"\" is not a valid start\n";
             exit(1);
-        } catch (const std::out_of_range & e) {
+        } catch (const std::out_of_range &) {
             std::cout << "Coordinate error: \""<<tmp2[0] <<"\" in \""<<coord<<"\" is not a valid start\n";
             exit(1);
         }
 
         try{
             end = stoi(tmp2[1]);
-        } catch (const std::invalid_argument & e) {
+        } catch (const std::invalid_argument &) {
             std::cout << "Coordinate error: \""<<tmp2[1] <<"\" in \""<<coord<<"\" is not a valid end\n";
             exit(1);
-        } catch (const std::out_of_range & e) {
+        } catch (const std::out_of_range &) {
             std::cout << "Coordinate error: \""<<tmp2[1] <<"\" in \""<<coord<<"\" is not a valid end\n";
             exit(1);
         }
@@ -267,18 +341,26 @@ int main(int argc, char** argv) {
     }
 
     if(app.got_subcommand("cmp")) {
-        std::cout << "\nInput file: " << args.input_file << " ("<<report_space(file_size(args.input_file))<<")"<<std::endl;
-        if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
-        args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
-        std::string input_collection = args.input_file;
-        comp_int(input_collection, args);
+        if (!args.fasta_list.empty()) {
+            // FASTA file list mode
+            comp_fasta_int(args);
+        } else if (!args.input_file.empty()) {
+            // Plain text mode
+            std::cout << "\nInput file: " << args.input_file << " ("<<report_space(input_file_size(args.input_file))<<")"<<std::endl;
+            if (args.output_file.empty()) args.output_file = std::filesystem::path(args.input_file).filename();
+            args.output_file = std::filesystem::path(args.output_file).replace_extension(".lcg");
+            std::string input_collection = args.input_file;
+            comp_int(input_collection, args);
+        } else {
+            std::cerr << "Error: either TEXT or -l/--fasta-list is required" << std::endl;
+            exit(1);
+        }
     } else if(app.got_subcommand("met")){
         print_metadata(args.input_file);
     } else if (app.got_subcommand("acc")){
-        std::vector<str_coord_type> query_coords = parse_query_coords(args.ra_positions);
         bool has_rl_rules, has_cg_rules, has_rand_access;
         std::tie(has_rl_rules, has_cg_rules, has_rand_access) = read_grammar_flags(args.input_file);
-        access_int(args.input_file, query_coords, has_rl_rules, has_cg_rules, has_rand_access);
+        access_int(args.input_file, args.ra_positions, has_rl_rules, has_cg_rules, has_rand_access);
     } else {
         std::cout<<" Unknown command "<<std::endl;
         return 1;

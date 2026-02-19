@@ -7,6 +7,8 @@
 
 #include "grammar.h"
 #include "build_gram/lc_parsing.h"
+#include "build_gram/input_reader.h"
+#include "build_gram/fasta_reader.h"
 #include "cds/file_streams.hpp"
 #include "cds/ts_string_map.h"
 
@@ -1194,7 +1196,7 @@ template<class gram_type>
 void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_t chunk_size,
                 float i_frac, bool skip_simp, bool par_gram, bool check_gram) {
 
-    plain_gram p_gram(40, '\n', file_size(i_file));
+    plain_gram p_gram(40, '\n', input_file_size(i_file));
 
     std::cout<<"Building a locally-consistent grammar"<<std::endl;
     auto start = std::chrono::steady_clock::now();
@@ -1258,6 +1260,68 @@ void build_gram(std::string &i_file, std::string& o_file, size_t n_threads, off_
         check_plain_grammar(final_gram, i_file);
     }
     //
+
+#if DEBUG_MODE
+    std::cout<<"Stats for the final grammar:"<<std::endl;
+    final_gram.breakdown(2);
+#endif
+
+    size_t written_bytes = store_to_file(o_file, final_gram);
+    std::cout<<"The resulting grammar uses "+ report_space((off_t)written_bytes)+" and was stored in "<<o_file<<std::endl;
+}
+
+// Overload for reader-based input (e.g. FASTA file list)
+template<class gram_type>
+void build_gram(std::unique_ptr<input_reader> reader, size_t data_size,
+                std::vector<std::string> seq_names, std::string& o_file,
+                size_t n_threads, off_t chunk_size, float i_frac,
+                bool skip_simp, bool par_gram) {
+
+    plain_gram p_gram(40, '\n', data_size);
+
+    std::cout<<"Building a locally-consistent grammar"<<std::endl;
+    auto start = std::chrono::steady_clock::now();
+    build_lc_gram_from_reader(std::move(reader), data_size, p_gram, n_threads, chunk_size, i_frac);
+    auto end = std::chrono::steady_clock::now();
+
+#ifdef DEBUG_MODE
+    report_time(start, end, 2);
+#endif
+
+    if(par_gram){
+        std::cout<<"The resulting grammar was stored in "<<o_file<<std::endl;
+        return;
+    }
+
+    using tmp_gram_type = lc_gram_t<gram_type::has_cg_rules, gram_type::has_rl_rules, false>;
+    tmp_gram_type compact_gram;
+    complete_and_pack_grammar(p_gram, compact_gram);
+
+    if(gram_type::has_rl_rules){
+        std::cout<<"Run-length compressing the grammar"<<std::endl;
+        run_length_compress(compact_gram);
+    }
+
+    if(!skip_simp){
+        std::cout<<"Simplifying the grammar"<<std::endl;
+        simplify_grammar(compact_gram);
+    }
+
+    if(gram_type::has_rand_access){
+        std::cout<<"Adding random access support"<<std::endl;
+        start = std::chrono::steady_clock::now();
+        add_random_access_support(compact_gram);
+        end = std::chrono::steady_clock::now();
+#ifdef DEBUG_MODE
+        report_time(start, end, 2);
+#endif
+    }
+
+    gram_type final_gram;
+    final_gram.swap(compact_gram);
+
+    // Transfer sequence names to the grammar
+    final_gram.seq_names = std::move(seq_names);
 
 #if DEBUG_MODE
     std::cout<<"Stats for the final grammar:"<<std::endl;
