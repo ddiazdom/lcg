@@ -8,7 +8,7 @@ authors:
 collection-title: >
   Proceedings of the 23rd International Symposium on Experimental Algorithms (SEA 2025)
 publisher: Schloss Dagstuhl – Leibniz-Zentrum für Informatik
-year: 2025
+date-released: 2025-07-22
 version: 1.0.0
 doi: "10.4230/LIPIcs.SEA.2025.14"
 url: "https://github.com/ddiazdom/lcg"
