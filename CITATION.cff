@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: >
+  If you use this software in academic work, please cite the associated paper or this software repository.
+title: "Efficient terabyte-scale text compression via stable local consistency and parallel grammar processing"
+authors:
+- family-names: "Díaz-Domínguez"
+  given-names: "Diego"
+type: conference-paper
+conference:
+    name: 23rd International Symposium on Experimental Algorithms (SEA 2025)
+    year: 2025
+    location: Venice, Italy
+version: 1.0.0
+year: 2025
+publisher: Schloss Dagstuhl -- Leibniz-Zentrum f{\"u}r Informatik
+doi: 10.4230/LIPIcs.SEA.2025.14
+date-released: 2025-06-24
+url: "https://github.com/ddiazdom/VLBT"
+license: BSD-3-Clause

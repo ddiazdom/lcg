@@ -206,19 +206,19 @@ Table~\ref{tab:results}.
 
 We also assessed the effectiveness of our parallel functionality. For that purpose, we ran **LCG** with **HUM** varying
 the number of threads from four to 24. The figure below shows that the running time increases steadily as we add more
-threads, with an stable memory peak up to 16 threads.
+threads, with a stable memory peak up to 16 threads.
 
-![](./img/eff_threads.png)
+<img src="./img/eff_threads.png" alt="drawing" width="300"/>
 
 # Further work 
 
-We plan to support the following features in the near future:
+We plan to support the following features soon:
 
-- Semi external mode for situations where the compression process uses considerable working memory.
+- Semi-external mode for situations where the compression process uses considerable working memory.
   For instance, terabytes of no-so-repetitive data.
 - A better algorithm for random access. 
 - Text edition in compressed space.
-- Combine different compressed representation into one.
+- Combine different compressed representations into one.
   This functionality is already implemented but only to support parallel compression. 
 - Support for other text formats, like FASTA/Q.
 

@@ -1,0 +1,12 @@
+build
+cmake-build-*
+data/
+old/
+.DS_Store
+.idea
+!data/bwt_test.txt
+!data/dummy.txt
+!data/plain_reads.txt
+!data/plain_reads_sorted
+!data/sample_file.txt
+
