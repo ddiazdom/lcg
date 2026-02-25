@@ -10,22 +10,23 @@ achieve further space reductions.
 Locally consistent grammars are a simple form of compression that achieves significant space reductions. They are
 suitable for large-scale inputs as they need minimal global information about the text, unlike Lempel-Ziv, 
 for instance. The main idea behind locally consistent grammars is to process matching substrings largely in the same way.
-We built on this idea but added something new: stable local consistency. Put simply, the stable feature means that
-matching patterns occurring in multiple texts T_1,T_2,...,T_x will be processed largely in the same way in the
-independent instances COMP(T_1), COMP(T_2),...,COMP(T_x) compressing those texts. A merge phase afterwards occurs
-where the different threads running COMP collapse their outputs in one single representation of the collection
-{T_1,T_2,...,T_y}. However, this step is relatively simple due to the locally consistent property and the fact
+
+We use this strategy but add *stable* consistency. Put simply, the stable feature means that
+matching patterns occurring in multiple texts $T_1, T_2, \ldots, T_x$ will be processed largely in the same way in the
+independent instances $COMP(T_1), COMP(T_2), \ldots, COMP(T_x)$ of the compression algorithm $COMP$. A merge phase afterwards
+occurs where the different threads running COMP collapse their outputs in one single representation of the collection
+${T_1,T_2,...,T_y}$. However, this step is relatively simple due to the locally consistent property and the fact
 that the outputs are small compared to the plain text.
 
-The different COMP instances share satellite data they use to perform the compression. This data keeps the RAM
-usage stable as we increase the threads. Nevertheless, the threads never write directly into the shared data, they only
+The different $COMP$ instances share satellite data to perform the compression. This data keeps the RAM
+usage stable as we increase the threads. Nevertheless, the threads never write directly into the shared data; they only
 read it, thus avoiding contention between the threads.
 
 Overall, our scheme allows us to compress a text collection in parallel and obtain a result equivalent to the one
 we would get with the compression of all the strings with one instance.
 
 After producing the locally consistent grammar in parallel, we run-length compress it, and finally we simplify it.
-We **do not** apply any kind of statistical compression.
+We do not apply any kind of statistical compression, yet.
 
 # Third-party libraries
 
@@ -41,7 +42,7 @@ The xxHash and CLI11 libraries are already included in the source files of this 
 
 # Installation
 
-Clone repository, enter the project folder and execute the following commands:
+Clone the repository, enter the project folder, and execute the following commands:
 
 ```
 mkdir build
@@ -55,7 +56,7 @@ make
 Our tool currently assumes the input is a concatenated collection of one or more strings, where every string ends with
 the same separator symbol. The tool assumes the last symbol in the file is the separator.
 
-For collections of ASCII characters (i.e, regular text, DNA, protein, etc), inputs in one-string-per-line format should
+For collections of ASCII characters (i.e, regular text, DNA, protein, etc.), inputs in one-string-per-line format should
 work just fine.
 
 # Compressing text 
@@ -139,7 +140,7 @@ sample_file.txt as follows:
 We considered four massive string collections for the experiments. 
 
 - **HUMANS**: all the human genome assemblies available in [NCBI](https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon=9606) up to **August 27, 2024**. This collection has 1,270 assemblies and is 3.46 TB in size.
-- **ATB**: release 2.0 of the AllTheBacteria dataset from Hunt et al.. It contains 1,932,812 curated genome assemblies from different bacteria and archaea.
+- **ATB**: release 2.0 of the AllTheBacteria dataset from Hunt et al. It contains 1,932,812 curated genome assemblies from different bacteria and archaea.
 - **ECOLI**: a subset of **ATB** with 8,000 assemblies of the E. coli genome, totalling 40.57 GB.
 - **COVID**: all the assemblies available in NCBI for SARS-CoV-2 up to **November 5, 2024**. This collection has 8,989,016 genomes and a size of 267.39 GB.
 
@@ -224,12 +225,10 @@ We plan to support the following features soon:
 
 # Bugs
 
-This tool still contains experimental code, so you will probably find bugs. Please report them in this repository.
+This tool still contains experimental code, so you will probably find bugs. Please open an issue in this repository 
+to report them.
 
 # How to cite
 
-We will soon add a source to cite.
+See the [CITATION.md](./CITATION.md) file.
 
-# Author
-
-This implementation was written by [Diego Díaz](https://github.com/ddiazdom) .
