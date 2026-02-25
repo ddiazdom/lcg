@@ -4,7 +4,7 @@ message: >
   If you use this software in academic work, please cite the associated paper or this software repository.
 authors:
   - family-names: "Díaz-Domínguez"
-  - given-names: "Diego"
+    given-names: "Diego"
 collection-title: >
   Proceedings of the 23rd International Symposium on Experimental Algorithms (SEA 2025)
 publisher: Schloss Dagstuhl – Leibniz-Zentrum für Informatik
